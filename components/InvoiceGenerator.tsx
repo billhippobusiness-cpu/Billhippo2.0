@@ -3,6 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { Plus, Trash2, Download, ChevronLeft, ChevronDown, Printer, Globe, MapPin, Image as ImageIcon, Save, Eye, Edit3, CheckCircle } from 'lucide-react';
 import { GSTType, InvoiceItem, Customer, BusinessProfile } from '../types';
 
+const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
+
 const MOCK_CUSTOMERS: Customer[] = [
   { id: '1', name: 'Wox Studio', city: 'Bengaluru', state: 'Karnataka', address: '305, 3rd Floor Orion mall', phone: '9870001111', email: 'wox@email.com', pincode: '560055', balance: 45000 },
   { id: '2', name: 'Krishna Sweets', city: 'Jaipur', state: 'Rajasthan', address: 'Main Road, Jaipur 302001', phone: '9870002222', email: 'ks@email.com', pincode: '302001', balance: 12000 },
@@ -53,7 +55,7 @@ const InvoiceGenerator: React.FC = () => {
       fontFamily: 'Poppins, sans-serif',
       invoicePrefix: 'INV/2026/',
       autoNumbering: true,
-      logoUrl: 'https://images.unsplash.com/photo-1599305090598-fe179d501227?auto=format&fit=crop&q=80&w=200&h=200'
+      logoUrl: BILLHIPPO_LOGO
     }
   });
 
