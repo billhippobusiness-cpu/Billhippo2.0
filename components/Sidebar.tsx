@@ -1,6 +1,8 @@
 
 import React from 'react';
-import { LayoutDashboard, IndianRupee, Users, FileText, Settings, LogOut, ChevronRight, Zap, Palette } from 'lucide-react';
+import { LayoutDashboard, IndianRupee, Users, FileText, Settings, LogOut, ChevronRight, Palette } from 'lucide-react';
+
+const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
 interface SidebarProps {
   activeTab: string;
@@ -27,9 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
       bg-white border-r border-slate-100 flex flex-col
     `}>
       <div className="p-8 flex items-center gap-3">
-        <div className="w-10 h-10 bg-profee-blue rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
-          <Zap className="text-white" size={22} fill="currentColor" />
-        </div>
+        <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-10 h-10 rounded-xl object-contain" />
         <div>
           <h1 className="text-2xl font-bold font-poppins tracking-tight text-slate-800 leading-none">BillHippo</h1>
           <p className="text-xs text-slate-400 font-medium uppercase tracking-widest mt-1 font-poppins">Smart Business OS</p>

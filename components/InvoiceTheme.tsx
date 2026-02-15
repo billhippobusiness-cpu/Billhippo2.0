@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { Save, Palette, Type, Hash, Image as ImageIcon, Check, Layout, AlertCircle } from 'lucide-react';
 import { BusinessTheme } from '../types';
 
+const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
+
 const COLORS = [
   { name: 'Indigo Premium', value: '#4c2de0' },
   { name: 'Professional Green', value: '#2e7d32' },
@@ -31,7 +33,7 @@ const InvoiceTheme: React.FC = () => {
     fontFamily: 'Poppins, sans-serif',
     invoicePrefix: 'INV/2026/',
     autoNumbering: true,
-    logoUrl: 'https://images.unsplash.com/photo-1599305090598-fe179d501227?auto=format&fit=crop&q=80&w=200&h=200'
+    logoUrl: BILLHIPPO_LOGO
   });
 
   const [isSaving, setIsSaving] = useState(false);

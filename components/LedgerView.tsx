@@ -1,6 +1,8 @@
 
 import React, { useState } from 'react';
-import { ChevronLeft, Download, Search, Filter, Plus, Eye, Printer, Edit3, Zap, MapPin, Building2 } from 'lucide-react';
+import { ChevronLeft, Download, Search, Filter, Plus, Eye, Printer, Edit3, MapPin, Building2 } from 'lucide-react';
+
+const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
 const LedgerView: React.FC = () => {
   const [isPreview, setIsPreview] = useState(false);
@@ -32,9 +34,7 @@ const LedgerView: React.FC = () => {
       <div className="flex justify-between items-start border-b-2 border-slate-50 pb-8">
         <div className="space-y-4">
            <div className="flex items-center gap-2">
-             <div className="w-8 h-8 bg-profee-blue rounded-lg flex items-center justify-center text-white">
-                <Zap size={18} fill="currentColor" />
-             </div>
+             <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-8 h-8 rounded-lg object-contain" />
              <h1 className="text-xl font-black uppercase tracking-tighter text-slate-800">BillHippo Statement</h1>
            </div>
            <div className="space-y-1">

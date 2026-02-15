@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Zap, Mail, Lock, User, ArrowRight, Chrome } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Chrome } from 'lucide-react';
+
+const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
 interface AuthPageProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -43,9 +45,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignUp, onGoogleLogin, e
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-10">
-          <div className="w-12 h-12 bg-profee-blue rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
-            <Zap className="text-white" size={24} fill="currentColor" />
-          </div>
+          <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-12 h-12 rounded-2xl object-contain" />
           <span className="text-3xl font-bold font-poppins tracking-tight text-slate-800">BillHippo</span>
         </div>
 

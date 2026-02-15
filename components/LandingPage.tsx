@@ -1,6 +1,8 @@
 
 import React from 'react';
-import { Zap, ChevronRight, IndianRupee, BarChart3, ShieldCheck, Sparkles, ArrowRight, Play } from 'lucide-react';
+import { ChevronRight, IndianRupee, BarChart3, ShieldCheck, Sparkles, ArrowRight, Play } from 'lucide-react';
+
+const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
 interface LandingPageProps {
   onEnterApp: () => void;
@@ -13,9 +15,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-profee-blue rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100">
-              <Zap className="text-white" size={20} fill="currentColor" />
-            </div>
+            <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-10 h-10 rounded-xl object-contain" />
             <span className="text-2xl font-bold font-poppins tracking-tight text-slate-800">BillHippo</span>
           </div>
           <div className="hidden md:flex items-center gap-10">
@@ -75,13 +75,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
               </div>
             </div>
 
-            <div className="relative animate-in zoom-in duration-1000">
+            <div className="relative animate-in zoom-in duration-1000 flex items-center justify-center">
               <div className="absolute -inset-4 bg-gradient-to-tr from-indigo-100 to-transparent rounded-[3rem] blur-3xl opacity-30"></div>
-              <div className="relative bg-white rounded-[3rem] p-4 shadow-2xl border border-slate-50">
-                <img 
-                  src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=2426" 
-                  alt="App Interface" 
-                  className="rounded-[2.5rem] shadow-sm"
+              <div className="relative flex items-center justify-center">
+                <img
+                  src={BILLHIPPO_LOGO}
+                  alt="BillHippo Logo"
+                  className="w-[420px] h-[420px] object-contain drop-shadow-2xl"
                 />
                 {/* Floating Elements */}
                 <div className="absolute -bottom-6 -left-10 bg-white p-6 rounded-3xl shadow-2xl border border-slate-50 animate-bounce transition-all duration-3000">
@@ -140,9 +140,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       <footer className="py-20 border-t border-slate-100">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-10">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-profee-blue rounded-lg flex items-center justify-center">
-              <Zap className="text-white" size={16} fill="currentColor" />
-            </div>
+            <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-8 h-8 rounded-lg object-contain" />
             <span className="text-xl font-bold font-poppins text-slate-800">BillHippo</span>
           </div>
           <div className="flex gap-10 text-sm font-bold text-slate-400 font-poppins">
