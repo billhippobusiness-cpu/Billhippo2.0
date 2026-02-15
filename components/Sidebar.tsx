@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, IndianRupee, Users, FileText, Image as ImageIcon, Settings, LogOut, ChevronRight, Zap, Palette } from 'lucide-react';
+import { LayoutDashboard, IndianRupee, Users, FileText, Settings, LogOut, ChevronRight, Zap, Palette } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -16,7 +16,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
     { id: 'ledger', icon: Users, label: 'Parties & Ledger' },
     { id: 'invoices', icon: IndianRupee, label: 'Invoice Maker' },
     { id: 'gst', icon: FileText, label: 'Tax Reports' },
-    { id: 'media', icon: ImageIcon, label: 'Design Studio' },
     { id: 'theme', icon: Palette, label: 'Invoice Theme' },
     { id: 'settings', icon: Settings, label: 'Settings' },
   ];

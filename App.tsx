@@ -10,7 +10,6 @@ import Dashboard from './components/Dashboard';
 import InvoiceGenerator from './components/InvoiceGenerator';
 import LedgerView from './components/LedgerView';
 import GSTReports from './components/GSTReports';
-import MediaStudio from './components/MediaStudio';
 import Sidebar from './components/Sidebar';
 import ProfileSettings from './components/ProfileSettings';
 import InvoiceTheme from './components/InvoiceTheme';
@@ -78,7 +77,6 @@ const App: React.FC = () => {
       case 'invoices': return <InvoiceGenerator />;
       case 'ledger': return <LedgerView />;
       case 'gst': return <GSTReports />;
-      case 'media': return <MediaStudio />;
       case 'theme': return <InvoiceTheme />;
       case 'settings': return <ProfileSettings />;
       default: return <Dashboard />;
