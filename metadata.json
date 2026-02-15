@@ -1,0 +1,7 @@
+{
+  "name": "BharatLedger SaaS",
+  "description": "A comprehensive GST-compliant invoicing and ledger management platform for small Indian businesses, featuring AI-powered business analytics and image editing.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

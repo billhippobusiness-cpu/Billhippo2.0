@@ -1,0 +1,561 @@
+
+import React, { useState, useMemo } from 'react';
+import { Plus, Trash2, Download, ChevronLeft, ChevronDown, Printer, Globe, MapPin, Image as ImageIcon, Save, Eye, Edit3, CheckCircle } from 'lucide-react';
+import { GSTType, InvoiceItem, Customer, BusinessProfile } from '../types';
+
+const MOCK_CUSTOMERS: Customer[] = [
+  { id: '1', name: 'Wox Studio', city: 'Bengaluru', state: 'Karnataka', address: '305, 3rd Floor Orion mall', phone: '9870001111', email: 'wox@email.com', pincode: '560055', balance: 45000 },
+  { id: '2', name: 'Krishna Sweets', city: 'Jaipur', state: 'Rajasthan', address: 'Main Road, Jaipur 302001', phone: '9870002222', email: 'ks@email.com', pincode: '302001', balance: 12000 },
+  { id: '3', name: 'Radhe Shyam Traders', city: 'Mumbai', state: 'Maharashtra', address: 'Old Market Area', phone: '9870004444', email: 'rst@email.com', pincode: '400001', balance: 25000 },
+];
+
+const numberToWords = (num: number) => {
+  const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  const inWords = (n: any): string => {
+    if ((n = n.toString()).length > 9) return 'overflow';
+    let nArr = ('000000000' + n).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+    if (!nArr) return ''; 
+    let str = '';
+    str += (parseInt(nArr[1]) !== 0) ? (a[Number(nArr[1])] || b[Number(nArr[1][0])] + ' ' + a[Number(nArr[1][1])]) + 'Crore ' : '';
+    str += (parseInt(nArr[2]) !== 0) ? (a[Number(nArr[2])] || b[Number(nArr[2][0])] + ' ' + a[Number(nArr[2][1])]) + 'Lakh ' : '';
+    str += (parseInt(nArr[3]) !== 0) ? (a[Number(nArr[3])] || b[Number(nArr[3][0])] + ' ' + a[Number(nArr[3][1])]) + 'Thousand ' : '';
+    str += (parseInt(nArr[4]) !== 0) ? a[Number(nArr[4])] + 'Hundred ' : '';
+    str += (parseInt(nArr[5]) !== 0) ? ((str !== '') ? 'and ' : '') + (a[Number(nArr[5])] || b[Number(nArr[5][0])] + ' ' + a[Number(nArr[5][1])]) + 'Only' : 'Only';
+    return str;
+  };
+  return inWords(Math.floor(num));
+};
+
+const InvoiceGenerator: React.FC = () => {
+  const [isEditing, setIsEditing] = useState(true);
+  const [profile] = useState<BusinessProfile>({
+    name: 'Foobar Labs',
+    gstin: '29ABCED1234F2Z5',
+    address: '46, Raghuveer Dham Society',
+    city: 'Surat',
+    state: 'Gujarat',
+    pincode: '395006',
+    phone: '+91 98765 43210',
+    email: 'foobarlabs@gmail.com',
+    pan: 'ABCED1234F',
+    bankName: 'HDFC Bank',
+    accountNumber: '45366287987',
+    ifscCode: 'HDFC0018159',
+    upiId: 'foobarlabs@okhdfc',
+    defaultNotes: 'Thank you for choosing Foobar Labs for your digital needs.',
+    termsAndConditions: '1. Please pay within 15 days from the date of invoice.\n2. Interest @ 14% p.a. will be charged on delayed payments.',
+    gstEnabled: true,
+    theme: {
+      templateId: 'modern-2',
+      primaryColor: '#4c2de0',
+      fontFamily: 'Poppins, sans-serif',
+      invoicePrefix: 'INV/2026/',
+      autoNumbering: true,
+      logoUrl: 'https://images.unsplash.com/photo-1599305090598-fe179d501227?auto=format&fit=crop&q=80&w=200&h=200'
+    }
+  });
+
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState(`${profile.theme.invoicePrefix}004`);
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [items, setItems] = useState<InvoiceItem[]>([
+    { id: '1', description: 'Web Development Services', hsnCode: '9983', quantity: 1, rate: 25000, gstRate: 18 }
+  ]);
+
+  const selectedCustomer = useMemo(() => 
+    MOCK_CUSTOMERS.find(c => c.id === selectedCustomerId), 
+    [selectedCustomerId]
+  );
+
+  const gstType = useMemo(() => {
+    if (!selectedCustomer) return GSTType.CGST_SGST;
+    return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
+  }, [selectedCustomer, profile.state]);
+
+  const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.rate), 0);
+  const taxAmount = items.reduce((sum, item) => sum + (item.quantity * item.rate * item.gstRate / 100), 0);
+  const grandTotal = subTotal + taxAmount;
+
+  const handleAddItem = () => {
+    const newItem: InvoiceItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      description: '',
+      hsnCode: '',
+      quantity: 1,
+      rate: 0,
+      gstRate: 18
+    };
+    setItems([...items, newItem]);
+  };
+
+  const handleRemoveItem = (id: string) => {
+    setItems(items.filter(item => item.id !== id));
+  };
+
+  const handleItemChange = (id: string, field: keyof InvoiceItem, value: any) => {
+    setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const upiQrUrl = useMemo(() => {
+    if (!profile.upiId) return '';
+    const upiLink = `upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}&am=${grandTotal}&cu=INR`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiLink)}`;
+  }, [profile.upiId, profile.name, grandTotal]);
+
+  const Modern1Template = () => (
+    <div className="bg-white p-12 min-h-[1100px] flex flex-col space-y-8 w-full max-w-[800px] mx-auto border border-slate-100 print:shadow-none print:border-none shadow-2xl rounded-[2rem]">
+       <div className="flex justify-between items-start border-b-2 border-slate-50 pb-8">
+          <div className="w-24 h-24 bg-slate-50 rounded-2xl flex items-center justify-center p-2">
+             {profile.theme.logoUrl ? <img src={profile.theme.logoUrl} className="w-full h-full object-contain" /> : <ImageIcon className="text-slate-300" />}
+          </div>
+          <div className="text-center">
+            <h1 className="text-4xl font-black uppercase tracking-widest mb-1" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">GST Compliant Tax Invoice</p>
+          </div>
+          <div className="text-right space-y-2 font-poppins">
+             <p className="flex flex-col"><span className="text-[10px] font-bold text-slate-400 uppercase">Inv #</span><span className="text-sm font-bold">{invoiceNumber}</span></p>
+             <p className="flex flex-col"><span className="text-[10px] font-bold text-slate-400 uppercase">Date</span><span className="text-sm font-bold">{invoiceDate}</span></p>
+          </div>
+       </div>
+
+       <div className="grid grid-cols-2 gap-8">
+          <div className="p-8 rounded-[2rem] space-y-3" style={{ backgroundColor: `${profile.theme.primaryColor}10` }}>
+             <h3 className="text-[10px] font-black uppercase tracking-widest" style={{ color: profile.theme.primaryColor }}>Billed by</h3>
+             <p className="text-sm font-bold text-slate-800">{profile.name}</p>
+             <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{profile.address}, {profile.city}, {profile.state} - {profile.pincode}</p>
+             <div className="flex gap-4 pt-2 border-t border-slate-200/50">
+                <p className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase">GSTIN</span><span className="text-[10px] font-bold text-slate-800">{profile.gstin}</span></p>
+                <p className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase">PAN</span><span className="text-[10px] font-bold text-slate-800">{profile.pan}</span></p>
+             </div>
+          </div>
+          <div className="p-8 rounded-[2rem] space-y-3" style={{ backgroundColor: `${profile.theme.primaryColor}10` }}>
+             <h3 className="text-[10px] font-black uppercase tracking-widest" style={{ color: profile.theme.primaryColor }}>Billed to</h3>
+             <p className="text-sm font-bold text-slate-800">{selectedCustomer?.name || 'Party Name'}</p>
+             <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{selectedCustomer?.address || '---'}, {selectedCustomer?.city || '---'}, {selectedCustomer?.state || '---'} - {selectedCustomer?.pincode || '---'}</p>
+             <div className="flex gap-4 pt-2 border-t border-slate-200/50">
+                <p className="flex flex-col"><span className="text-[9px] font-bold text-slate-400 uppercase">GSTIN</span><span className="text-[10px] font-bold text-slate-800">{selectedCustomer?.gstin || '---'}</span></p>
+             </div>
+          </div>
+       </div>
+
+       <div className="flex-1">
+          <table className="w-full text-left border-collapse">
+             <thead>
+                <tr className="text-white text-[10px] font-bold uppercase tracking-widest" style={{ backgroundColor: profile.theme.primaryColor }}>
+                   <th className="px-6 py-4 rounded-tl-2xl">Item description</th>
+                   <th className="px-4 py-4 text-center">HSN</th>
+                   <th className="px-4 py-4 text-center">Qty.</th>
+                   <th className="px-4 py-4 text-right">Rate</th>
+                   <th className="px-6 py-4 text-right rounded-tr-2xl">Amount</th>
+                </tr>
+             </thead>
+             <tbody className="text-xs divide-y divide-slate-100">
+                {items.map((item, idx) => (
+                  <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                     <td className="px-6 py-6 font-medium text-slate-700">{idx + 1}. {item.description || 'No Description'}</td>
+                     <td className="px-4 py-6 text-center text-slate-500">{item.hsnCode || '---'}</td>
+                     <td className="px-4 py-6 text-center font-bold text-slate-800">{item.quantity}</td>
+                     <td className="px-4 py-6 text-right text-slate-600">₹{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                     <td className="px-6 py-6 text-right font-bold text-slate-800">₹{(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
+             </tbody>
+          </table>
+       </div>
+
+       <div className="grid grid-cols-2 gap-20 pt-12 border-t border-slate-100">
+          <div className="space-y-6">
+             <div className="flex gap-8 items-start">
+                <div className="space-y-4">
+                   <h4 className="text-[10px] font-black uppercase tracking-widest" style={{ color: profile.theme.primaryColor }}>Bank & Payment Info</h4>
+                   <div className="text-[10px] font-bold text-slate-500 space-y-1.5 font-poppins">
+                      <p className="flex justify-between">Bank: <span className="text-slate-800">{profile.bankName}</span></p>
+                      <p className="flex justify-between">A/c: <span className="text-slate-800">{profile.accountNumber}</span></p>
+                      <p className="flex justify-between">IFSC: <span className="text-slate-800">{profile.ifscCode}</span></p>
+                      <p className="font-black pt-1 border-t border-slate-50 flex justify-between" style={{ color: profile.theme.primaryColor }}>UPI ID: <span>{profile.upiId}</span></p>
+                   </div>
+                </div>
+                {profile.upiId && <img src={upiQrUrl} className="w-24 h-24 p-2 bg-slate-50 rounded-xl border border-slate-100" />}
+             </div>
+             <div className="space-y-2">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Notes</h4>
+                <p className="text-[10px] text-slate-500 italic leading-relaxed">{profile.defaultNotes}</p>
+             </div>
+          </div>
+          <div className="space-y-6">
+             <div className="space-y-3 font-poppins">
+                <div className="flex justify-between text-sm font-bold text-slate-500"><span>Sub Total</span><span>₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                <div className="flex justify-between text-sm font-bold text-emerald-500"><span>Tax (GST)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+             </div>
+             <div className="pt-6 border-t-2 border-slate-100 flex justify-between items-center">
+                <span className="text-2xl font-black uppercase tracking-tighter" style={{ color: profile.theme.primaryColor }}>Grand Total</span>
+                <span className="text-4xl font-black font-poppins" style={{ color: profile.theme.primaryColor }}>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+             </div>
+          </div>
+       </div>
+    </div>
+  );
+
+  const Modern2Template = () => (
+    <div className="bg-white p-12 min-h-[1100px] flex flex-col space-y-12 w-full max-w-[850px] mx-auto print:shadow-none print:p-4 border border-slate-50 shadow-2xl rounded-[2.5rem]">
+      <div className="flex justify-between items-start">
+        <div className="space-y-6">
+           <h1 className="text-6xl font-black tracking-tighter uppercase leading-none" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
+           <div className="space-y-1 text-[11px] font-bold font-poppins text-slate-400 uppercase tracking-[0.2em]">
+              <p>Invoice# <span className="text-slate-900 ml-4 font-black">{invoiceNumber}</span></p>
+              <p>Invoice Date <span className="text-slate-900 ml-4 font-black">{invoiceDate}</span></p>
+              <p>Due Date <span className="text-slate-900 ml-4 font-black">---</span></p>
+           </div>
+        </div>
+        <div className="flex flex-col items-end">
+           <div className="w-32 h-16 overflow-hidden mb-2">
+             {profile.theme.logoUrl ? <img src={profile.theme.logoUrl} className="w-full h-full object-contain object-right" /> : <div className="w-full h-full bg-slate-50 rounded-xl"></div>}
+           </div>
+           <p className="text-xs font-black uppercase tracking-widest text-slate-900">{profile.name}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-8">
+         <div className="p-10 rounded-[2rem] bg-slate-50 border border-slate-100 flex flex-col shadow-sm">
+            <h3 className="text-xs font-black uppercase tracking-[0.3em] mb-6" style={{ color: profile.theme.primaryColor }}>Billed by</h3>
+            <div className="space-y-1 flex-1">
+              <p className="text-base font-black text-slate-900">{profile.name}</p>
+              <p className="text-[11px] text-slate-500 font-medium leading-relaxed max-w-[240px]">{profile.address}, {profile.city}, {profile.state} - {profile.pincode}</p>
+            </div>
+            <div className="mt-6 flex gap-8 border-t border-slate-200 pt-4">
+               <div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">GSTIN</span><span className="text-[10px] font-black text-slate-900 uppercase">{profile.gstin}</span></div>
+               <div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">PAN</span><span className="text-[10px] font-black text-slate-900 uppercase">{profile.pan}</span></div>
+            </div>
+         </div>
+         <div className="p-10 rounded-[2rem] bg-slate-50 border border-slate-100 flex flex-col shadow-sm">
+            <h3 className="text-xs font-black uppercase tracking-[0.3em] mb-6" style={{ color: profile.theme.primaryColor }}>Billed to</h3>
+            <div className="space-y-1 flex-1">
+              <p className="text-base font-black text-slate-900">{selectedCustomer?.name || 'Party Not Selected'}</p>
+              <p className="text-[11px] text-slate-500 font-medium leading-relaxed max-w-[240px]">{selectedCustomer?.address || '---'}, {selectedCustomer?.city || '---'}, {selectedCustomer?.state || '---'} - {selectedCustomer?.pincode || '---'}</p>
+            </div>
+            <div className="mt-6 flex gap-8 border-t border-slate-200 pt-4">
+               <div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">GSTIN</span><span className="text-[10px] font-black text-slate-900 uppercase">{selectedCustomer?.gstin || '---'}</span></div>
+               <div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">PAN</span><span className="text-[10px] font-black text-slate-900 uppercase">---</span></div>
+            </div>
+         </div>
+      </div>
+
+      <div className="flex justify-between px-10 py-5 bg-white border border-slate-100 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 shadow-sm">
+         <p>Place of Supply <span className="text-slate-900 ml-4 font-black">{selectedCustomer?.state || '---'}</span></p>
+         <p>Country of Supply <span className="text-slate-900 ml-4 font-black">India</span></p>
+      </div>
+
+      <div className="flex-1">
+        <table className="w-full text-left border-collapse rounded-[2rem] overflow-hidden shadow-sm border border-slate-100">
+          <thead>
+            <tr className="text-white text-[11px] font-black uppercase tracking-widest" style={{ backgroundColor: profile.theme.primaryColor }}>
+              <th className="px-10 py-6">Item #/Item description</th>
+              <th className="px-4 py-6 text-center">HSN</th>
+              <th className="px-4 py-6 text-center">Qty.</th>
+              <th className="px-4 py-6 text-center">GST</th>
+              <th className="px-10 py-6 text-right">Amount</th>
+            </tr>
+          </thead>
+          <tbody className="text-xs divide-y divide-slate-100 bg-slate-50/20">
+            {items.map((item, idx) => {
+              const taxable = item.quantity * item.rate;
+              return (
+                <tr key={item.id} className="font-medium text-slate-700 hover:bg-white transition-colors">
+                  <td className="px-10 py-6">{idx + 1}. {item.description || 'No description'}</td>
+                  <td className="px-4 py-6 text-center text-slate-400">{item.hsnCode || '---'}</td>
+                  <td className="px-4 py-6 text-center font-black">{item.quantity}</td>
+                  <td className="px-4 py-6 text-center text-slate-400">{item.gstRate}%</td>
+                  <td className="px-10 py-6 text-right font-black">₹ {taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-20 items-start">
+         <div className="space-y-12">
+            <div className="flex gap-10 items-start">
+               <div className="space-y-5 flex-1">
+                  <h4 className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: profile.theme.primaryColor }}>Bank & Payments</h4>
+                  <div className="text-[10px] font-bold text-slate-400 space-y-2.5 uppercase tracking-tighter">
+                     <p className="flex justify-between">A/c Holder <span className="text-slate-900 ml-4 font-black">{profile.name}</span></p>
+                     <p className="flex justify-between">A/c Number <span className="text-slate-900 ml-4 font-black">{profile.accountNumber}</span></p>
+                     <p className="flex justify-between">IFSC Code <span className="text-slate-900 ml-4 font-black">{profile.ifscCode}</span></p>
+                     <p className="flex justify-between">Bank Name <span className="text-slate-900 ml-4 font-black">{profile.bankName}</span></p>
+                     <p className="flex justify-between pt-3 border-t border-slate-100">UPI ID <span className="ml-4 font-black" style={{ color: profile.theme.primaryColor }}>{profile.upiId}</span></p>
+                  </div>
+               </div>
+               {profile.upiId && (
+                 <div className="flex flex-col items-center">
+                    <span className="text-[8px] font-black text-slate-300 uppercase mb-3 tracking-widest">Scan to Pay</span>
+                    <div className="p-4 bg-white border border-slate-100 shadow-lg rounded-2xl">
+                      <img src={upiQrUrl} className="w-24 h-24" />
+                    </div>
+                 </div>
+               )}
+            </div>
+
+            <div className="space-y-4">
+               <h4 className="text-[11px] font-black uppercase tracking-[0.3em] text-emerald-500">Terms and Conditions</h4>
+               <p className="text-[10px] text-slate-400 leading-relaxed font-medium italic whitespace-pre-line">{profile.termsAndConditions}</p>
+            </div>
+         </div>
+
+         <div className="space-y-10">
+            <div className="space-y-4 text-sm font-bold text-slate-500 font-poppins px-6">
+               <div className="flex justify-between"><span>Sub Total</span><span className="text-slate-900 font-black">₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+               <div className="flex justify-between text-emerald-500 font-black"><span>Tax (GST Total)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+               {gstType === GSTType.CGST_SGST ? (
+                 <>
+                   <div className="flex justify-between text-xs font-medium text-slate-400"><span>CGST ({items[0]?.gstRate/2}%)</span><span>₹{(taxAmount/2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                   <div className="flex justify-between text-xs font-medium text-slate-400"><span>SGST ({items[0]?.gstRate/2}%)</span><span>₹{(taxAmount/2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                 </>
+               ) : (
+                 <div className="flex justify-between text-xs font-medium text-slate-400"><span>IGST ({items[0]?.gstRate}%)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+               )}
+            </div>
+            <div className="pt-8 border-t-2 border-slate-100 flex justify-between items-center px-6">
+               <span className="text-3xl font-black uppercase tracking-tighter text-slate-900">Total</span>
+               <span className="text-5xl font-black text-slate-900 font-poppins tracking-tighter">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 font-poppins space-y-2 shadow-sm">
+               <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Amount in Words</p>
+               <p className="text-base font-black text-slate-800 leading-tight">{numberToWords(grandTotal)} Only</p>
+            </div>
+         </div>
+      </div>
+
+      <div className="pt-20 text-center border-t border-slate-50 mt-auto">
+         <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.3em]">
+           Bill generated via <span className="text-slate-900 font-black">BillHippo Smart OS</span> • {profile.email} • {profile.phone}
+         </p>
+      </div>
+    </div>
+  );
+
+  if (!isEditing) {
+    return (
+      <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 font-poppins">
+        <div className="flex justify-between items-center mb-6 no-print">
+          <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 text-profee-blue font-bold text-sm hover:underline">
+            <Edit3 size={18} /> Edit Invoice
+          </button>
+          <div className="flex gap-4">
+             <button onClick={() => window.print()} className="bg-white border border-slate-200 px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm">
+               <Printer size={18} /> Print A4
+             </button>
+             <button className="bg-profee-blue text-white px-12 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xl shadow-indigo-100 hover:scale-105 transition-all">
+               <Download size={18} /> Save Record
+             </button>
+          </div>
+        </div>
+
+        <div className="flex justify-center bg-slate-100 p-12 min-h-screen rounded-[3rem] no-print">
+          <div className="print-area">
+             {profile.theme.templateId === 'modern-2' ? <Modern2Template /> : <Modern1Template />}
+          </div>
+        </div>
+
+        <div className="hidden print:block">
+           {profile.theme.templateId === 'modern-2' ? <Modern2Template /> : <Modern1Template />}
+        </div>
+
+        <style>{`
+          @media print {
+            body * { visibility: hidden; }
+            .print-area, .print-area * { visibility: visible; }
+            .print-area { position: absolute; left: 0; top: 0; padding: 0 !important; width: 100%; box-shadow: none !important; background: white !important; }
+            .no-print { display: none !important; }
+            @page { size: A4; margin: 10mm; }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 pb-20">
+      <div className="flex justify-between items-end mb-4">
+        <div>
+          <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
+          <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">New Bill Entry • FY 2024-25</p>
+        </div>
+        <div className="flex gap-4">
+           <button 
+             onClick={() => setIsEditing(false)}
+             className="bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-slate-50 transition-all font-poppins"
+           >
+             <Eye size={20} /> Preview
+           </button>
+           <button 
+             onClick={() => setIsEditing(false)}
+             className="bg-profee-blue text-white px-12 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins"
+           >
+             <Save size={20} /> Finalize Bill
+           </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="lg:col-span-8 space-y-8">
+          {/* Header Info */}
+          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 font-poppins">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="space-y-3">
+                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Party / Customer</label>
+                 <div className="relative group">
+                    <select 
+                      value={selectedCustomerId}
+                      onChange={(e) => setSelectedCustomerId(e.target.value)}
+                      className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 appearance-none font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                    >
+                      <option value="">Select Customer...</option>
+                      {MOCK_CUSTOMERS.map(c => <option key={c.id} value={c.id}>{c.name} ({c.state})</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 group-hover:text-profee-blue" size={18} />
+                 </div>
+              </div>
+              <div className="space-y-3">
+                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Invoice Number</label>
+                 <input 
+                   className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                   value={invoiceNumber}
+                   onChange={e => setInvoiceNumber(e.target.value)}
+                 />
+              </div>
+              <div className="space-y-3">
+                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Invoice Date</label>
+                 <input 
+                   type="date"
+                   className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                   value={invoiceDate}
+                   onChange={e => setInvoiceDate(e.target.value)}
+                 />
+              </div>
+            </div>
+          </div>
+
+          {/* Items List */}
+          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 font-poppins">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold flex items-center gap-3">
+                 <Plus className="text-profee-blue" size={22} /> Particulars
+              </h3>
+              <div className="px-5 py-2 rounded-xl bg-indigo-50 text-profee-blue text-[10px] font-black uppercase">
+                 Tax Logic: {gstType}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {items.map((item, idx) => (
+                <div key={item.id} className="grid grid-cols-12 gap-4 items-end animate-in fade-in duration-300">
+                  <div className="col-span-5 space-y-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
+                    <input 
+                      placeholder="Product or service name"
+                      className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
+                      value={item.description}
+                      onChange={e => handleItemChange(item.id, 'description', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Qty</label>
+                    <input 
+                      type="number"
+                      className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center"
+                      value={item.quantity}
+                      onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label>
+                    <input 
+                      type="number"
+                      className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center text-profee-blue"
+                      value={item.rate}
+                      onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)}
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label>
+                    <select 
+                      className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-center appearance-none"
+                      value={item.gstRate}
+                      onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
+                    >
+                      {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                    </select>
+                  </div>
+                  <div className="col-span-1 pb-2 flex justify-center">
+                    <button 
+                      onClick={() => handleRemoveItem(item.id)}
+                      className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button 
+              onClick={handleAddItem}
+              className="flex items-center gap-2 font-bold text-sm px-6 py-3 rounded-2xl bg-slate-50 text-profee-blue hover:bg-indigo-50 transition-all border border-dashed border-indigo-200"
+            >
+              <Plus size={18} /> Add Line Item
+            </button>
+          </div>
+        </div>
+
+        {/* Sidebar Calc */}
+        <div className="lg:col-span-4 space-y-8 font-poppins">
+           <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-8 opacity-10">
+                 <CheckCircle size={100} />
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-8">Summary Preview</p>
+              <div className="space-y-4 mb-10">
+                 <div className="flex justify-between items-center opacity-80">
+                    <span className="text-sm font-medium">Sub Total</span>
+                    <span className="text-base font-bold">₹{subTotal.toLocaleString()}</span>
+                 </div>
+                 <div className="flex justify-between items-center text-emerald-400">
+                    <span className="text-sm font-medium">Tax Amount</span>
+                    <span className="text-base font-bold">+ ₹{taxAmount.toLocaleString()}</span>
+                 </div>
+              </div>
+              <div className="pt-8 border-t border-white/10 space-y-2">
+                 <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">Grand Total</p>
+                 <h3 className="text-4xl font-black">₹{grandTotal.toLocaleString()}</h3>
+              </div>
+           </div>
+
+           <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-6">
+              <h4 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2">
+                 <Globe size={18} className="text-profee-blue" /> Quick Settings
+              </h4>
+              <div className="space-y-4">
+                 <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
+                    <span className="text-xs font-bold text-slate-500">Auto Save Records</span>
+                    <div className="w-10 h-5 bg-emerald-400 rounded-full relative">
+                       <div className="absolute top-1 right-1 w-3 h-3 bg-white rounded-full"></div>
+                    </div>
+                 </div>
+                 <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
+                    <span className="text-xs font-bold text-slate-500">Notify Customer</span>
+                    <div className="w-10 h-5 bg-slate-200 rounded-full relative">
+                       <div className="absolute top-1 left-1 w-3 h-3 bg-white rounded-full"></div>
+                    </div>
+                 </div>
+              </div>
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default InvoiceGenerator;
