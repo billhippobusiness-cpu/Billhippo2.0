@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2 } from 'lucide-react';
-import { GSTType, InvoiceItem, Customer, BusinessProfile } from '../types';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft } from 'lucide-react';
+import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile } from '../types';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, addLedgerEntry, updateCustomer } from '../lib/firestore';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
@@ -33,9 +33,10 @@ const numberToWords = (num: number) => {
 interface InvoiceGeneratorProps { userId: string; }
 
 const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
-  const [isEditing, setIsEditing] = useState(true);
+  const [mode, setMode] = useState<'list' | 'editing' | 'preview'>('list');
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -58,6 +59,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
       ]);
       if (profileData) setProfile(profileData);
       setCustomers(customerData);
+      setAllInvoices(invoiceData);
       const prefix = profileData?.theme?.invoicePrefix || 'INV/2026/';
       setInvoiceNumber(`${prefix}${String(invoiceData.length + 1).padStart(3, '0')}`);
     } catch (err) {
@@ -104,7 +106,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
       if (selectedCustomer) {
         await updateCustomer(userId, selectedCustomerId, { balance: (selectedCustomer.balance || 0) + grandTotal });
       }
-      setSaveSuccess(true); setIsEditing(false);
+      setSaveSuccess(true); setMode('preview');
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
       setError('Failed to save invoice. Please try again.');
@@ -114,7 +116,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const handleNewInvoice = () => {
     setSelectedCustomerId(''); setItems([{ id: '1', description: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }]);
     setInvoiceDate(new Date().toISOString().split('T')[0]);
-    setSaveSuccess(false); setError(null); setIsEditing(true); loadData();
+    setSaveSuccess(false); setError(null); setMode('editing'); loadData();
   };
 
   const upiQrUrl = useMemo(() => {
@@ -122,11 +124,13 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}&am=${grandTotal}&cu=INR`)}`;
   }, [profile.upiId, profile.name, grandTotal]);
 
+  // ── Loading state ──
   if (loading) {
     return (<div className="flex items-center justify-center min-h-[400px]"><div className="text-center"><Loader2 className="w-8 h-8 animate-spin text-profee-blue mx-auto mb-3" /><p className="text-sm font-bold text-slate-400 font-poppins">Loading invoice data...</p></div></div>);
   }
 
-  const Modern2Template = () => (
+  // ── Template components (defined as inline JSX helpers) ──
+  const modern2Template = (
     <div className="bg-white p-12 min-h-[1100px] flex flex-col space-y-12 w-full max-w-[850px] mx-auto print:shadow-none print:p-4 border border-slate-50 shadow-2xl rounded-[2.5rem]">
       <div className="flex justify-between items-start">
         <div className="space-y-6">
@@ -225,7 +229,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     </div>
   );
 
-  const Modern1Template = () => (
+  const modern1Template = (
     <div className="bg-white p-12 min-h-[1100px] flex flex-col space-y-8 w-full max-w-[800px] mx-auto border border-slate-100 print:shadow-none print:border-none shadow-2xl rounded-[2rem]">
        <div className="flex justify-between items-start border-b-2 border-slate-50 pb-8">
           <div className="w-24 h-24 bg-slate-50 rounded-2xl flex items-center justify-center p-2">
@@ -290,34 +294,117 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     </div>
   );
 
-  if (!isEditing) {
+  const invoiceTemplate = profile.theme.templateId === 'modern-2' ? modern2Template : modern1Template;
+
+  // ═══════════════════════════════════════════
+  //  LIST VIEW: All invoices + Create Invoice button
+  // ═══════════════════════════════════════════
+  if (mode === 'list') {
+    return (
+      <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
+        <div className="flex justify-between items-end mb-4">
+          <div>
+            <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
+            <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">{allInvoices.length} invoice{allInvoices.length !== 1 ? 's' : ''} created</p>
+          </div>
+          <button
+            onClick={handleNewInvoice}
+            className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 active:scale-95 transition-all font-poppins"
+          >
+            <Plus size={20} /> Create Invoice
+          </button>
+        </div>
+
+        {allInvoices.length === 0 ? (
+          <div className="bg-white rounded-[2.5rem] p-16 premium-shadow border border-slate-50 text-center">
+            <div className="w-24 h-24 bg-indigo-50 rounded-[2rem] flex items-center justify-center mx-auto mb-8">
+              <FileText className="text-profee-blue" size={40} />
+            </div>
+            <h3 className="text-2xl font-bold font-poppins text-slate-900 mb-3">No invoices yet</h3>
+            <p className="text-sm text-slate-400 font-medium font-poppins mb-8 max-w-md mx-auto">
+              Create your first invoice to start billing your customers. It only takes a minute.
+            </p>
+            <button
+              onClick={handleNewInvoice}
+              className="bg-profee-blue text-white px-12 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 active:scale-95 transition-all font-poppins mx-auto"
+            >
+              <Plus size={20} /> Create Your First Invoice
+            </button>
+          </div>
+        ) : (
+          <div className="bg-white rounded-[2.5rem] p-8 premium-shadow border border-slate-50">
+            <div className="space-y-3">
+              {allInvoices.map(inv => (
+                <div key={inv.id} className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl hover:bg-slate-100 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center">
+                      <FileText className="text-profee-blue" size={20} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 font-poppins">{inv.invoiceNumber}</p>
+                      <p className="text-xs text-slate-400 font-medium font-poppins">{inv.customerName} &bull; {inv.date}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-slate-800 font-poppins">₹{inv.totalAmount.toLocaleString('en-IN')}</p>
+                      <span className={`text-[10px] font-bold px-3 py-1 rounded-full ${
+                        inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-600' :
+                        inv.status === 'Partial' ? 'bg-amber-100 text-amber-600' :
+                        'bg-rose-100 text-rose-600'
+                      }`}>{inv.status}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════
+  //  PREVIEW VIEW: Formatted invoice
+  // ═══════════════════════════════════════════
+  if (mode === 'preview') {
     return (
       <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 font-poppins">
         <div className="flex justify-between items-center mb-6 no-print">
-          <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 text-profee-blue font-bold text-sm hover:underline"><Edit3 size={18} /> Edit Invoice</button>
+          <div className="flex items-center gap-4">
+            <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors"><ArrowLeft size={18} /> All Invoices</button>
+            <div className="w-px h-5 bg-slate-200" />
+            <button onClick={() => setMode('editing')} className="flex items-center gap-2 text-profee-blue font-bold text-sm hover:underline"><Edit3 size={18} /> Edit Invoice</button>
+          </div>
           <div className="flex gap-4">
              {saveSuccess && <div className="flex items-center gap-2 text-emerald-500 px-4"><CheckCircle size={18} /><span className="text-sm font-bold">Invoice Saved!</span></div>}
              <button onClick={handleNewInvoice} className="bg-white border border-slate-200 px-8 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Plus size={18} /> New Invoice</button>
              <button onClick={() => window.print()} className="bg-white border border-slate-200 px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Printer size={18} /> Print A4</button>
           </div>
         </div>
-        <div className="flex justify-center bg-slate-100 p-12 min-h-screen rounded-[3rem] no-print"><div className="print-area">{profile.theme.templateId === 'modern-2' ? <Modern2Template /> : <Modern1Template />}</div></div>
-        <div className="hidden print:block">{profile.theme.templateId === 'modern-2' ? <Modern2Template /> : <Modern1Template />}</div>
+        <div className="flex justify-center bg-slate-100 p-12 min-h-screen rounded-[3rem] no-print"><div className="print-area">{invoiceTemplate}</div></div>
+        <div className="hidden print:block">{invoiceTemplate}</div>
         <style>{`@media print { body * { visibility: hidden; } .print-area, .print-area * { visibility: visible; } .print-area { position: absolute; left: 0; top: 0; padding: 0 !important; width: 100%; box-shadow: none !important; background: white !important; } .no-print { display: none !important; } @page { size: A4; margin: 10mm; } }`}</style>
       </div>
     );
   }
 
+  // ═══════════════════════════════════════════
+  //  EDITING VIEW: Invoice creation form
+  // ═══════════════════════════════════════════
   return (
     <div className="max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 pb-20">
       <div className="flex justify-between items-end mb-4">
-        <div>
-          <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
-          <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">New Bill Entry • {invoiceNumber}</p>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins"><ArrowLeft size={18} /></button>
+          <div>
+            <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
+            <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">New Bill Entry &bull; {invoiceNumber}</p>
+          </div>
         </div>
         <div className="flex gap-4 items-center">
            {error && <span className="text-sm font-bold text-rose-500 font-poppins">{error}</span>}
-           <button onClick={() => setIsEditing(false)} className="bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-slate-50 transition-all font-poppins"><Eye size={20} /> Preview</button>
+           <button onClick={() => setMode('preview')} className="bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-slate-50 transition-all font-poppins"><Eye size={20} /> Preview</button>
            <button onClick={handleFinalize} disabled={saving} className="bg-profee-blue text-white px-12 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins disabled:opacity-50">
              {saving ? <><Loader2 size={20} className="animate-spin" /> Saving...</> : <><Save size={20} /> Finalize Bill</>}
            </button>
