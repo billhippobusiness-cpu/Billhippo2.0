@@ -61,6 +61,7 @@ export interface Invoice {
   invoiceNumber: string;
   date: string;
   customerId: string;
+  customerName: string;
   items: InvoiceItem[];
   gstType: GSTType;
   totalBeforeTax: number;

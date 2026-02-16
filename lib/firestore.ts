@@ -16,6 +16,7 @@ import {
   addDoc,
   getDoc,
   getDocs,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -46,18 +47,13 @@ export async function getBusinessProfile(userId: string): Promise<BusinessProfil
 }
 
 export async function saveBusinessProfile(userId: string, profile: BusinessProfile) {
-  await updateDoc(doc(db, 'users', userId, 'profile', 'main'), {
-    ...profile,
-    updatedAt: serverTimestamp(),
-  }).catch(async () => {
-    // Document doesn't exist yet — create it
-    const { setDoc } = await import('firebase/firestore');
-    await setDoc(doc(db, 'users', userId, 'profile', 'main'), {
-      ...profile,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  });
+  const docRef = doc(db, 'users', userId, 'profile', 'main');
+  const snap = await getDoc(docRef);
+  if (snap.exists()) {
+    await updateDoc(docRef, { ...profile, updatedAt: serverTimestamp() });
+  } else {
+    await setDoc(docRef, { ...profile, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -65,9 +61,9 @@ export async function saveBusinessProfile(userId: string, profile: BusinessProfi
 // ═══════════════════════════════════════════
 
 export async function getCustomers(userId: string): Promise<Customer[]> {
-  const q = query(userCollection(userId, 'customers'), orderBy('name'));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Customer));
+  const snap = await getDocs(userCollection(userId, 'customers'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Customer));
+  return docs.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function addCustomer(userId: string, customer: Omit<Customer, 'id'>) {
@@ -94,9 +90,9 @@ export async function deleteCustomer(userId: string, customerId: string) {
 // ═══════════════════════════════════════════
 
 export async function getInvoices(userId: string): Promise<Invoice[]> {
-  const q = query(userCollection(userId, 'invoices'), orderBy('date', 'desc'));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice));
+  const snap = await getDocs(userCollection(userId, 'invoices'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice));
+  return docs.sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export async function addInvoice(userId: string, invoice: Omit<Invoice, 'id'>) {
@@ -123,18 +119,12 @@ export async function deleteInvoice(userId: string, invoiceId: string) {
 // ═══════════════════════════════════════════
 
 export async function getLedgerEntries(userId: string, customerId?: string): Promise<LedgerEntry[]> {
-  let q;
+  const snap = await getDocs(userCollection(userId, 'ledger'));
+  let docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as LedgerEntry));
   if (customerId) {
-    q = query(
-      userCollection(userId, 'ledger'),
-      where('customerId', '==', customerId),
-      orderBy('date', 'desc')
-    );
-  } else {
-    q = query(userCollection(userId, 'ledger'), orderBy('date', 'desc'));
+    docs = docs.filter((d) => d.customerId === customerId);
   }
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as LedgerEntry));
+  return docs.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export async function addLedgerEntry(userId: string, entry: Omit<LedgerEntry, 'id'>) {
