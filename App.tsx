@@ -62,7 +62,14 @@ const App: React.FC = () => {
     try {
       await signInWithGoogle();
     } catch (err: any) {
-      setAuthError(err.message?.replace('Firebase: ', '') || 'Google login failed.');
+      const code = err.code || '';
+      if (code === 'auth/unauthorized-domain') {
+        setAuthError(
+          'This domain is not authorized for Google sign-in. Please add it to Firebase Console → Authentication → Settings → Authorized domains.'
+        );
+      } else {
+        setAuthError(err.message?.replace('Firebase: ', '') || 'Google login failed.');
+      }
     }
   };
 
