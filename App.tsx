@@ -4,6 +4,7 @@ import { LayoutDashboard } from 'lucide-react';
 import { type User } from 'firebase/auth';
 import { onAuthChange } from './lib/auth';
 import { signIn, signUp, signInWithGoogle, logOut } from './lib/auth';
+import { getBusinessProfile } from './lib/firestore';
 import LandingPage from './components/LandingPage';
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
@@ -14,9 +15,10 @@ import Sidebar from './components/Sidebar';
 import ProfileSettings from './components/ProfileSettings';
 import InvoiceTheme from './components/InvoiceTheme';
 import CustomerManager from './components/CustomerManager';
+import OnboardingWizard from './components/OnboardingWizard';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'landing' | 'auth' | 'app'>('landing');
+  const [view, setView] = useState<'landing' | 'auth' | 'app' | 'onboarding'>('landing');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -27,14 +29,23 @@ const App: React.FC = () => {
     document.body.className = "bg-[#f8fafc] text-slate-900 overflow-x-hidden antialiased";
   }, []);
 
-  // Listen for Firebase auth state changes
+  // Listen for Firebase auth state changes and check profile
   useEffect(() => {
-    const unsubscribe = onAuthChange((firebaseUser) => {
+    const unsubscribe = onAuthChange(async (firebaseUser) => {
       setUser(firebaseUser);
-      setAuthLoading(false);
       if (firebaseUser) {
-        setView('app');
+        try {
+          const profile = await getBusinessProfile(firebaseUser.uid);
+          if (profile && profile.name) {
+            setView('app');
+          } else {
+            setView('onboarding');
+          }
+        } catch {
+          setView('onboarding');
+        }
       }
+      setAuthLoading(false);
     });
     return unsubscribe;
   }, []);
@@ -118,6 +129,18 @@ const App: React.FC = () => {
         onSignUp={handleSignUp}
         onGoogleLogin={handleGoogleLogin}
         error={authError}
+      />
+    );
+  }
+
+  // Onboarding wizard (new user, no profile yet)
+  if (view === 'onboarding' && user) {
+    return (
+      <OnboardingWizard
+        userId={user.uid}
+        userName={user.displayName || ''}
+        userEmail={user.email || ''}
+        onComplete={() => setView('app')}
       />
     );
   }
