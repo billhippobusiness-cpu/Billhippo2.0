@@ -13,6 +13,7 @@ import GSTReports from './components/GSTReports';
 import Sidebar from './components/Sidebar';
 import ProfileSettings from './components/ProfileSettings';
 import InvoiceTheme from './components/InvoiceTheme';
+import CustomerManager from './components/CustomerManager';
 
 const App: React.FC = () => {
   const [view, setView] = useState<'landing' | 'auth' | 'app'>('landing');
@@ -72,14 +73,16 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
+    const userId = user!.uid;
     switch (activeTab) {
-      case 'dashboard': return <Dashboard />;
-      case 'invoices': return <InvoiceGenerator />;
-      case 'ledger': return <LedgerView />;
-      case 'gst': return <GSTReports />;
-      case 'theme': return <InvoiceTheme />;
-      case 'settings': return <ProfileSettings />;
-      default: return <Dashboard />;
+      case 'dashboard': return <Dashboard userId={userId} />;
+      case 'customers': return <CustomerManager userId={userId} />;
+      case 'invoices': return <InvoiceGenerator userId={userId} />;
+      case 'ledger': return <LedgerView userId={userId} />;
+      case 'gst': return <GSTReports userId={userId} />;
+      case 'theme': return <InvoiceTheme userId={userId} />;
+      case 'settings': return <ProfileSettings userId={userId} />;
+      default: return <Dashboard userId={userId} />;
     }
   };
 
@@ -121,6 +124,8 @@ const App: React.FC = () => {
         isDarkMode={false}
         isOpen={isSidebarOpen}
         setIsOpen={setIsSidebarOpen}
+        user={user}
+        onLogout={handleLogout}
       />
 
       <main className="flex-1 flex flex-col min-w-0">

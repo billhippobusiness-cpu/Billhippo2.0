@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
-import { Save, Palette, Type, Hash, Image as ImageIcon, Check, Layout, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Save, Palette, Type, Hash, Image as ImageIcon, Check, Layout, AlertCircle, Loader2 } from 'lucide-react';
 import { BusinessTheme } from '../types';
+import { getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -26,7 +27,9 @@ const FONTS = [
   { name: 'Elegant Serif', value: 'Georgia, serif' },
 ];
 
-const InvoiceTheme: React.FC = () => {
+interface InvoiceThemeProps { userId: string; }
+
+const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
   const [theme, setTheme] = useState<BusinessTheme>({
     templateId: 'modern-2',
     primaryColor: '#4c2de0',
@@ -37,11 +40,42 @@ const InvoiceTheme: React.FC = () => {
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
 
-  const handleSave = () => {
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        const profile = await getBusinessProfile(userId);
+        if (profile?.theme) setTheme(profile.theme);
+      } catch (err) { console.error(err); }
+      finally { setLoading(false); }
+    };
+    load();
+  }, [userId]);
+
+  const handleSave = async () => {
     setIsSaving(true);
-    setTimeout(() => setIsSaving(false), 1000);
+    try {
+      const profile = await getBusinessProfile(userId);
+      if (profile) {
+        await saveBusinessProfile(userId, { ...profile, theme });
+      } else {
+        await saveBusinessProfile(userId, {
+          name: 'Your Business', gstin: '', address: '', city: '', state: 'Maharashtra',
+          pincode: '', phone: '', email: '', pan: '', gstEnabled: true, theme
+        });
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) { console.error(err); }
+    finally { setIsSaving(false); }
   };
+
+  if (loading) {
+    return (<div className="flex items-center justify-center min-h-[400px]"><Loader2 className="w-8 h-8 animate-spin text-profee-blue mx-auto" /></div>);
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
@@ -50,12 +84,16 @@ const InvoiceTheme: React.FC = () => {
           <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Theme</h1>
           <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">Personalize your brand identity</p>
         </div>
-        <button 
-          onClick={handleSave}
-          className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins"
-        >
-          {isSaving ? 'Updating...' : <><Save size={20} /> Save Theme</>}
-        </button>
+        <div className="flex items-center gap-4">
+          {saved && <span className="text-sm font-bold text-emerald-500 font-poppins flex items-center gap-2"><Check size={16} /> Saved!</span>}
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins disabled:opacity-50"
+          >
+            {isSaving ? <><Loader2 size={20} className="animate-spin" /> Updating...</> : <><Save size={20} /> Save Theme</>}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -66,7 +104,7 @@ const InvoiceTheme: React.FC = () => {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                {TEMPLATES.map(t => (
-                 <button 
+                 <button
                   key={t.id}
                   onClick={() => setTheme({...theme, templateId: t.id as any})}
                   className={`p-5 rounded-[2rem] border-2 text-left transition-all relative ${theme.templateId === t.id ? 'bg-indigo-50 border-profee-blue' : 'bg-white border-slate-50 hover:border-slate-100'}`}
@@ -85,12 +123,12 @@ const InvoiceTheme: React.FC = () => {
             <h3 className="text-xl font-bold font-poppins flex items-center gap-3">
               <Palette className="text-profee-blue" size={22} /> Color & Typography
             </h3>
-            
+
             <div className="space-y-6">
               <div className="grid grid-cols-6 gap-3">
                  {COLORS.map(c => (
-                   <button 
-                      key={c.value} 
+                   <button
+                      key={c.value}
                       onClick={() => setTheme({...theme, primaryColor: c.value})}
                       className={`h-12 rounded-xl transition-all ${theme.primaryColor === c.value ? 'ring-4 ring-indigo-100 scale-105 shadow-md' : 'hover:scale-105'}`}
                       style={{ backgroundColor: c.value }}
@@ -100,8 +138,8 @@ const InvoiceTheme: React.FC = () => {
 
               <div className="grid grid-cols-3 gap-4">
                  {FONTS.map(f => (
-                   <button 
-                      key={f.value} 
+                   <button
+                      key={f.value}
                       onClick={() => setTheme({...theme, fontFamily: f.value})}
                       className={`p-4 rounded-xl border flex items-center justify-center transition-all ${theme.fontFamily === f.value ? 'bg-indigo-50 border-profee-blue' : 'bg-slate-50 border-transparent hover:border-slate-200'}`}
                    >
@@ -119,7 +157,7 @@ const InvoiceTheme: React.FC = () => {
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Invoice Prefix</label>
-                <input 
+                <input
                   className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700"
                   value={theme.invoicePrefix}
                   onChange={e => setTheme({...theme, invoicePrefix: e.target.value})}
@@ -127,7 +165,7 @@ const InvoiceTheme: React.FC = () => {
               </div>
               <div className="bg-slate-50 p-6 rounded-2xl flex items-center justify-between">
                  <span className="text-sm font-bold text-slate-800">Auto Numbering</span>
-                 <button 
+                 <button
                     onClick={() => setTheme({...theme, autoNumbering: !theme.autoNumbering})}
                     className={`w-12 h-6 rounded-full relative transition-colors ${theme.autoNumbering ? 'bg-profee-blue' : 'bg-slate-300'}`}
                  >
