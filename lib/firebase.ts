@@ -21,7 +21,7 @@ import { getStorage } from 'firebase/storage';
 // so this keeps the auth popup on the same origin and avoids unauthorized-domain errors.
 // Set VITE_FIREBASE_AUTH_DOMAIN to override (e.g. for local development).
 const authDomain =
-  import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || window.location.hostname;
+  import.meta.env.VITE_FIREBASE_AUTH_DOMAIN?.trim() || window.location.hostname;
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
