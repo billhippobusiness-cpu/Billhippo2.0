@@ -16,17 +16,18 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// Use the current hostname as authDomain when hosted on Firebase Hosting with a
-// custom domain. Firebase Hosting serves /__/auth/handler on all connected domains,
-// so this keeps the auth popup on the same origin and avoids unauthorized-domain errors.
+// Use the standard Firebase authDomain (<projectId>.firebaseapp.com) by default.
+// This domain is already registered as an authorized redirect URI in Google Cloud
+// Console, so Google sign-in works out of the box without extra configuration.
 // Set VITE_FIREBASE_AUTH_DOMAIN to override (e.g. for local development).
+const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || '';
 const authDomain =
-  import.meta.env.VITE_FIREBASE_AUTH_DOMAIN?.trim() || window.location.hostname;
+  import.meta.env.VITE_FIREBASE_AUTH_DOMAIN?.trim() || `${projectId}.firebaseapp.com`;
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
   authDomain,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  projectId,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
