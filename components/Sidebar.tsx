@@ -36,12 +36,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
       ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       bg-white border-r border-slate-100 flex flex-col
     `}>
-      <div className="p-8 flex items-center gap-3">
-        <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-10 h-10 rounded-xl object-contain" />
-        <div>
-          <h1 className="text-2xl font-bold font-poppins tracking-tight text-slate-800 leading-none">BillHippo</h1>
-          <p className="text-xs text-slate-400 font-medium uppercase tracking-widest mt-1 font-poppins">Smart Business OS</p>
-        </div>
+      <div className="px-6 pt-6 pb-4">
+        <img src={BILLHIPPO_LOGO} alt="BillHippo" className="h-14 w-auto object-contain" />
       </div>
 
       <nav className="flex-1 px-4 mt-8 space-y-2">
