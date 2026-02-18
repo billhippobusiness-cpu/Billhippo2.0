@@ -1,28 +1,19 @@
 /**
- * PDFPreviewModal
- * ───────────────
- * A full-screen modal that:
- *  1. Renders a live PDF preview inside an <iframe> using @react-pdf/renderer's PDFViewer.
- *  2. Provides a one-click download button via PDFDownloadLink.
- *  3. Is completely generic — pass any @react-pdf/renderer <Document> as `document`.
- *
- * Usage:
- *   <PDFPreviewModal
- *     open={showPDF}
- *     onClose={() => setShowPDF(false)}
- *     document={<InvoicePDF invoice={inv} business={biz} customer={cust} />}
- *     fileName="invoice-001.pdf"
- *   />
+ * PDFPreviewModal — fixed for React 19 + @react-pdf/renderer v4
+ * ──────────────────────────────────────────────────────────────
+ * Uses the `usePDF` hook to generate a blob URL, then feeds it
+ * into a plain <iframe>.  This avoids the PDFViewer crash on React 19
+ * and the cross-origin restrictions that cause a blank screen.
+ * Download is a simple <a download> tag — no PDFDownloadLink needed.
  */
 
-import React, { Suspense, useState } from 'react';
-import { PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
-import { X, Download, Loader2, FileText } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { usePDF } from '@react-pdf/renderer';
+import { X, Download, Loader2, FileText, AlertCircle } from 'lucide-react';
 
 interface PDFPreviewModalProps {
   open: boolean;
   onClose: () => void;
-  /** A pre-instantiated @react-pdf/renderer <Document> element */
   document: React.ReactElement;
   fileName: string;
 }
@@ -33,101 +24,144 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
   document: pdfDocument,
   fileName,
 }) => {
-  const [viewerReady, setViewerReady] = useState(false);
+  // usePDF renders the document into a blob URL in the background
+  const [instance, updateInstance] = usePDF({ document: pdfDocument });
+
+  // Re-render if the document prop changes
+  const prevDocRef = useRef(pdfDocument);
+  useEffect(() => {
+    if (prevDocRef.current !== pdfDocument) {
+      prevDocRef.current = pdfDocument;
+      updateInstance(pdfDocument);
+    }
+  }, [pdfDocument, updateInstance]);
 
   if (!open) return null;
 
   return (
-    /* Backdrop */
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}
       role="dialog"
       aria-modal="true"
-      aria-label="PDF Preview"
     >
-      {/* ── Toolbar ── */}
-      <div className="flex items-center justify-between px-6 py-3 bg-slate-900 border-b border-slate-700 shrink-0">
-        {/* Left – file name */}
+      {/* ── Top toolbar ── */}
+      <div
+        className="flex items-center justify-between px-6 py-3 shrink-0"
+        style={{ backgroundColor: '#0f172a', borderBottom: '1px solid #334155' }}
+      >
+        {/* Left: file info */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-profee-blue/20 flex items-center justify-center">
-            <FileText size={16} className="text-profee-blue" />
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(76,45,224,0.2)' }}>
+            <FileText size={16} style={{ color: '#4c2de0' }} />
           </div>
           <div>
-            <p className="text-white font-bold text-sm font-poppins truncate max-w-xs">{fileName}</p>
-            <p className="text-slate-400 text-[10px] font-medium">A4 · PDF · Vector text</p>
+            <p className="font-bold text-sm font-poppins truncate max-w-xs" style={{ color: '#f1f5f9' }}>
+              {fileName}
+            </p>
+            <p className="text-[10px] font-medium" style={{ color: '#64748b' }}>
+              A4 · PDF · Vector text
+            </p>
           </div>
         </div>
 
-        {/* Right – actions */}
+        {/* Right: download + close */}
         <div className="flex items-center gap-3">
-          {/* Download button */}
-          <PDFDownloadLink document={pdfDocument} fileName={fileName}>
-            {({ loading, error }) => (
-              <button
-                disabled={loading}
-                className="flex items-center gap-2 bg-profee-blue hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-sm px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/30 font-poppins"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" />
-                    Preparing…
-                  </>
-                ) : error ? (
-                  <>
-                    <X size={15} />
-                    Error
-                  </>
-                ) : (
-                  <>
-                    <Download size={15} />
-                    Download PDF
-                  </>
-                )}
-              </button>
-            )}
-          </PDFDownloadLink>
+          {instance.loading ? (
+            <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm font-poppins" style={{ backgroundColor: '#1e293b', color: '#94a3b8' }}>
+              <Loader2 size={15} className="animate-spin" />
+              Building PDF…
+            </div>
+          ) : instance.error ? (
+            <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm" style={{ backgroundColor: '#fef2f2', color: '#dc2626' }}>
+              <AlertCircle size={15} />
+              Render error
+            </div>
+          ) : (
+            <a
+              href={instance.url ?? '#'}
+              download={fileName}
+              className="flex items-center gap-2 font-bold text-sm px-5 py-2.5 rounded-xl transition-all font-poppins"
+              style={{ backgroundColor: '#4c2de0', color: '#ffffff', textDecoration: 'none' }}
+            >
+              <Download size={15} />
+              Download PDF
+            </a>
+          )}
 
-          {/* Close */}
           <button
             onClick={onClose}
-            className="p-2 rounded-xl hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
-            aria-label="Close preview"
+            className="p-2 rounded-xl transition-all"
+            style={{ color: '#94a3b8' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#334155'; (e.currentTarget as HTMLButtonElement).style.color = '#f1f5f9'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#94a3b8'; }}
+            aria-label="Close"
           >
             <X size={20} />
           </button>
         </div>
       </div>
 
-      {/* ── PDF Viewer ── */}
-      <div className="flex-1 relative overflow-hidden bg-slate-700">
+      {/* ── Preview area ── */}
+      <div className="flex-1 relative" style={{ backgroundColor: '#475569', overflow: 'hidden' }}>
+
         {/* Loading overlay */}
-        {!viewerReady && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10 bg-slate-700">
-            <Loader2 size={36} className="animate-spin text-profee-blue" />
-            <p className="text-slate-300 font-semibold text-sm font-poppins">Rendering PDF…</p>
-            <p className="text-slate-500 text-xs">Embedding fonts & building layout</p>
+        {instance.loading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4" style={{ backgroundColor: '#475569', zIndex: 10 }}>
+            <Loader2 size={40} className="animate-spin" style={{ color: '#4c2de0' }} />
+            <p className="font-semibold text-sm font-poppins" style={{ color: '#e2e8f0' }}>
+              Rendering PDF…
+            </p>
+            <p className="text-xs" style={{ color: '#94a3b8' }}>
+              Building layout · embedding fonts
+            </p>
           </div>
         )}
 
-        <Suspense fallback={null}>
-          <PDFViewer
-            width="100%"
-            height="100%"
-            showToolbar={false}           // hide browser's default toolbar (we have ours)
-            style={{ border: 'none' }}
-            onLoad={() => setViewerReady(true)}
-          >
-            {pdfDocument}
-          </PDFViewer>
-        </Suspense>
+        {/* Error state */}
+        {instance.error && !instance.loading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4" style={{ backgroundColor: '#475569' }}>
+            <AlertCircle size={40} style={{ color: '#ef4444' }} />
+            <p className="font-bold text-sm font-poppins" style={{ color: '#fca5a5' }}>
+              Failed to render PDF
+            </p>
+            <p className="text-xs text-center max-w-xs" style={{ color: '#94a3b8' }}>
+              {String(instance.error)}
+            </p>
+            <button
+              onClick={() => updateInstance(pdfDocument)}
+              className="mt-2 px-6 py-2 rounded-xl font-bold text-sm font-poppins"
+              style={{ backgroundColor: '#4c2de0', color: '#fff' }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Actual PDF in iframe — only rendered once blob URL is ready */}
+        {!instance.loading && !instance.error && instance.url && (
+          <iframe
+            src={instance.url}
+            title="PDF Preview"
+            style={{
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              display: 'block',
+            }}
+          />
+        )}
       </div>
 
-      {/* ── Bottom hint bar ── */}
-      <div className="shrink-0 bg-slate-900 border-t border-slate-700 px-6 py-2 flex items-center justify-between">
-        <p className="text-slate-500 text-[10px] font-medium font-poppins">
-          Scroll inside the preview to check all pages · Click <strong className="text-slate-300">Download PDF</strong> to save
+      {/* ── Bottom hint ── */}
+      <div
+        className="shrink-0 flex items-center justify-between px-6 py-2"
+        style={{ backgroundColor: '#0f172a', borderTop: '1px solid #334155' }}
+      >
+        <p className="text-[10px] font-medium font-poppins" style={{ color: '#475569' }}>
+          Scroll inside the preview · click <strong style={{ color: '#94a3b8' }}>Download PDF</strong> to save
         </p>
-        <p className="text-slate-600 text-[10px] font-medium font-poppins">
+        <p className="text-[10px] font-medium font-poppins" style={{ color: '#334155' }}>
           Powered by BillHippo
         </p>
       </div>

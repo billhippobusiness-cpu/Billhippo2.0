@@ -1,3 +1,13 @@
+/**
+ * LedgerPDF — A4 account statement for @react-pdf/renderer
+ *
+ * Fixes applied:
+ *  - No Font.register() — uses built-in Helvetica (no network fetch = no blank render)
+ *  - No <Image> logo — uses text brand mark (avoids Firebase CORS errors)
+ *  - wrap={false} on every row — no row split across pages
+ *  - Table header uses `fixed` prop — repeats on every page
+ */
+
 import React from 'react';
 import {
   Document,
@@ -5,86 +15,68 @@ import {
   Text,
   View,
   StyleSheet,
-  Image,
-  Font,
 } from '@react-pdf/renderer';
 import { Customer, LedgerEntry } from '../../types';
 
-// Register Inter (same family as InvoicePDF — cached by browser)
-Font.register({
-  family: 'Inter',
-  fonts: [
-    { src: 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff', fontWeight: 400 },
-    { src: 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuI6fAZ9hiJ-Ek-_EeA.woff', fontWeight: 600 },
-    { src: 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuFuYAZ9hiJ-Ek-_EeA.woff', fontWeight: 700 },
-  ],
-});
+// ─── Palette ──────────────────────────────────────────────────────────────────
+const BLUE  = '#4c2de0';
+const DARK  = '#1e293b';
+const MID   = '#475569';
+const LIGHT = '#94a3b8';
+const BORDER= '#e2e8f0';
+const ALT   = '#f8fafc';
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = StyleSheet.create({
   page: {
-    fontFamily: 'Inter',
+    fontFamily: 'Helvetica',
     fontSize: 9,
     backgroundColor: '#FFFFFF',
     paddingTop: 36,
     paddingBottom: 52,
     paddingHorizontal: 36,
-    color: '#1e293b',
+    color: DARK,
   },
 
-  // Fixed header — repeats on every page
-  fixedHeader: {
-    marginBottom: 16,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-  },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { width: 32, height: 32, borderRadius: 6, objectFit: 'contain' },
-  brandName: { fontSize: 13, fontWeight: 700, color: '#4c2de0', letterSpacing: 0.8 },
-  brandSub: { fontSize: 7, color: '#94a3b8', marginTop: 1 },
-  docTitle: { fontSize: 18, fontWeight: 700, color: '#1e293b', textAlign: 'right' },
-  docSubtitle: { fontSize: 8, color: '#64748b', textAlign: 'right', marginTop: 2 },
-  dividerBlue: { height: 2, backgroundColor: '#4c2de0', borderRadius: 2, marginBottom: 14 },
+  // ── Fixed header ──
+  fixedHeader:  { marginBottom: 16 },
+  headerRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  brandBox:     { backgroundColor: BLUE, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5 },
+  brandText:    { fontSize: 12, fontFamily: 'Helvetica-Bold', color: '#FFFFFF', letterSpacing: 1 },
+  brandSub:     { fontSize: 6.5, color: LIGHT, marginTop: 2 },
+  docTitle:     { fontSize: 18, fontFamily: 'Helvetica-Bold', color: DARK, textAlign: 'right' },
+  docSubtitle:  { fontSize: 8, color: MID, textAlign: 'right', marginTop: 2 },
+  dividerBlue:  { height: 2, backgroundColor: BLUE, borderRadius: 2, marginBottom: 14 },
 
-  // Info strip (business + customer)
+  // ── Info strip ──
   infoStrip: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#f8fafc',
+    backgroundColor: ALT,
     borderRadius: 6,
-    padding: 12,
-    marginBottom: 16,
+    padding: 10,
+    marginBottom: 14,
     borderWidth: 0.5,
-    borderColor: '#e2e8f0',
+    borderColor: BORDER,
     borderStyle: 'solid',
   },
-  infoLabel: { fontSize: 7, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.9, marginBottom: 3 },
-  infoValue: { fontSize: 9, fontWeight: 600, color: '#1e293b' },
-  infoValueSm: { fontSize: 7.5, color: '#64748b', lineHeight: 1.5 },
+  infoLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.9, marginBottom: 3 },
+  infoValue: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
+  infoSm:    { fontSize: 7.5, color: MID, lineHeight: 1.5 },
+  infoBlue:  { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: BLUE },
 
-  // Table
-  table: { marginBottom: 16 },
-
-  // Sticky/fixed table header
+  // ── Table header (fixed) ──
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#4c2de0',
+    backgroundColor: BLUE,
     paddingVertical: 7,
     paddingHorizontal: 8,
     borderRadius: 3,
+    marginBottom: 0,
   },
-  tableHeaderText: {
-    fontSize: 7,
-    fontWeight: 700,
-    color: '#FFFFFF',
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
-  },
+  tableHeaderText: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#FFFFFF', textTransform: 'uppercase' },
 
+  // ── Table rows ──
   tableRow: {
     flexDirection: 'row',
     paddingVertical: 7,
@@ -93,134 +85,97 @@ const S = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
     borderBottomStyle: 'solid',
   },
-  tableRowAlt: { backgroundColor: '#f8fafc' },
-  tableCell: { fontSize: 8, color: '#334155' },
-  tableCellDebit: { fontSize: 8, fontWeight: 600, color: '#dc2626' },
-  tableCellCredit: { fontSize: 8, fontWeight: 600, color: '#16a34a' },
-  tableCellBalance: { fontSize: 8, fontWeight: 700, color: '#1e293b' },
-  tableCellDr: { fontSize: 6.5, color: '#94a3b8', marginLeft: 2 },
+  tableRowAlt:    { backgroundColor: ALT },
+  tableCell:      { fontSize: 8, color: MID },
+  cellDebit:      { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#dc2626' },
+  cellCredit:     { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#16a34a' },
+  cellBalance:    { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
+  cellDrCr:       { fontSize: 6.5, color: LIGHT, marginLeft: 2 },
 
   // Column widths
-  colDate:    { width: '14%' },
-  colDesc:    { width: '38%' },
-  colDebit:   { width: '16%', textAlign: 'right' },
-  colCredit:  { width: '16%', textAlign: 'right' },
-  colBalance: { width: '16%', textAlign: 'right' },
+  cDate:    { width: '14%' },
+  cDesc:    { width: '38%' },
+  cDebit:   { width: '16%', textAlign: 'right' },
+  cCredit:  { width: '16%', textAlign: 'right' },
+  cBalance: { width: '16%', textAlign: 'right' },
 
-  // Summary cards
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 18,
-    marginTop: 8,
-  },
-  summaryCard: {
-    flex: 1,
-    borderRadius: 6,
-    padding: 12,
-    borderWidth: 0.5,
-    borderStyle: 'solid',
-  },
-  summaryCardDebit:   { backgroundColor: '#fff1f2', borderColor: '#fecdd3' },
-  summaryCardCredit:  { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
-  summaryCardBalance: { backgroundColor: '#1e293b', borderColor: '#1e293b' },
-  summaryLabel: { fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 },
-  summaryLabelDebit:   { color: '#ef4444' },
-  summaryLabelCredit:  { color: '#22c55e' },
-  summaryLabelBalance: { color: '#94a3b8' },
-  summaryAmount: { fontSize: 13, fontWeight: 700 },
-  summaryAmountDebit:   { color: '#dc2626' },
-  summaryAmountCredit:  { color: '#16a34a' },
-  summaryAmountBalance: { color: '#FFFFFF' },
-  summaryDrCr: { fontSize: 7, color: '#94a3b8', marginLeft: 2 },
+  // ── Summary cards ──
+  summaryRow: { flexDirection: 'row', gap: 10, marginTop: 10, marginBottom: 16 },
+  summaryCard: { flex: 1, borderRadius: 5, padding: 10, borderWidth: 0.5, borderStyle: 'solid' },
+  cardDebit:   { backgroundColor: '#fff1f2', borderColor: '#fecdd3' },
+  cardCredit:  { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
+  cardBalance: { backgroundColor: DARK,     borderColor: DARK },
+  cardLabel:   { fontSize: 7, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 },
+  labelDebit:  { color: '#ef4444' },
+  labelCredit: { color: '#22c55e' },
+  labelBalance:{ color: LIGHT },
+  cardAmt:     { fontSize: 13, fontFamily: 'Helvetica-Bold' },
+  amtDebit:    { color: '#dc2626' },
+  amtCredit:   { color: '#16a34a' },
+  amtBalance:  { color: '#FFFFFF' },
+  drCrTag:     { fontSize: 7, color: LIGHT, marginLeft: 2 },
 
-  // Signature
-  signBlock: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 },
-  signBox: { alignItems: 'center', width: 140 },
-  signLine: { height: 0.5, backgroundColor: '#94a3b8', width: '100%', marginBottom: 4 },
-  signLabel: { fontSize: 7, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.7 },
+  // ── Signature ──
+  signRow:   { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 },
+  signBox:   { alignItems: 'center', width: 130 },
+  signLine:  { height: 0.5, backgroundColor: LIGHT, width: '100%', marginBottom: 3 },
+  signLabel: { fontSize: 7, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
+  signBlue:  { fontSize: 7, color: BLUE, marginTop: 2 },
 
-  // Page footer
+  // ── Page footer (fixed) ──
   pageFooter: {
-    position: 'absolute',
-    bottom: 18,
-    left: 36,
-    right: 36,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    position: 'absolute', bottom: 18, left: 36, right: 36,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   pageFooterText: { fontSize: 7, color: '#cbd5e1' },
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n: number) =>
-  `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `Rs.${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+interface EntryWithBalance extends LedgerEntry { runningBalance: number; }
+
+function computeRunning(entries: LedgerEntry[]): EntryWithBalance[] {
+  let bal = 0;
+  return entries.map(e => {
+    bal += e.type === 'Debit' ? e.amount : -e.amount;
+    return { ...e, runningBalance: bal };
+  });
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LedgerPDFProps {
-  customer: Customer;
-  entries: LedgerEntry[];
+  customer:     Customer;
+  entries:      LedgerEntry[];
   businessName: string;
-  businessInfo: {
-    gstin: string;
-    address: string;
-    email: string;
-    phone: string;
-  };
+  businessInfo: { gstin: string; address: string; email: string; phone: string };
   statementDate?: string;
-}
-
-// ─── Running balance computation ──────────────────────────────────────────────
-interface EntryWithBalance extends LedgerEntry {
-  runningBalance: number;
-}
-
-function computeRunningBalance(entries: LedgerEntry[]): EntryWithBalance[] {
-  let balance = 0;
-  return entries.map(e => {
-    balance += e.type === 'Debit' ? e.amount : -e.amount;
-    return { ...e, runningBalance: balance };
-  });
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const LedgerPDF: React.FC<LedgerPDFProps> = ({
-  customer,
-  entries,
-  businessName,
-  businessInfo,
-  statementDate,
+  customer, entries, businessName, businessInfo, statementDate,
 }) => {
-  const runningEntries = computeRunningBalance(entries);
-  const totalDebit  = entries.filter(e => e.type === 'Debit').reduce((s, e) => s + e.amount, 0);
-  const totalCredit = entries.filter(e => e.type === 'Credit').reduce((s, e) => s + e.amount, 0);
-  const closing     = totalDebit - totalCredit;
-  const today       = statementDate ?? new Date().toLocaleDateString('en-IN');
+  const today   = statementDate ?? new Date().toLocaleDateString('en-IN');
+  const running = computeRunning(entries);
+  const totalDr = entries.filter(e => e.type === 'Debit').reduce((s, e) => s + e.amount, 0);
+  const totalCr = entries.filter(e => e.type === 'Credit').reduce((s, e) => s + e.amount, 0);
+  const closing = totalDr - totalCr;
 
   return (
-    <Document
-      title={`Ledger Statement – ${customer.name}`}
-      author={businessName}
-      creator="BillHippo"
-    >
+    <Document title={`Statement – ${customer.name}`} author={businessName} creator="BillHippo">
       <Page size="A4" style={S.page} wrap>
 
-        {/* ── Fixed Header — repeats on every page ── */}
+        {/* ── Fixed header ── */}
         <View fixed style={S.fixedHeader}>
           <View style={S.headerRow}>
-            {/* Brand */}
-            <View style={S.brandRow}>
-              <Image
-                style={S.logo}
-                src="https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c"
-              />
-              <View>
-                <Text style={S.brandName}>BillHippo</Text>
-                <Text style={S.brandSub}>Smart Billing for India</Text>
+            <View>
+              <View style={S.brandBox}>
+                <Text style={S.brandText}>BillHippo</Text>
               </View>
+              <Text style={S.brandSub}>Smart Billing for India</Text>
             </View>
-            {/* Title */}
             <View>
               <Text style={S.docTitle}>ACCOUNT STATEMENT</Text>
               <Text style={S.docSubtitle}>As of {today}</Text>
@@ -229,103 +184,89 @@ const LedgerPDF: React.FC<LedgerPDFProps> = ({
           <View style={S.dividerBlue} />
         </View>
 
-        {/* ── Business + Customer Info strip ── */}
+        {/* ── Info strip ── */}
         <View style={S.infoStrip}>
-          {/* Supplier */}
           <View>
             <Text style={S.infoLabel}>Supplier</Text>
             <Text style={S.infoValue}>{businessName}</Text>
-            <Text style={S.infoValueSm}>{businessInfo.address}</Text>
-            {businessInfo.gstin && (
-              <Text style={[S.infoValueSm, { color: '#4c2de0', fontWeight: 600 }]}>GSTIN: {businessInfo.gstin}</Text>
-            )}
-            {businessInfo.phone && <Text style={S.infoValueSm}>Ph: {businessInfo.phone}</Text>}
+            <Text style={S.infoSm}>{businessInfo.address}</Text>
+            {businessInfo.gstin ? <Text style={S.infoBlue}>GSTIN: {businessInfo.gstin}</Text> : null}
+            {businessInfo.phone ? <Text style={S.infoSm}>Ph: {businessInfo.phone}</Text> : null}
           </View>
-
-          {/* Customer */}
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={S.infoLabel}>Customer Account</Text>
+            <Text style={S.infoLabel}>Customer</Text>
             <Text style={[S.infoValue, { textAlign: 'right', fontSize: 11 }]}>{customer.name}</Text>
-            <Text style={[S.infoValueSm, { textAlign: 'right' }]}>{customer.address}, {customer.city}, {customer.state}</Text>
-            {customer.gstin && (
-              <Text style={[S.infoValueSm, { color: '#4c2de0', fontWeight: 600, textAlign: 'right' }]}>GSTIN: {customer.gstin}</Text>
-            )}
-            {customer.phone && <Text style={[S.infoValueSm, { textAlign: 'right' }]}>Ph: {customer.phone}</Text>}
-          </View>
-        </View>
-
-        {/* ── Table ── */}
-        <View style={S.table}>
-          {/* Table header — fixed so it repeats on every page */}
-          <View style={S.tableHeader} fixed>
-            <Text style={[S.tableHeaderText, S.colDate]}>Date</Text>
-            <Text style={[S.tableHeaderText, S.colDesc]}>Description</Text>
-            <Text style={[S.tableHeaderText, S.colDebit]}>Debit (Dr)</Text>
-            <Text style={[S.tableHeaderText, S.colCredit]}>Credit (Cr)</Text>
-            <Text style={[S.tableHeaderText, S.colBalance]}>Balance</Text>
-          </View>
-
-          {/* Rows — wrap={false} prevents a single row from splitting */}
-          {runningEntries.length === 0 ? (
-            <View style={[S.tableRow, { justifyContent: 'center', paddingVertical: 24 }]}>
-              <Text style={[S.tableCell, { color: '#94a3b8', textAlign: 'center', flex: 1 }]}>
-                No transactions found.
-              </Text>
-            </View>
-          ) : (
-            runningEntries.map((entry, idx) => {
-              const drCr = entry.runningBalance >= 0 ? 'Dr' : 'Cr';
-              return (
-                <View
-                  key={entry.id}
-                  style={[S.tableRow, idx % 2 === 1 ? S.tableRowAlt : {}]}
-                  wrap={false}
-                >
-                  <Text style={[S.tableCell, S.colDate]}>{entry.date}</Text>
-                  <Text style={[S.tableCell, S.colDesc]}>{entry.description}</Text>
-                  <Text style={[S.tableCellDebit, S.colDebit]}>
-                    {entry.type === 'Debit' ? fmt(entry.amount) : '—'}
-                  </Text>
-                  <Text style={[S.tableCellCredit, S.colCredit]}>
-                    {entry.type === 'Credit' ? fmt(entry.amount) : '—'}
-                  </Text>
-                  <View style={[S.colBalance, { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }]}>
-                    <Text style={S.tableCellBalance}>
-                      {fmt(Math.abs(entry.runningBalance))}
-                    </Text>
-                    <Text style={S.tableCellDr}>{drCr}</Text>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
-
-        {/* ── Summary Cards ── */}
-        <View style={S.summaryRow} wrap={false}>
-          <View style={[S.summaryCard, S.summaryCardDebit]}>
-            <Text style={[S.summaryLabel, S.summaryLabelDebit]}>Total Sales (Dr)</Text>
-            <Text style={[S.summaryAmount, S.summaryAmountDebit]}>{fmt(totalDebit)}</Text>
-          </View>
-          <View style={[S.summaryCard, S.summaryCardCredit]}>
-            <Text style={[S.summaryLabel, S.summaryLabelCredit]}>Collections (Cr)</Text>
-            <Text style={[S.summaryAmount, S.summaryAmountCredit]}>{fmt(totalCredit)}</Text>
-          </View>
-          <View style={[S.summaryCard, S.summaryCardBalance]}>
-            <Text style={[S.summaryLabel, S.summaryLabelBalance]}>
-              Closing Balance
+            <Text style={[S.infoSm, { textAlign: 'right' }]}>
+              {customer.address}, {customer.city}, {customer.state}
             </Text>
+            {customer.gstin ? <Text style={[S.infoBlue, { textAlign: 'right' }]}>GSTIN: {customer.gstin}</Text> : null}
+            {customer.phone ? <Text style={[S.infoSm, { textAlign: 'right' }]}>Ph: {customer.phone}</Text> : null}
+          </View>
+        </View>
+
+        {/* ── Table header (fixed — repeats on every page) ── */}
+        <View style={S.tableHeader} fixed>
+          <Text style={[S.tableHeaderText, S.cDate]}>Date</Text>
+          <Text style={[S.tableHeaderText, S.cDesc]}>Description</Text>
+          <Text style={[S.tableHeaderText, S.cDebit]}>Debit (Dr)</Text>
+          <Text style={[S.tableHeaderText, S.cCredit]}>Credit (Cr)</Text>
+          <Text style={[S.tableHeaderText, S.cBalance]}>Balance</Text>
+        </View>
+
+        {/* ── Rows (wrap=false — no mid-row page break) ── */}
+        {running.length === 0 ? (
+          <View style={[S.tableRow, { justifyContent: 'center', paddingVertical: 20 }]}>
+            <Text style={[S.tableCell, { textAlign: 'center', flex: 1, color: LIGHT }]}>
+              No transactions found.
+            </Text>
+          </View>
+        ) : (
+          running.map((entry, idx) => {
+            const drCr = entry.runningBalance >= 0 ? 'Dr' : 'Cr';
+            return (
+              <View
+                key={entry.id}
+                style={[S.tableRow, idx % 2 === 1 ? S.tableRowAlt : {}]}
+                wrap={false}
+              >
+                <Text style={[S.tableCell, S.cDate]}>{entry.date}</Text>
+                <Text style={[S.tableCell, S.cDesc]}>{entry.description}</Text>
+                <Text style={[S.cellDebit, S.cDebit]}>
+                  {entry.type === 'Debit' ? fmt(entry.amount) : '—'}
+                </Text>
+                <Text style={[S.cellCredit, S.cCredit]}>
+                  {entry.type === 'Credit' ? fmt(entry.amount) : '—'}
+                </Text>
+                <View style={[S.cBalance, { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }]}>
+                  <Text style={S.cellBalance}>{fmt(Math.abs(entry.runningBalance))}</Text>
+                  <Text style={S.cellDrCr}>{drCr}</Text>
+                </View>
+              </View>
+            );
+          })
+        )}
+
+        {/* ── Summary cards ── */}
+        <View style={S.summaryRow} wrap={false}>
+          <View style={[S.summaryCard, S.cardDebit]}>
+            <Text style={[S.cardLabel, S.labelDebit]}>Total Sales (Dr)</Text>
+            <Text style={[S.cardAmt, S.amtDebit]}>{fmt(totalDr)}</Text>
+          </View>
+          <View style={[S.summaryCard, S.cardCredit]}>
+            <Text style={[S.cardLabel, S.labelCredit]}>Collections (Cr)</Text>
+            <Text style={[S.cardAmt, S.amtCredit]}>{fmt(totalCr)}</Text>
+          </View>
+          <View style={[S.summaryCard, S.cardBalance]}>
+            <Text style={[S.cardLabel, S.labelBalance]}>Closing Balance</Text>
             <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-              <Text style={[S.summaryAmount, S.summaryAmountBalance]}>
-                {fmt(Math.abs(closing))}
-              </Text>
-              <Text style={S.summaryDrCr}>{closing >= 0 ? 'Dr' : 'Cr'}</Text>
+              <Text style={[S.cardAmt, S.amtBalance]}>{fmt(Math.abs(closing))}</Text>
+              <Text style={S.drCrTag}>{closing >= 0 ? 'Dr' : 'Cr'}</Text>
             </View>
           </View>
         </View>
 
-        {/* ── Signature block ── */}
-        <View style={S.signBlock} wrap={false}>
+        {/* ── Signature ── */}
+        <View style={S.signRow} wrap={false}>
           <View style={S.signBox}>
             <View style={S.signLine} />
             <Text style={S.signLabel}>Customer Signature</Text>
@@ -333,18 +274,19 @@ const LedgerPDF: React.FC<LedgerPDFProps> = ({
           <View style={S.signBox}>
             <View style={S.signLine} />
             <Text style={S.signLabel}>Authorised Signatory</Text>
-            <Text style={[S.signLabel, { color: '#4c2de0', marginTop: 2 }]}>{businessName}</Text>
+            <Text style={S.signBlue}>{businessName}</Text>
           </View>
         </View>
 
-        {/* ── Fixed Page Footer ── */}
+        {/* ── Fixed page footer ── */}
         <View style={S.pageFooter} fixed>
-          <Text style={S.pageFooterText}>Generated by BillHippo | {today}</Text>
+          <Text style={S.pageFooterText}>Generated by BillHippo  |  {today}</Text>
           <Text
             style={S.pageFooterText}
             render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
           />
         </View>
+
       </Page>
     </Document>
   );
