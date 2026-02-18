@@ -1,8 +1,10 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile } from '../types';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, addLedgerEntry, updateCustomer } from '../lib/firestore';
+import PDFPreviewModal from './pdf/PDFPreviewModal';
+import InvoicePDF from './pdf/InvoicePDF';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -41,6 +43,11 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // PDF Modal state
+  const [pdfModal, setPdfModal] = useState<{ open: boolean; invoice: Invoice | null; customer: Customer | null }>({
+    open: false, invoice: null, customer: null,
+  });
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -111,6 +118,30 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     } catch (err: any) {
       setError('Failed to save invoice. Please try again.');
     } finally { setSaving(false); }
+  };
+
+  // Build a temporary Invoice object from current form state (used for PDF before or after save)
+  const buildCurrentInvoice = (): Invoice => {
+    const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
+    const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
+    const igst = gstType === GSTType.IGST ? taxAmount : 0;
+    return {
+      id: 'preview',
+      invoiceNumber,
+      date: invoiceDate,
+      customerId: selectedCustomerId,
+      customerName: selectedCustomer?.name || '',
+      items,
+      gstType,
+      totalBeforeTax: subTotal,
+      cgst, sgst, igst,
+      totalAmount: grandTotal,
+      status: 'Unpaid',
+    };
+  };
+
+  const openPDFModal = (invoice: Invoice, customer: Customer | null) => {
+    setPdfModal({ open: true, invoice, customer });
   };
 
   const handleNewInvoice = () => {
@@ -354,11 +385,37 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
                         'bg-rose-100 text-rose-600'
                       }`}>{inv.status}</span>
                     </div>
+                    <button
+                      onClick={() => {
+                        const cust = customers.find(c => c.id === inv.customerId) || null;
+                        openPDFModal(inv, cust);
+                      }}
+                      title="Download PDF"
+                      className="p-3 rounded-2xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
+                    >
+                      <Download size={18} />
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           </div>
+        )}
+
+        {/* PDF Preview Modal (list view) */}
+        {pdfModal.open && pdfModal.invoice && (
+          <PDFPreviewModal
+            open={pdfModal.open}
+            onClose={() => setPdfModal({ open: false, invoice: null, customer: null })}
+            document={
+              <InvoicePDF
+                invoice={pdfModal.invoice}
+                business={profile}
+                customer={pdfModal.customer || { id: '', name: pdfModal.invoice.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
+              />
+            }
+            fileName={`Invoice-${pdfModal.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+          />
         )}
       </div>
     );
@@ -380,11 +437,33 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
              {saveSuccess && <div className="flex items-center gap-2 text-emerald-500 px-4"><CheckCircle size={18} /><span className="text-sm font-bold">Invoice Saved!</span></div>}
              <button onClick={handleNewInvoice} className="bg-white border border-slate-200 px-8 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Plus size={18} /> New Invoice</button>
              <button onClick={() => window.print()} className="bg-white border border-slate-200 px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Printer size={18} /> Print A4</button>
+             <button
+               onClick={() => openPDFModal(buildCurrentInvoice(), selectedCustomer || null)}
+               className="bg-profee-blue text-white px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+             >
+               <Download size={18} /> Download PDF
+             </button>
           </div>
         </div>
         <div className="flex justify-center bg-slate-100 p-12 min-h-screen rounded-[3rem] no-print"><div className="print-area">{invoiceTemplate}</div></div>
         <div className="hidden print:block">{invoiceTemplate}</div>
         <style>{`@media print { body * { visibility: hidden; } .print-area, .print-area * { visibility: visible; } .print-area { position: absolute; left: 0; top: 0; padding: 0 !important; width: 100%; box-shadow: none !important; background: white !important; } .no-print { display: none !important; } @page { size: A4; margin: 10mm; } }`}</style>
+
+        {/* PDF Preview Modal */}
+        {pdfModal.open && pdfModal.invoice && (
+          <PDFPreviewModal
+            open={pdfModal.open}
+            onClose={() => setPdfModal({ open: false, invoice: null, customer: null })}
+            document={
+              <InvoicePDF
+                invoice={pdfModal.invoice}
+                business={profile}
+                customer={pdfModal.customer || { id: '', name: pdfModal.invoice.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
+              />
+            }
+            fileName={`Invoice-${pdfModal.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+          />
+        )}
       </div>
     );
   }

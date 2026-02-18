@@ -16,6 +16,10 @@ export default defineConfig(({ mode }) => {
           '@': path.resolve(__dirname, '.'),
         }
       },
+      // @react-pdf/renderer ships CommonJS — let Vite pre-bundle it correctly
+      optimizeDeps: {
+        include: ['@react-pdf/renderer'],
+      },
       build: {
         outDir: 'dist',
         sourcemap: false,
@@ -24,6 +28,7 @@ export default defineConfig(({ mode }) => {
             manualChunks: {
               firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
               vendor: ['react', 'react-dom', 'recharts'],
+              pdf: ['@react-pdf/renderer'],
             }
           }
         }
