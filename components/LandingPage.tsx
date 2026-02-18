@@ -13,9 +13,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
     <div className="min-h-screen bg-white font-inter">
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 h-28 flex items-center justify-between">
           <div className="flex items-center">
-            <img src={BILLHIPPO_LOGO} alt="BillHippo" className="h-14 w-auto object-contain" />
+            <img src={BILLHIPPO_LOGO} alt="BillHippo" className="h-20 w-auto object-contain" />
           </div>
           <div className="hidden md:flex items-center gap-10">
             <a href="#" className="text-sm font-semibold text-slate-600 hover:text-profee-blue transition-colors">Features</a>
@@ -40,7 +40,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-40 pb-20 overflow-hidden">
+      <section className="pt-44 pb-20 overflow-hidden">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid lg:grid-cols-2 gap-20 items-center">
             <div className="space-y-8 animate-in slide-in-from-left duration-700">
