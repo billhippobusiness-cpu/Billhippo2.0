@@ -36,8 +36,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
       ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       bg-white border-r border-slate-100 flex flex-col
     `}>
-      <div className="px-6 pt-6 pb-4">
-        <img src={BILLHIPPO_LOGO} alt="BillHippo" className="h-14 w-auto object-contain" />
+      <div className="px-4 pt-5 pb-3">
+        <img src={BILLHIPPO_LOGO} alt="BillHippo" className="h-20 max-w-full w-auto object-contain" />
       </div>
 
       <nav className="flex-1 px-4 mt-8 space-y-2">
