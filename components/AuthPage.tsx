@@ -83,7 +83,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignUp, onGoogleLogin, e
       />
 
       {/* Subtle dot grid pattern */}
-      <div className="absolute inset-0 opacity-[0.4]"
+      <div className="absolute inset-0 opacity-[0.4] pointer-events-none"
         style={{
           backgroundImage: 'radial-gradient(circle, #4c2de0 0.5px, transparent 0.5px)',
           backgroundSize: '32px 32px'
@@ -112,7 +112,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignUp, onGoogleLogin, e
           <div className="relative group">
             {/* Card glow on hover – indigo tint */}
             <motion.div
-              className="absolute -inset-[1px] rounded-[2rem] opacity-0 group-hover:opacity-100"
+              className="absolute -inset-[1px] rounded-[2rem] opacity-0 group-hover:opacity-100 pointer-events-none"
               animate={{
                 boxShadow: [
                   '0 0 20px 4px rgba(76,45,224,0.06)',
@@ -125,7 +125,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignUp, onGoogleLogin, e
             />
 
             {/* Traveling light beams – indigo themed */}
-            <div className="absolute -inset-[1px] rounded-[2rem] overflow-hidden">
+            <div className="absolute -inset-[1px] rounded-[2rem] overflow-hidden pointer-events-none">
               {/* Top beam */}
               <motion.div
                 className="absolute top-0 left-0 h-[2px] w-[50%] bg-gradient-to-r from-transparent via-[#4c2de0]/60 to-transparent"
@@ -163,12 +163,12 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignUp, onGoogleLogin, e
             </div>
 
             {/* Card border glow */}
-            <div className="absolute -inset-[0.5px] rounded-[2rem] bg-gradient-to-r from-[#4c2de0]/10 via-[#4c2de0]/20 to-[#4c2de0]/10 opacity-0 group-hover:opacity-100" style={{ transition: 'opacity 0.5s' }} />
+            <div className="absolute -inset-[0.5px] rounded-[2rem] bg-gradient-to-r from-[#4c2de0]/10 via-[#4c2de0]/20 to-[#4c2de0]/10 opacity-0 group-hover:opacity-100 pointer-events-none" style={{ transition: 'opacity 0.5s' }} />
 
             {/* ═══ Glass Card – Light Theme ═══ */}
             <div className="relative bg-white/70 backdrop-blur-2xl rounded-[2rem] p-8 border border-slate-200/60 shadow-2xl shadow-indigo-100/40 overflow-hidden">
               {/* Subtle inner grid pattern */}
-              <div className="absolute inset-0 opacity-[0.02]"
+              <div className="absolute inset-0 opacity-[0.02] pointer-events-none"
                 style={{
                   backgroundImage: `linear-gradient(135deg, #4c2de0 0.5px, transparent 0.5px), linear-gradient(45deg, #4c2de0 0.5px, transparent 0.5px)`,
                   backgroundSize: '24px 24px'
