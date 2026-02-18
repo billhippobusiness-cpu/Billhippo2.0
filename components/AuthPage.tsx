@@ -181,10 +181,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignUp, onGoogleLogin, e
                   initial={{ scale: 0.5, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', duration: 0.8 }}
-                  className="mx-auto w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center relative overflow-hidden"
+                  className="mx-auto flex items-center justify-center relative"
                   style={{ transition: 'none' }}
                 >
-                  <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-10 h-10 object-contain" />
+                  <img src={BILLHIPPO_LOGO} alt="BillHippo" className="h-16 w-auto object-contain" />
                 </motion.div>
 
                 <motion.h1
