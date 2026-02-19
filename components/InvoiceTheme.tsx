@@ -196,7 +196,7 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                       </div>
                       {/* Right: Invoice title + meta */}
                       <div className="text-right space-y-1">
-                        <h2 className="text-3xl font-black tracking-tight leading-none" style={{ color: theme.primaryColor }}>Invoice</h2>
+                        <h2 className="text-4xl font-black tracking-tight leading-none font-montserrat" style={{ color: theme.primaryColor }}>Invoice</h2>
                         <div className="text-[7px] font-bold text-slate-400 space-y-0.5 uppercase tracking-tight">
                           <p># <span className="text-slate-900">{theme.invoicePrefix}004</span></p>
                           <p>Date <span className="text-slate-900">Feb 19, 2026</span></p>
@@ -262,7 +262,7 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                          <div className="flex justify-between text-[8px] font-bold text-slate-400"><span>Sub Total</span><span className="text-slate-700">₹40,000</span></div>
                          <div className="flex justify-between text-[7px] text-slate-400"><span>CGST</span><span>₹1,200</span></div>
                          <div className="flex justify-between text-[7px] text-slate-400"><span>SGST</span><span>₹1,280</span></div>
-                         <div className="flex justify-between text-[9px] font-black border-t-2 pt-1" style={{ color: theme.primaryColor, borderColor: theme.primaryColor }}><span>Total</span><span>₹42,480</span></div>
+                         <div className="flex justify-between text-[11px] font-black border-t-2 pt-1 font-montserrat" style={{ color: theme.primaryColor, borderColor: theme.primaryColor }}><span>Total</span><span>₹42,480</span></div>
                       </div>
                    </div>
                 </div>
@@ -272,7 +272,7 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                       <div className="w-12 h-12 bg-slate-50 rounded-lg flex items-center justify-center">
                          {theme.logoUrl ? <img src={theme.logoUrl} className="w-full h-full object-contain" /> : <ImageIcon size={16} className="text-slate-300" />}
                       </div>
-                      <h2 className="text-2xl font-black uppercase tracking-widest" style={{ color: theme.primaryColor }}>Invoice</h2>
+                      <h2 className="text-3xl font-black uppercase tracking-widest font-montserrat" style={{ color: theme.primaryColor }}>Invoice</h2>
                    </div>
                    <div className="flex justify-between text-[8px] font-bold text-slate-400 uppercase">
                       <span># {theme.invoicePrefix}001</span>

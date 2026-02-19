@@ -165,7 +165,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     <div className="bg-white p-12 min-h-[1100px] flex flex-col space-y-12 w-full max-w-[850px] mx-auto print:shadow-none print:p-4 border border-slate-50 shadow-2xl rounded-[2.5rem]">
       <div className="flex justify-between items-start">
         <div className="space-y-6">
-           <h1 className="text-6xl font-black tracking-tighter uppercase leading-none" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
+           <h1 className="text-7xl font-black tracking-tighter uppercase leading-none font-montserrat" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
            <div className="space-y-1 text-[11px] font-bold font-poppins text-slate-400 uppercase tracking-[0.2em]">
               <p>Invoice# <span className="text-slate-900 ml-4 font-black">{invoiceNumber}</span></p>
               <p>Invoice Date <span className="text-slate-900 ml-4 font-black">{invoiceDate}</span></p>
@@ -245,8 +245,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
                </>) : (<div className="flex justify-between text-xs font-medium text-slate-400"><span>IGST ({items[0]?.gstRate}%)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
             </div>
             <div className="pt-8 border-t-2 border-slate-100 flex justify-between items-center px-6">
-               <span className="text-3xl font-black uppercase tracking-tighter text-slate-900">Total</span>
-               <span className="text-5xl font-black text-slate-900 font-poppins tracking-tighter">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+               <span className="text-[38px] font-black uppercase tracking-tighter text-slate-900 font-montserrat">Total</span>
+               <span className="text-6xl font-black text-slate-900 font-montserrat tracking-tighter">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
             </div>
             <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 font-poppins space-y-2 shadow-sm">
                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Amount in Words</p>
@@ -275,7 +275,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
           </div>
           {/* Centre title */}
           <div className="text-center">
-            <h1 className="text-[40px] font-black tracking-tight leading-none" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
+            <h1 className="text-[52px] font-black tracking-tight leading-none font-montserrat" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
             <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.22em] mt-1">GST Compliant Tax Invoice</p>
           </div>
           {/* Right meta */}
@@ -446,8 +446,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
               </div>
             )}
             <div className="flex justify-between items-baseline pt-4 border-t-2" style={{ borderColor: profile.theme.primaryColor }}>
-              <span className="text-[18px] font-black tracking-tight" style={{ color: profile.theme.primaryColor }}>Total</span>
-              <span className="text-[28px] font-black tracking-tighter" style={{ color: profile.theme.primaryColor }}>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              <span className="text-[22px] font-black tracking-tight font-montserrat" style={{ color: profile.theme.primaryColor }}>Total</span>
+              <span className="text-[34px] font-black tracking-tighter font-montserrat" style={{ color: profile.theme.primaryColor }}>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
             </div>
             <div className="pt-3">
               <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Invoice Total (in words)</p>
