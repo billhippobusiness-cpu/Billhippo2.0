@@ -1,8 +1,9 @@
 /**
  * InvoicePDF — A4 tax invoice template for @react-pdf/renderer
  *
- * UPDATED: modern-1 PDF now matches the sample invoice style exactly:
- *  - Logo box left | "Invoice" centred (primary colour) | Invoice#/Date right
+ * UPDATED: modern-2 PDF now matches the sample invoice style with a distinct header:
+ *  - Business logo initial + name/details (left) | "Invoice" (right, primary colour)
+ *  - Invoice number / date / status below the title (right side)
  *  - Primary-colour divider
  *  - Two tinted "Billed by / Billed to" cards
  *  - Place of Supply / Country of Supply row
@@ -11,7 +12,9 @@
  *  - Two-column footer: Bank details + QR (left) | Sub/CGST/SGST/Total (right)
  *  - Terms & Conditions, Additional Notes, Contact + Signature strip
  *
- * modern-2 (default) is unchanged.
+ * modern-1 (sample invoice style):
+ *  - Logo box left | "Invoice" centred (primary colour) | Invoice#/Date right
+ *  - All the same quality sections as modern-2
  *
  * Retained fixes:
  *  - No Font.register() — using built-in Helvetica (custom WOFF URLs fail silently).
@@ -38,7 +41,6 @@ const LIGHT   = '#94a3b8';
 const BORDER  = '#e2e8f0';
 const ALT     = '#f8fafc';
 const WHITE   = '#ffffff';
-const EMERALD = '#10b981';
 
 // ─── Helper: hex → rgba() ─────────────────────────────────────────────────────
 function hexToRgba(hex: string, alpha: number): string {
@@ -120,48 +122,8 @@ const S = StyleSheet.create({
   tableCell:       { fontSize: 8, color: MID },
   tableCellBold:   { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
 
-  // ── modern-2 column widths ──
-  m2cDesc: { width: '42%' },
-  m2cHsn:  { width: '15%', textAlign: 'center' },
-  m2cQty:  { width: '10%', textAlign: 'center' },
-  m2cGst:  { width: '10%', textAlign: 'center' },
-  m2cAmt:  { width: '23%', textAlign: 'right' },
-
-  // ── Totals (modern-2) ──
-  totalsWrap:  { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, marginBottom: 12 },
-  totalsInner: { width: '46%' },
-  totalRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-  totalLabel:  { fontSize: 8, color: MID },
-  totalValue:  { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
-  grandRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 7, paddingHorizontal: 10, borderRadius: 4, marginTop: 4 },
-  grandLabel:  { fontSize: 9, fontFamily: 'Helvetica-Bold', color: WHITE },
-  grandValue:  { fontSize: 11, fontFamily: 'Helvetica-Bold', color: WHITE },
-
-  // ── Amount in words ──
-  amtWords: { fontSize: 7.5, color: MID, fontFamily: 'Helvetica-Oblique', marginBottom: 10, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: ALT, borderRadius: 4 },
-
-  // ── Footer boxes (modern-2) ──
-  footerRow:   { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  footerBox:   { flex: 1, backgroundColor: ALT, borderRadius: 5, padding: 9, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid' },
-  footerLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 },
-  footerValue: { fontSize: 7.5, color: MID, lineHeight: 1.6 },
-
-  // ── Signature ──
-  signWrap:  { alignItems: 'flex-end', marginTop: 10 },
-  signLine:  { width: 120, height: 0.5, backgroundColor: LIGHT, marginBottom: 4 },
-  signLabel: { fontSize: 7, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
-
   // ── Page number ──
   pageNum: { position: 'absolute', bottom: 16, left: 0, right: 0, textAlign: 'center', fontSize: 7, color: LIGHT },
-
-  // ── modern-2 header ──
-  m2HeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  m2Title:     { fontSize: 32, fontFamily: 'Helvetica-Bold', letterSpacing: -1, lineHeight: 1 },
-  m2MetaLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.9 },
-  m2MetaValue: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
-  m2BizName:   { fontSize: 12, fontFamily: 'Helvetica-Bold', color: DARK, textAlign: 'right' },
-  m2BizSub:    { fontSize: 7.5, color: MID, textAlign: 'right', lineHeight: 1.5 },
-  m2BizGst:    { fontSize: 7.5, fontFamily: 'Helvetica-Bold', textAlign: 'right', lineHeight: 1.5 },
 
   // ════════════════════════════════════════════════════════════════
   //  MODERN-1 — unique styles
@@ -178,13 +140,13 @@ const S = StyleSheet.create({
   m1MetaLabel:   { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
   m1MetaValue:   { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
 
-  // Supply info strip
+  // Supply info strip (shared by both templates)
   m1SupplyRow:   { flexDirection: 'row', gap: 10, marginBottom: 12 },
   m1SupplyBox:   { flex: 1, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 5, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid', backgroundColor: ALT },
   m1SupplyLabel: { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8 },
   m1SupplyValue: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK, marginTop: 2 },
 
-  // Table — modern-1 has CGST+SGST columns
+  // Table columns (shared by both templates)
   // CGST_SGST mode: # | Desc | HSN | Qty | GST% | Taxable | SGST | CGST | Total
   m1cNo:   { width: '4%' },
   m1cDesc: { width: '24%' },
@@ -196,7 +158,7 @@ const S = StyleSheet.create({
   m1cIgst: { width: '18%', textAlign: 'right' },   // merged IGST column
   m1cTot:  { width: '18%', textAlign: 'right' },
 
-  // Two-column footer
+  // Two-column footer (shared by both templates)
   m1FooterGrid:   { flexDirection: 'row', gap: 14, marginTop: 12 },
   m1FooterLeft:   { width: '56%' },
   m1FooterRight:  { flex: 1 },
@@ -212,7 +174,7 @@ const S = StyleSheet.create({
   m1QrLabel: { fontSize: 5.5, color: LIGHT, textAlign: 'center', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.6 },
   m1QrImg:   { width: 52, height: 52 },
 
-  // Totals summary (right column)
+  // Totals summary (right column, shared by both templates)
   m1TotRow:       { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3.5, borderBottomWidth: 0.5, borderBottomColor: BORDER, borderBottomStyle: 'solid' },
   m1TotLabel:     { fontSize: 8.5, color: MID },
   m1TotValue:     { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: DARK },
@@ -223,13 +185,32 @@ const S = StyleSheet.create({
   m1WordsLabel:   { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 8 },
   m1WordsText:    { fontSize: 7.5, fontFamily: 'Helvetica-Oblique', color: DARK, marginTop: 2, lineHeight: 1.4 },
 
-  // Contact + signature footer strip
+  // Contact + signature footer strip (shared by both templates)
   m1ContactStrip: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 12, paddingTop: 9, borderTopWidth: 0.5, borderTopColor: BORDER, borderTopStyle: 'solid' },
   m1ContactText:  { fontSize: 7.5, color: LIGHT, lineHeight: 1.6 },
   m1SignCol:      { alignItems: 'flex-end' },
   m1SignLine:     { width: 90, height: 0.5, backgroundColor: LIGHT, marginBottom: 4 },
   m1SignLabel:    { fontSize: 6.5, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
   m1SignName:     { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK, marginTop: 1 },
+
+  // ════════════════════════════════════════════════════════════════
+  //  MODERN-2 — unique header styles
+  // ════════════════════════════════════════════════════════════════
+
+  // Header: Business info (left) | Invoice title + meta (right)
+  m2HdrRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  m2HdrLeft:     { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 },
+  m2LogoBox:     { width: 46, height: 46, borderRadius: 8, borderWidth: 0.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  m2LogoInitial: { fontSize: 19, fontFamily: 'Helvetica-Bold' },
+  m2BizBlock:    { flexDirection: 'column', flex: 1 },
+  m2BizNameLg:   { fontSize: 13, fontFamily: 'Helvetica-Bold', color: DARK, marginBottom: 2 },
+  m2BizDetail:   { fontSize: 7.5, color: MID, lineHeight: 1.5 },
+  m2BizGstin:    { fontSize: 7.5, fontFamily: 'Helvetica-Bold', lineHeight: 1.5 },
+  m2InvRight:    { alignItems: 'flex-end', flexShrink: 0 },
+  m2InvTitle:    { fontSize: 28, fontFamily: 'Helvetica-Bold', letterSpacing: -0.5, lineHeight: 1 },
+  m2InvMeta:     { marginTop: 6, alignItems: 'flex-end', gap: 3 },
+  m2InvLabel:    { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
+  m2InvValue:    { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
 });
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -267,6 +248,227 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
   const badgeTxt       = invoice.status === 'Paid'   ? [S.badgeText, S.badgeTextPaid]
                        : invoice.status === 'Unpaid' ? [S.badgeText, S.badgeTextUnpaid]
                        :                               [S.badgeText, S.badgeTextPartial];
+
+  // ── Shared: full GST table rows (used by both templates) ──────────────────
+  const tableRows = itemsWithTax.map((item, idx) => (
+    <View key={item.id} style={[S.tableRow, idx % 2 === 1 ? S.tableRowAlt : {}]} wrap={false}>
+      <Text style={[S.tableCell, S.m1cNo]}>{idx + 1}</Text>
+      <Text style={[S.tableCell, S.m1cDesc]}>{item.description}</Text>
+      <Text style={[S.tableCell, S.m1cHsn]}>{item.hsnCode || '—'}</Text>
+      <Text style={[S.tableCell, S.m1cQty]}>{item.quantity}</Text>
+      {hasGst && <Text style={[S.tableCell, S.m1cGst]}>{item.gstRate}%</Text>}
+      <Text style={[S.tableCell, S.m1cTax]}>{fmt(item.lineTotal)}</Text>
+      {hasGst && isCgst ? (
+        <>
+          <Text style={[S.tableCell, S.m1cHalf]}>{fmt(item.halfTax)}</Text>
+          <Text style={[S.tableCell, S.m1cHalf]}>{fmt(item.halfTax)}</Text>
+        </>
+      ) : hasGst ? (
+        <Text style={[S.tableCell, S.m1cIgst]}>{fmt(item.taxAmt)}</Text>
+      ) : null}
+      <Text style={[S.tableCellBold, S.m1cTot]}>{fmt(item.grandLine)}</Text>
+    </View>
+  ));
+
+  // ── Shared: table header ───────────────────────────────────────────────────
+  const tableHeader = (
+    <View style={[S.tableHeader, { backgroundColor: PRIMARY }]} fixed>
+      <Text style={[S.tableHeaderText, S.m1cNo]}>#</Text>
+      <Text style={[S.tableHeaderText, S.m1cDesc]}>Item Description</Text>
+      <Text style={[S.tableHeaderText, S.m1cHsn]}>HSN/SAC</Text>
+      <Text style={[S.tableHeaderText, S.m1cQty]}>Qty</Text>
+      {hasGst && <Text style={[S.tableHeaderText, S.m1cGst]}>GST%</Text>}
+      <Text style={[S.tableHeaderText, S.m1cTax]}>Taxable Amt</Text>
+      {hasGst && isCgst ? (
+        <>
+          <Text style={[S.tableHeaderText, S.m1cHalf]}>SGST</Text>
+          <Text style={[S.tableHeaderText, S.m1cHalf]}>CGST</Text>
+        </>
+      ) : hasGst ? (
+        <Text style={[S.tableHeaderText, S.m1cIgst]}>IGST</Text>
+      ) : null}
+      <Text style={[S.tableHeaderText, S.m1cTot]}>Total</Text>
+    </View>
+  );
+
+  // ── Shared: two-column footer (Bank+QR left | Totals right) ───────────────
+  const twoColFooter = (
+    <View style={S.m1FooterGrid} wrap={false}>
+
+      {/* LEFT: Bank + T&C + Notes */}
+      <View style={S.m1FooterLeft}>
+        <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Bank & Payment Details</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+          <View style={{ flex: 1 }}>
+            {business.bankName && (
+              <View style={S.m1BankRow}>
+                <Text style={S.m1BankLabel}>Bank</Text>
+                <Text style={S.m1BankValue}>{business.bankName}</Text>
+              </View>
+            )}
+            {business.accountNumber && (
+              <View style={S.m1BankRow}>
+                <Text style={S.m1BankLabel}>Account No.</Text>
+                <Text style={S.m1BankValue}>{business.accountNumber}</Text>
+              </View>
+            )}
+            {business.ifscCode && (
+              <View style={S.m1BankRow}>
+                <Text style={S.m1BankLabel}>IFSC</Text>
+                <Text style={S.m1BankValue}>{business.ifscCode}</Text>
+              </View>
+            )}
+            {business.upiId && (
+              <View style={[S.m1BankRow, { borderTopWidth: 0.5, borderTopColor: BORDER, borderTopStyle: 'solid', paddingTop: 3, marginTop: 2 }]}>
+                <Text style={S.m1BankLabel}>UPI ID</Text>
+                <Text style={[S.m1BankValue, { color: PRIMARY }]}>{business.upiId}</Text>
+              </View>
+            )}
+          </View>
+          {qrUrl && (
+            <View style={S.m1QrWrap}>
+              <Text style={S.m1QrLabel}>Scan to Pay</Text>
+              <Image style={S.m1QrImg} src={qrUrl} />
+            </View>
+          )}
+        </View>
+
+        {business.termsAndConditions ? (
+          <View style={{ marginTop: 10 }}>
+            <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Terms & Conditions</Text>
+            <Text style={{ fontSize: 7.5, color: MID, lineHeight: 1.5 }}>
+              {business.termsAndConditions}
+            </Text>
+          </View>
+        ) : null}
+
+        {business.defaultNotes ? (
+          <View style={{ marginTop: 8 }}>
+            <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Additional Notes</Text>
+            <Text style={{ fontSize: 7.5, color: MID, fontFamily: 'Helvetica-Oblique', lineHeight: 1.5 }}>
+              {business.defaultNotes}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/* RIGHT: Totals */}
+      <View style={S.m1FooterRight}>
+        <View style={S.m1TotRow}>
+          <Text style={S.m1TotLabel}>Sub Total</Text>
+          <Text style={S.m1TotValue}>{fmt(invoice.totalBeforeTax)}</Text>
+        </View>
+        {hasGst && isCgst ? (
+          <>
+            <View style={S.m1TotRow}>
+              <Text style={S.m1TotLabel}>CGST</Text>
+              <Text style={S.m1TotValue}>{fmt(invoice.cgst)}</Text>
+            </View>
+            <View style={S.m1TotRow}>
+              <Text style={S.m1TotLabel}>SGST</Text>
+              <Text style={S.m1TotValue}>{fmt(invoice.sgst)}</Text>
+            </View>
+          </>
+        ) : hasGst ? (
+          <View style={S.m1TotRow}>
+            <Text style={S.m1TotLabel}>IGST</Text>
+            <Text style={S.m1TotValue}>{fmt(invoice.igst)}</Text>
+          </View>
+        ) : null}
+
+        <View style={[S.m1GrandSection, { borderTopWidth: 2, borderTopColor: PRIMARY, borderTopStyle: 'solid' }]}>
+          <View style={S.m1GrandRow}>
+            <Text style={[S.m1GrandLabel, { color: PRIMARY }]}>Total</Text>
+            <Text style={[S.m1GrandValue, { color: PRIMARY }]}>{fmt(invoice.totalAmount)}</Text>
+          </View>
+        </View>
+
+        <Text style={S.m1WordsLabel}>Invoice Total (in words)</Text>
+        <Text style={S.m1WordsText}>{toWords(invoice.totalAmount)}</Text>
+      </View>
+    </View>
+  );
+
+  // ── Shared: contact + signature strip ─────────────────────────────────────
+  const contactSignature = (
+    <View style={S.m1ContactStrip} wrap={false}>
+      <View>
+        {business.email ? <Text style={S.m1ContactText}>✉  {business.email}</Text> : null}
+        {business.phone ? <Text style={S.m1ContactText}>✆  {business.phone}</Text> : null}
+      </View>
+      <View style={S.m1SignCol}>
+        <View style={S.m1SignLine} />
+        <Text style={S.m1SignLabel}>Authorised Signatory</Text>
+        <Text style={S.m1SignName}>{business.name}</Text>
+      </View>
+    </View>
+  );
+
+  // ── Shared: tinted Billed By / Billed To cards ────────────────────────────
+  const billedCards = (
+    <View style={S.infoRow}>
+      <View style={[S.infoBoxTinted, { backgroundColor: hexToRgba(PRIMARY, 0.07) }]}>
+        <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed By</Text>
+        <Text style={S.infoName}>{business.name}</Text>
+        <Text style={S.infoSm}>{business.address}, {business.city}, {business.state} – {business.pincode}</Text>
+        {business.phone ? <Text style={S.infoSm}>Ph: {business.phone}</Text> : null}
+        <View style={S.infoMeta}>
+          {business.gstin ? (
+            <View style={S.infoMetaCol}>
+              <Text style={S.infoMetaLabel}>GSTIN</Text>
+              <Text style={S.infoMetaValue}>{business.gstin}</Text>
+            </View>
+          ) : null}
+          {business.pan ? (
+            <View style={S.infoMetaCol}>
+              <Text style={S.infoMetaLabel}>PAN</Text>
+              <Text style={S.infoMetaValue}>{business.pan}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={[S.infoBoxTinted, { backgroundColor: hexToRgba(PRIMARY, 0.07) }]}>
+        <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed To</Text>
+        <Text style={S.infoName}>{customer.name}</Text>
+        <Text style={S.infoSm}>{customer.address}, {customer.city}, {customer.state} – {customer.pincode}</Text>
+        {customer.phone ? <Text style={S.infoSm}>Ph: {customer.phone}</Text> : null}
+        {customer.gstin ? (
+          <View style={S.infoMeta}>
+            <View style={S.infoMetaCol}>
+              <Text style={S.infoMetaLabel}>GSTIN</Text>
+              <Text style={S.infoMetaValue}>{customer.gstin}</Text>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  // ── Shared: Place of Supply / Country of Supply ───────────────────────────
+  const supplyStrip = (
+    <View style={S.m1SupplyRow}>
+      <View style={S.m1SupplyBox}>
+        <Text style={S.m1SupplyLabel}>Place of Supply</Text>
+        <Text style={S.m1SupplyValue}>{customer.state || business.state}</Text>
+      </View>
+      <View style={S.m1SupplyBox}>
+        <Text style={S.m1SupplyLabel}>Country of Supply</Text>
+        <Text style={S.m1SupplyValue}>India</Text>
+      </View>
+    </View>
+  );
+
+  // ── Shared: page number ────────────────────────────────────────────────────
+  const pageNumber = (
+    <Text
+      style={S.pageNum}
+      render={({ pageNumber, totalPages }) =>
+        `Page ${pageNumber} of ${totalPages}  |  Generated by BillHippo`
+      }
+      fixed
+    />
+  );
 
   // ════════════════════════════════════════════════════════════════
   //  MODERN-1 TEMPLATE
@@ -318,221 +520,13 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
             <View style={[S.dividerPrimary, { backgroundColor: PRIMARY }]} />
           </View>
 
-          {/* ── Billed By / Billed To (tinted cards) ── */}
-          <View style={S.infoRow}>
-            <View style={[S.infoBoxTinted, { backgroundColor: hexToRgba(PRIMARY, 0.07) }]}>
-              <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed By</Text>
-              <Text style={S.infoName}>{business.name}</Text>
-              <Text style={S.infoSm}>{business.address}, {business.city}, {business.state} – {business.pincode}</Text>
-              {business.phone ? <Text style={S.infoSm}>Ph: {business.phone}</Text> : null}
-              <View style={S.infoMeta}>
-                {business.gstin ? (
-                  <View style={S.infoMetaCol}>
-                    <Text style={S.infoMetaLabel}>GSTIN</Text>
-                    <Text style={S.infoMetaValue}>{business.gstin}</Text>
-                  </View>
-                ) : null}
-                {business.pan ? (
-                  <View style={S.infoMetaCol}>
-                    <Text style={S.infoMetaLabel}>PAN</Text>
-                    <Text style={S.infoMetaValue}>{business.pan}</Text>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-
-            <View style={[S.infoBoxTinted, { backgroundColor: hexToRgba(PRIMARY, 0.07) }]}>
-              <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed To</Text>
-              <Text style={S.infoName}>{customer.name}</Text>
-              <Text style={S.infoSm}>{customer.address}, {customer.city}, {customer.state} – {customer.pincode}</Text>
-              {customer.phone ? <Text style={S.infoSm}>Ph: {customer.phone}</Text> : null}
-              {customer.gstin ? (
-                <View style={S.infoMeta}>
-                  <View style={S.infoMetaCol}>
-                    <Text style={S.infoMetaLabel}>GSTIN</Text>
-                    <Text style={S.infoMetaValue}>{customer.gstin}</Text>
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          </View>
-
-          {/* ── Place of Supply / Country of Supply ── */}
-          <View style={S.m1SupplyRow}>
-            <View style={S.m1SupplyBox}>
-              <Text style={S.m1SupplyLabel}>Place of Supply</Text>
-              <Text style={S.m1SupplyValue}>{customer.state || business.state}</Text>
-            </View>
-            <View style={S.m1SupplyBox}>
-              <Text style={S.m1SupplyLabel}>Country of Supply</Text>
-              <Text style={S.m1SupplyValue}>India</Text>
-            </View>
-          </View>
-
-          {/* ── Items Table header ── */}
-          <View style={[S.tableHeader, { backgroundColor: PRIMARY }]} fixed>
-            <Text style={[S.tableHeaderText, S.m1cNo]}>#</Text>
-            <Text style={[S.tableHeaderText, S.m1cDesc]}>Item Description</Text>
-            <Text style={[S.tableHeaderText, S.m1cHsn]}>HSN/SAC</Text>
-            <Text style={[S.tableHeaderText, S.m1cQty]}>Qty</Text>
-            {hasGst && <Text style={[S.tableHeaderText, S.m1cGst]}>GST%</Text>}
-            <Text style={[S.tableHeaderText, S.m1cTax]}>Taxable Amt</Text>
-            {hasGst && isCgst ? (
-              <>
-                <Text style={[S.tableHeaderText, S.m1cHalf]}>SGST</Text>
-                <Text style={[S.tableHeaderText, S.m1cHalf]}>CGST</Text>
-              </>
-            ) : hasGst ? (
-              <Text style={[S.tableHeaderText, S.m1cIgst]}>IGST</Text>
-            ) : null}
-            <Text style={[S.tableHeaderText, S.m1cTot]}>Total</Text>
-          </View>
-
-          {/* ── Table rows ── */}
-          {itemsWithTax.map((item, idx) => (
-            <View key={item.id} style={[S.tableRow, idx % 2 === 1 ? S.tableRowAlt : {}]} wrap={false}>
-              <Text style={[S.tableCell, S.m1cNo]}>{idx + 1}</Text>
-              <Text style={[S.tableCell, S.m1cDesc]}>{item.description}</Text>
-              <Text style={[S.tableCell, S.m1cHsn]}>{item.hsnCode || '—'}</Text>
-              <Text style={[S.tableCell, S.m1cQty]}>{item.quantity}</Text>
-              {hasGst && <Text style={[S.tableCell, S.m1cGst]}>{item.gstRate}%</Text>}
-              <Text style={[S.tableCell, S.m1cTax]}>{fmt(item.lineTotal)}</Text>
-              {hasGst && isCgst ? (
-                <>
-                  <Text style={[S.tableCell, S.m1cHalf]}>{fmt(item.halfTax)}</Text>
-                  <Text style={[S.tableCell, S.m1cHalf]}>{fmt(item.halfTax)}</Text>
-                </>
-              ) : hasGst ? (
-                <Text style={[S.tableCell, S.m1cIgst]}>{fmt(item.taxAmt)}</Text>
-              ) : null}
-              <Text style={[S.tableCellBold, S.m1cTot]}>{fmt(item.grandLine)}</Text>
-            </View>
-          ))}
-
-          {/* ── Two-column footer: Bank (left) | Totals (right) ── */}
-          <View style={S.m1FooterGrid} wrap={false}>
-
-            {/* ── LEFT: Bank + T&C + Notes ── */}
-            <View style={S.m1FooterLeft}>
-
-              {/* Bank details */}
-              <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Bank & Payment Details</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                <View style={{ flex: 1 }}>
-                  {business.bankName && (
-                    <View style={S.m1BankRow}>
-                      <Text style={S.m1BankLabel}>Bank</Text>
-                      <Text style={S.m1BankValue}>{business.bankName}</Text>
-                    </View>
-                  )}
-                  {business.accountNumber && (
-                    <View style={S.m1BankRow}>
-                      <Text style={S.m1BankLabel}>Account No.</Text>
-                      <Text style={S.m1BankValue}>{business.accountNumber}</Text>
-                    </View>
-                  )}
-                  {business.ifscCode && (
-                    <View style={S.m1BankRow}>
-                      <Text style={S.m1BankLabel}>IFSC</Text>
-                      <Text style={S.m1BankValue}>{business.ifscCode}</Text>
-                    </View>
-                  )}
-                  {business.upiId && (
-                    <View style={[S.m1BankRow, { borderTopWidth: 0.5, borderTopColor: BORDER, borderTopStyle: 'solid', paddingTop: 3, marginTop: 2 }]}>
-                      <Text style={S.m1BankLabel}>UPI ID</Text>
-                      <Text style={[S.m1BankValue, { color: PRIMARY }]}>{business.upiId}</Text>
-                    </View>
-                  )}
-                </View>
-                {/* QR code */}
-                {qrUrl && (
-                  <View style={S.m1QrWrap}>
-                    <Text style={S.m1QrLabel}>Scan to Pay</Text>
-                    <Image style={S.m1QrImg} src={qrUrl} />
-                  </View>
-                )}
-              </View>
-
-              {/* Terms & Conditions */}
-              {business.termsAndConditions ? (
-                <View style={{ marginTop: 10 }}>
-                  <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Terms & Conditions</Text>
-                  <Text style={{ fontSize: 7.5, color: MID, lineHeight: 1.5 }}>
-                    {business.termsAndConditions}
-                  </Text>
-                </View>
-              ) : null}
-
-              {/* Additional Notes */}
-              {business.defaultNotes ? (
-                <View style={{ marginTop: 8 }}>
-                  <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Additional Notes</Text>
-                  <Text style={{ fontSize: 7.5, color: MID, fontFamily: 'Helvetica-Oblique', lineHeight: 1.5 }}>
-                    {business.defaultNotes}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            {/* ── RIGHT: Totals ── */}
-            <View style={S.m1FooterRight}>
-              <View style={S.m1TotRow}>
-                <Text style={S.m1TotLabel}>Sub Total</Text>
-                <Text style={S.m1TotValue}>{fmt(invoice.totalBeforeTax)}</Text>
-              </View>
-              {hasGst && isCgst ? (
-                <>
-                  <View style={S.m1TotRow}>
-                    <Text style={S.m1TotLabel}>CGST</Text>
-                    <Text style={S.m1TotValue}>{fmt(invoice.cgst)}</Text>
-                  </View>
-                  <View style={S.m1TotRow}>
-                    <Text style={S.m1TotLabel}>SGST</Text>
-                    <Text style={S.m1TotValue}>{fmt(invoice.sgst)}</Text>
-                  </View>
-                </>
-              ) : hasGst ? (
-                <View style={S.m1TotRow}>
-                  <Text style={S.m1TotLabel}>IGST</Text>
-                  <Text style={S.m1TotValue}>{fmt(invoice.igst)}</Text>
-                </View>
-              ) : null}
-
-              {/* Grand Total */}
-              <View style={[S.m1GrandSection, { borderTopWidth: 2, borderTopColor: PRIMARY, borderTopStyle: 'solid' }]}>
-                <View style={S.m1GrandRow}>
-                  <Text style={[S.m1GrandLabel, { color: PRIMARY }]}>Total</Text>
-                  <Text style={[S.m1GrandValue, { color: PRIMARY }]}>{fmt(invoice.totalAmount)}</Text>
-                </View>
-              </View>
-
-              {/* Amount in words */}
-              <Text style={S.m1WordsLabel}>Invoice Total (in words)</Text>
-              <Text style={S.m1WordsText}>{toWords(invoice.totalAmount)}</Text>
-            </View>
-          </View>
-
-          {/* ── Contact + Signature strip ── */}
-          <View style={S.m1ContactStrip} wrap={false}>
-            <View>
-              {business.email ? <Text style={S.m1ContactText}>✉  {business.email}</Text> : null}
-              {business.phone ? <Text style={S.m1ContactText}>✆  {business.phone}</Text> : null}
-            </View>
-            <View style={S.m1SignCol}>
-              <View style={S.m1SignLine} />
-              <Text style={S.m1SignLabel}>Authorised Signatory</Text>
-              <Text style={S.m1SignName}>{business.name}</Text>
-            </View>
-          </View>
-
-          {/* ── Page number ── */}
-          <Text
-            style={S.pageNum}
-            render={({ pageNumber, totalPages }) =>
-              `Page ${pageNumber} of ${totalPages}  |  Generated by BillHippo`
-            }
-            fixed
-          />
+          {billedCards}
+          {supplyStrip}
+          {tableHeader}
+          {tableRows}
+          {twoColFooter}
+          {contactSignature}
+          {pageNumber}
         </Page>
       </Document>
     );
@@ -540,193 +534,71 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
 
   // ════════════════════════════════════════════════════════════════
   //  MODERN-2 (default) + MINIMAL TEMPLATES
-  //  Large "Invoice" heading left | business info right
-  //  Two "Billed by / Billed to" cards (slate bg)
-  //  Items table | Totals on right | Bank details at bottom
+  //  Business logo initial + name/details (left) | "Invoice" (right, primary)
+  //  Invoice number / date below the title (right side)
+  //  Primary divider
+  //  Tinted Billed By / Billed To cards
+  //  Place of Supply / Country of Supply strip
+  //  Full GST table (same structure as Modern-1)
+  //  Two-column footer: Bank details + QR (left) | Totals (right)
+  //  Terms · Notes · Contact + Signature
   // ════════════════════════════════════════════════════════════════
   return (
     <Document title={`Invoice ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
       <Page size="A4" style={S.page} wrap>
 
-        {/* ── Fixed header ── */}
+        {/* ── Header (fixed — repeats on every page) ── */}
         <View fixed style={{ marginBottom: 14 }}>
-          <View style={S.m2HeaderRow}>
-            <View>
-              <Text style={[S.m2Title, { color: PRIMARY }]}>Invoice</Text>
-              <View style={{ marginTop: 6, gap: 3 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={S.m2MetaLabel}>Invoice#</Text>
-                  <Text style={S.m2MetaValue}>{invoice.invoiceNumber}</Text>
+          <View style={S.m2HdrRow}>
+
+            {/* LEFT: Business logo initial + details */}
+            <View style={S.m2HdrLeft}>
+              <View style={[S.m2LogoBox, { backgroundColor: hexToRgba(PRIMARY, 0.10), borderColor: hexToRgba(PRIMARY, 0.25), borderStyle: 'solid' }]}>
+                <Text style={[S.m2LogoInitial, { color: PRIMARY }]}>
+                  {business.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={S.m2BizBlock}>
+                <Text style={S.m2BizNameLg}>{business.name}</Text>
+                {business.address ? <Text style={S.m2BizDetail}>{business.address}, {business.city}</Text> : null}
+                {business.state   ? <Text style={S.m2BizDetail}>{business.state} – {business.pincode}</Text> : null}
+                {business.gstin   ? <Text style={[S.m2BizGstin, { color: PRIMARY }]}>GSTIN: {business.gstin}</Text> : null}
+                {business.pan     ? <Text style={S.m2BizDetail}>PAN: {business.pan}</Text> : null}
+                {business.phone   ? <Text style={S.m2BizDetail}>Ph: {business.phone}</Text> : null}
+                {business.email   ? <Text style={S.m2BizDetail}>{business.email}</Text> : null}
+              </View>
+            </View>
+
+            {/* RIGHT: "Invoice" large + invoice metadata */}
+            <View style={S.m2InvRight}>
+              <Text style={[S.m2InvTitle, { color: PRIMARY }]}>Invoice</Text>
+              <View style={S.m2InvMeta}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={S.m2InvLabel}>Invoice #</Text>
+                  <Text style={S.m2InvValue}>{invoice.invoiceNumber}</Text>
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Text style={S.m2MetaLabel}>Invoice Date</Text>
-                  <Text style={S.m2MetaValue}>{invoice.date}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={S.m2InvLabel}>Date</Text>
+                  <Text style={S.m2InvValue}>{invoice.date}</Text>
                 </View>
-                <View style={badgeContainer}>
+                <View style={[badgeContainer[0], badgeContainer[1], { alignSelf: 'flex-end' }]}>
                   <Text style={badgeTxt}>{invoice.status}</Text>
                 </View>
               </View>
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={S.m2BizName}>{business.name}</Text>
-              {business.address ? <Text style={S.m2BizSub}>{business.address}, {business.city}</Text> : null}
-              {business.state   ? <Text style={S.m2BizSub}>{business.state} – {business.pincode}</Text> : null}
-              {business.gstin   ? <Text style={[S.m2BizGst, { color: PRIMARY }]}>GSTIN: {business.gstin}</Text> : null}
-              {business.phone   ? <Text style={S.m2BizSub}>Ph: {business.phone}</Text> : null}
-              {business.email   ? <Text style={S.m2BizSub}>{business.email}</Text> : null}
-            </View>
           </View>
+
+          {/* Primary-colour divider */}
           <View style={[S.dividerPrimary, { backgroundColor: PRIMARY }]} />
         </View>
 
-        {/* ── Billed By / Billed To ── */}
-        <View style={S.infoRow}>
-          <View style={S.infoBox}>
-            <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed By</Text>
-            <Text style={S.infoName}>{business.name}</Text>
-            <Text style={S.infoSm}>{business.address}, {business.city}, {business.state} – {business.pincode}</Text>
-            {business.phone ? <Text style={S.infoSm}>Ph: {business.phone}</Text> : null}
-            <View style={S.infoMeta}>
-              {business.gstin ? (
-                <View style={S.infoMetaCol}>
-                  <Text style={S.infoMetaLabel}>GSTIN</Text>
-                  <Text style={[S.infoMetaValue, { color: PRIMARY }]}>{business.gstin}</Text>
-                </View>
-              ) : null}
-              {business.pan ? (
-                <View style={S.infoMetaCol}>
-                  <Text style={S.infoMetaLabel}>PAN</Text>
-                  <Text style={S.infoMetaValue}>{business.pan}</Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
-          <View style={S.infoBox}>
-            <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed To</Text>
-            <Text style={S.infoName}>{customer.name}</Text>
-            <Text style={S.infoSm}>{customer.address}, {customer.city}, {customer.state} – {customer.pincode}</Text>
-            {customer.phone ? <Text style={S.infoSm}>Ph: {customer.phone}</Text> : null}
-            {customer.gstin ? (
-              <View style={S.infoMeta}>
-                <View style={S.infoMetaCol}>
-                  <Text style={S.infoMetaLabel}>GSTIN</Text>
-                  <Text style={[S.infoMetaValue, { color: PRIMARY }]}>{customer.gstin}</Text>
-                </View>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        {/* ── Table header ── */}
-        <View style={[S.tableHeader, { backgroundColor: PRIMARY }]} fixed>
-          <Text style={[S.tableHeaderText, S.m2cDesc]}>Item Description</Text>
-          <Text style={[S.tableHeaderText, S.m2cHsn]}>HSN/SAC</Text>
-          <Text style={[S.tableHeaderText, S.m2cQty]}>Qty</Text>
-          {hasGst && <Text style={[S.tableHeaderText, S.m2cGst]}>GST%</Text>}
-          <Text style={[S.tableHeaderText, S.m2cAmt]}>Amount</Text>
-        </View>
-
-        {/* ── Table rows ── */}
-        {itemsWithTax.map((item, idx) => (
-          <View key={item.id} style={[S.tableRow, idx % 2 === 1 ? S.tableRowAlt : {}]} wrap={false}>
-            <Text style={[S.tableCell, S.m2cDesc]}>{idx + 1}. {item.description}</Text>
-            <Text style={[S.tableCell, S.m2cHsn]}>{item.hsnCode || '—'}</Text>
-            <Text style={[S.tableCell, S.m2cQty]}>{item.quantity}</Text>
-            {hasGst && <Text style={[S.tableCell, S.m2cGst]}>{item.gstRate}%</Text>}
-            <Text style={[S.tableCellBold, S.m2cAmt]}>{fmt(item.lineTotal)}</Text>
-          </View>
-        ))}
-
-        {/* ── Totals ── */}
-        <View style={S.totalsWrap} wrap={false}>
-          <View style={S.totalsInner}>
-            <View style={S.totalRow}>
-              <Text style={S.totalLabel}>Sub Total (before tax)</Text>
-              <Text style={S.totalValue}>{fmt(invoice.totalBeforeTax)}</Text>
-            </View>
-            {hasGst && (
-              <View style={S.totalRow}>
-                <Text style={[S.totalLabel, { color: EMERALD }]}>Tax (GST)</Text>
-                <Text style={[S.totalValue, { color: EMERALD }]}>
-                  {fmt(invoice.cgst + invoice.sgst + invoice.igst)}
-                </Text>
-              </View>
-            )}
-            {hasGst && isCgst && (
-              <>
-                <View style={S.totalRow}>
-                  <Text style={[S.totalLabel, { fontSize: 7 }]}>  CGST</Text>
-                  <Text style={[S.totalValue, { fontSize: 7 }]}>{fmt(invoice.cgst)}</Text>
-                </View>
-                <View style={S.totalRow}>
-                  <Text style={[S.totalLabel, { fontSize: 7 }]}>  SGST</Text>
-                  <Text style={[S.totalValue, { fontSize: 7 }]}>{fmt(invoice.sgst)}</Text>
-                </View>
-              </>
-            )}
-            {hasGst && !isCgst && (
-              <View style={S.totalRow}>
-                <Text style={[S.totalLabel, { fontSize: 7 }]}>  IGST</Text>
-                <Text style={[S.totalValue, { fontSize: 7 }]}>{fmt(invoice.igst)}</Text>
-              </View>
-            )}
-            <View style={[S.grandRow, { backgroundColor: PRIMARY }]}>
-              <Text style={S.grandLabel}>TOTAL PAYABLE</Text>
-              <Text style={S.grandValue}>{fmt(invoice.totalAmount)}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ── Amount in words ── */}
-        <Text style={S.amtWords}>In words: {toWords(invoice.totalAmount)}</Text>
-
-        <View style={S.dividerThin} />
-
-        {/* ── Bank / Notes / T&C ── */}
-        <View style={S.footerRow} wrap={false}>
-          {(business.bankName || business.accountNumber) ? (
-            <View style={S.footerBox}>
-              <Text style={S.footerLabel}>Bank & Payment Details</Text>
-              {business.bankName      && <Text style={S.footerValue}>Bank: {business.bankName}</Text>}
-              {business.accountNumber && <Text style={S.footerValue}>A/c: {business.accountNumber}</Text>}
-              {business.ifscCode      && <Text style={S.footerValue}>IFSC: {business.ifscCode}</Text>}
-              {business.upiId         && (
-                <Text style={[S.footerValue, { color: PRIMARY, fontFamily: 'Helvetica-Bold' }]}>
-                  UPI ID: {business.upiId}
-                </Text>
-              )}
-            </View>
-          ) : null}
-          {business.defaultNotes ? (
-            <View style={S.footerBox}>
-              <Text style={S.footerLabel}>Notes</Text>
-              <Text style={[S.footerValue, { fontFamily: 'Helvetica-Oblique' }]}>
-                {business.defaultNotes}
-              </Text>
-            </View>
-          ) : null}
-          {business.termsAndConditions ? (
-            <View style={S.footerBox}>
-              <Text style={S.footerLabel}>Terms & Conditions</Text>
-              <Text style={S.footerValue}>{business.termsAndConditions}</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* ── Signature ── */}
-        <View style={S.signWrap} wrap={false}>
-          <View style={S.signLine} />
-          <Text style={S.signLabel}>Authorised Signatory – {business.name}</Text>
-        </View>
-
-        {/* ── Page number ── */}
-        <Text
-          style={S.pageNum}
-          render={({ pageNumber, totalPages }) =>
-            `Page ${pageNumber} of ${totalPages}  |  Generated by BillHippo`
-          }
-          fixed
-        />
+        {billedCards}
+        {supplyStrip}
+        {tableHeader}
+        {tableRows}
+        {twoColFooter}
+        {contactSignature}
+        {pageNumber}
       </Page>
     </Document>
   );

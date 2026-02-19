@@ -17,7 +17,7 @@ const COLORS = [
 
 const TEMPLATES = [
   { id: 'modern-1', name: 'Modern 1', desc: 'Logo Left, Title Center/Right. Professional billing boxes.' },
-  { id: 'modern-2', name: 'Modern 2', desc: 'Title Left with Metadata, Logo Right. High-clarity tabular form.' },
+  { id: 'modern-2', name: 'Modern 2', desc: 'Business info left, Invoice title right. Full GST table with QR payment.' },
   { id: 'minimal', name: 'Minimalist', desc: 'Clean, airy layout for creative services.' },
 ];
 
@@ -180,51 +180,89 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Real-time Preview</p>
            <div className="bg-white rounded-[1rem] p-8 border border-slate-100 shadow-2xl scale-90 origin-top overflow-hidden min-h-[550px]" style={{ fontFamily: theme.fontFamily }}>
               {theme.templateId === 'modern-2' ? (
-                <div className="space-y-6">
+                <div className="space-y-4">
+                   {/* Header: Business info left | Invoice title right */}
                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <h2 className="text-4xl font-black uppercase tracking-tighter leading-none" style={{ color: theme.primaryColor }}>Invoice</h2>
-                        <div className="text-[8px] font-bold text-slate-400 space-y-0.5 uppercase tracking-tight mt-2">
-                          <p>Invoice# <span className="text-slate-900">{theme.invoicePrefix}004</span></p>
-                          <p>Date <span className="text-slate-900">Jun 19, 2019</span></p>
-                          <p>Due Date <span className="text-slate-900">Jun 28, 2019</span></p>
+                      {/* Left: logo + business details */}
+                      <div className="flex items-start gap-2">
+                         <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0" style={{ backgroundColor: `${theme.primaryColor}18`, color: theme.primaryColor, border: `1px solid ${theme.primaryColor}40` }}>
+                           B
+                         </div>
+                         <div className="space-y-0.5">
+                           <p className="text-[10px] font-black text-slate-800">Business Name</p>
+                           <p className="text-[7px] text-slate-400 leading-tight">123 Main Street, Mumbai</p>
+                           <p className="text-[7px] font-bold leading-tight" style={{ color: theme.primaryColor }}>GSTIN: 27XXXXXX1234Z</p>
+                         </div>
+                      </div>
+                      {/* Right: Invoice title + meta */}
+                      <div className="text-right space-y-1">
+                        <h2 className="text-3xl font-black tracking-tight leading-none" style={{ color: theme.primaryColor }}>Invoice</h2>
+                        <div className="text-[7px] font-bold text-slate-400 space-y-0.5 uppercase tracking-tight">
+                          <p># <span className="text-slate-900">{theme.invoicePrefix}004</span></p>
+                          <p>Date <span className="text-slate-900">Feb 19, 2026</span></p>
                         </div>
                       </div>
-                      <div className="w-20 h-10 bg-slate-50 rounded-lg flex items-center justify-center">
-                         {theme.logoUrl ? <img src={theme.logoUrl} className="w-full h-full object-contain object-right" /> : <ImageIcon size={16} className="text-slate-300" />}
-                      </div>
                    </div>
+                   {/* Divider */}
+                   <div className="h-0.5 rounded-full" style={{ backgroundColor: theme.primaryColor }}></div>
+                   {/* Billed by / to tinted cards */}
                    <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="p-3 rounded-xl" style={{ backgroundColor: `${theme.primaryColor}10` }}>
                          <p className="text-[7px] font-black uppercase tracking-widest" style={{ color: theme.primaryColor }}>Billed by</p>
                          <p className="text-[9px] font-black text-slate-800 mt-1 truncate">Business Name</p>
-                         <div className="h-4 w-full bg-slate-100 mt-2 rounded"></div>
+                         <div className="h-3 w-3/4 bg-slate-200 mt-1.5 rounded opacity-50"></div>
                       </div>
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="p-3 rounded-xl" style={{ backgroundColor: `${theme.primaryColor}10` }}>
                          <p className="text-[7px] font-black uppercase tracking-widest" style={{ color: theme.primaryColor }}>Billed to</p>
                          <p className="text-[9px] font-black text-slate-800 mt-1 truncate">Customer Party</p>
-                         <div className="h-4 w-full bg-slate-100 mt-2 rounded"></div>
+                         <div className="h-3 w-3/4 bg-slate-200 mt-1.5 rounded opacity-50"></div>
                       </div>
                    </div>
+                   {/* Full GST table */}
                    <div className="border border-slate-100 rounded-xl overflow-hidden">
-                      <div className="h-6 w-full flex items-center px-2 text-[7px] font-black text-white uppercase tracking-widest" style={{ backgroundColor: theme.primaryColor }}>
-                        Items description
+                      <div className="h-6 w-full flex items-center px-2 text-[7px] font-black text-white uppercase tracking-widest gap-4" style={{ backgroundColor: theme.primaryColor }}>
+                        <span className="w-4">#</span>
+                        <span className="flex-1">Description</span>
+                        <span>HSN</span>
+                        <span>Taxable</span>
+                        <span>SGST</span>
+                        <span>CGST</span>
+                        <span>Total</span>
                       </div>
-                      <div className="p-2 space-y-2">
-                         <div className="flex justify-between h-3 items-center">
-                           <div className="w-1/2 h-1 bg-slate-100 rounded"></div>
-                           <div className="w-1/4 h-1 bg-slate-100 rounded"></div>
+                      <div className="p-2 space-y-1.5">
+                         <div className="flex gap-4 items-center h-3">
+                           <div className="w-4 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="flex-1 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-6 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-8 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-6 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-6 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-8 h-1.5 bg-slate-100 rounded"></div>
                          </div>
-                         <div className="flex justify-between h-3 items-center">
-                           <div className="w-1/3 h-1 bg-slate-100 rounded"></div>
-                           <div className="w-1/4 h-1 bg-slate-100 rounded"></div>
+                         <div className="flex gap-4 items-center h-3 bg-slate-50 rounded">
+                           <div className="w-4 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="flex-1 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-6 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-8 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-6 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-6 h-1.5 bg-slate-100 rounded"></div>
+                           <div className="w-8 h-1.5 bg-slate-100 rounded"></div>
                          </div>
                       </div>
                    </div>
-                   <div className="flex justify-end pt-4">
-                      <div className="w-1/2 p-3 bg-slate-50 rounded-xl space-y-2">
-                         <div className="flex justify-between text-[8px] font-bold text-slate-400"><span>Sub Total</span><span className="text-slate-700">₹40,000.00</span></div>
-                         <div className="flex justify-between text-xs font-black border-t border-slate-200 pt-2" style={{ color: theme.primaryColor }}><span>Total</span><span>₹42,480.00</span></div>
+                   {/* Two-column footer: bank left | totals right */}
+                   <div className="flex gap-3">
+                      <div className="flex-1 p-2 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+                         <p className="text-[6px] font-black uppercase tracking-widest text-slate-400">Bank & Payment</p>
+                         <div className="h-1.5 w-full bg-slate-200 rounded"></div>
+                         <div className="h-1.5 w-3/4 bg-slate-200 rounded"></div>
+                         <div className="h-1.5 w-1/2 bg-slate-200 rounded"></div>
+                      </div>
+                      <div className="w-2/5 space-y-1.5">
+                         <div className="flex justify-between text-[8px] font-bold text-slate-400"><span>Sub Total</span><span className="text-slate-700">₹40,000</span></div>
+                         <div className="flex justify-between text-[7px] text-slate-400"><span>CGST</span><span>₹1,200</span></div>
+                         <div className="flex justify-between text-[7px] text-slate-400"><span>SGST</span><span>₹1,280</span></div>
+                         <div className="flex justify-between text-[9px] font-black border-t-2 pt-1" style={{ color: theme.primaryColor, borderColor: theme.primaryColor }}><span>Total</span><span>₹42,480</span></div>
                       </div>
                    </div>
                 </div>
