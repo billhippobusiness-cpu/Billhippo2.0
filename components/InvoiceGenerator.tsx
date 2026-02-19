@@ -261,67 +261,215 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   );
 
   const modern1Template = (
-    <div className="bg-white p-12 min-h-[1100px] flex flex-col space-y-8 w-full max-w-[800px] mx-auto border border-slate-100 print:shadow-none print:border-none shadow-2xl rounded-[2rem]">
-       <div className="flex justify-between items-start border-b-2 border-slate-50 pb-8">
-          <div className="w-24 h-24 bg-slate-50 rounded-2xl flex items-center justify-center p-2">
-             {profile.theme.logoUrl ? <img src={profile.theme.logoUrl} className="w-full h-full object-contain" /> : <ImageIcon className="text-slate-300" />}
+    <div className="bg-white w-full max-w-[860px] mx-auto border border-slate-100 print:shadow-none print:border-none shadow-2xl rounded-[2rem] overflow-hidden" style={{ fontFamily: profile.theme.fontFamily }}>
+
+      {/* ── Header ── */}
+      <div className="px-10 pt-10">
+        <div className="flex items-center justify-between">
+          {/* Logo */}
+          <div className="w-[68px] h-[68px] rounded-xl overflow-hidden border border-slate-100 bg-slate-50 flex items-center justify-center flex-shrink-0">
+            {profile.theme.logoUrl
+              ? <img src={profile.theme.logoUrl} className="w-full h-full object-contain" alt="logo" />
+              : <span className="text-2xl font-black" style={{ color: profile.theme.primaryColor }}>{profile.name.charAt(0)}</span>
+            }
           </div>
+          {/* Centre title */}
           <div className="text-center">
-            <h1 className="text-4xl font-black uppercase tracking-widest mb-1" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">GST Compliant Tax Invoice</p>
+            <h1 className="text-[40px] font-black tracking-tight leading-none" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.22em] mt-1">GST Compliant Tax Invoice</p>
           </div>
-          <div className="text-right space-y-2 font-poppins">
-             <p className="flex flex-col"><span className="text-[10px] font-bold text-slate-400 uppercase">Inv #</span><span className="text-sm font-bold">{invoiceNumber}</span></p>
-             <p className="flex flex-col"><span className="text-[10px] font-bold text-slate-400 uppercase">Date</span><span className="text-sm font-bold">{invoiceDate}</span></p>
+          {/* Right meta */}
+          <div className="space-y-2 text-right">
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Invoice #</p>
+              <p className="text-sm font-black text-slate-900">{invoiceNumber}</p>
+            </div>
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Invoice Date</p>
+              <p className="text-sm font-black text-slate-900">{invoiceDate}</p>
+            </div>
           </div>
-       </div>
-       <div className="grid grid-cols-2 gap-8">
-          <div className="p-8 rounded-[2rem] space-y-3" style={{ backgroundColor: `${profile.theme.primaryColor}10` }}>
-             <h3 className="text-[10px] font-black uppercase tracking-widest" style={{ color: profile.theme.primaryColor }}>Billed by</h3>
-             <p className="text-sm font-bold text-slate-800">{profile.name}</p>
-             <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{profile.address}, {profile.city}, {profile.state} - {profile.pincode}</p>
-             <div className="flex gap-4 pt-2 border-t border-slate-200/50"><p className="flex flex-col"><span className="text-[9px] font-bold text-slate-400">GSTIN</span><span className="text-[10px] font-bold text-slate-800">{profile.gstin}</span></p><p className="flex flex-col"><span className="text-[9px] font-bold text-slate-400">PAN</span><span className="text-[10px] font-bold text-slate-800">{profile.pan}</span></p></div>
+        </div>
+        {/* Primary colour divider */}
+        <div className="h-[3px] rounded-full mt-6" style={{ backgroundColor: profile.theme.primaryColor }}></div>
+      </div>
+
+      <div className="px-10 pb-10 flex flex-col space-y-5 mt-6">
+
+        {/* ── Billed by / Billed to ── */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-5 rounded-2xl" style={{ backgroundColor: `${profile.theme.primaryColor}12` }}>
+            <p className="text-[8px] font-black uppercase tracking-[0.28em] mb-3" style={{ color: profile.theme.primaryColor }}>Billed by</p>
+            <p className="text-[13px] font-black text-slate-900">{profile.name}</p>
+            {profile.tagline && <p className="text-[9px] text-slate-400 italic mt-0.5">{profile.tagline}</p>}
+            <p className="text-[10px] text-slate-500 leading-relaxed mt-1">{profile.address}, {profile.city}, {profile.state} – {profile.pincode}</p>
+            <div className="flex gap-6 mt-3 pt-3 border-t border-slate-200/50">
+              <div><p className="text-[7px] font-bold text-slate-400 uppercase">GSTIN</p><p className="text-[10px] font-black text-slate-800">{profile.gstin || '—'}</p></div>
+              <div><p className="text-[7px] font-bold text-slate-400 uppercase">PAN</p><p className="text-[10px] font-black text-slate-800">{profile.pan || '—'}</p></div>
+            </div>
           </div>
-          <div className="p-8 rounded-[2rem] space-y-3" style={{ backgroundColor: `${profile.theme.primaryColor}10` }}>
-             <h3 className="text-[10px] font-black uppercase tracking-widest" style={{ color: profile.theme.primaryColor }}>Billed to</h3>
-             <p className="text-sm font-bold text-slate-800">{selectedCustomer?.name || 'Party Name'}</p>
-             <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{selectedCustomer?.address || '---'}, {selectedCustomer?.city || '---'}, {selectedCustomer?.state || '---'} - {selectedCustomer?.pincode || '---'}</p>
-             <div className="flex gap-4 pt-2 border-t border-slate-200/50"><p className="flex flex-col"><span className="text-[9px] font-bold text-slate-400">GSTIN</span><span className="text-[10px] font-bold text-slate-800">{selectedCustomer?.gstin || '---'}</span></p></div>
+          <div className="p-5 rounded-2xl" style={{ backgroundColor: `${profile.theme.primaryColor}12` }}>
+            <p className="text-[8px] font-black uppercase tracking-[0.28em] mb-3" style={{ color: profile.theme.primaryColor }}>Billed to</p>
+            <p className="text-[13px] font-black text-slate-900">{selectedCustomer?.name || 'Party Name'}</p>
+            <p className="text-[10px] text-slate-500 leading-relaxed mt-1">{selectedCustomer?.address || '—'}, {selectedCustomer?.city || '—'}, {selectedCustomer?.state || '—'} – {selectedCustomer?.pincode || '—'}</p>
+            {selectedCustomer?.phone && <p className="text-[10px] text-slate-500">{selectedCustomer.phone}</p>}
+            <div className="flex gap-6 mt-3 pt-3 border-t border-slate-200/50">
+              <div><p className="text-[7px] font-bold text-slate-400 uppercase">GSTIN</p><p className="text-[10px] font-black text-slate-800">{selectedCustomer?.gstin || '—'}</p></div>
+            </div>
           </div>
-       </div>
-       <div className="flex-1">
-          <table className="w-full text-left border-collapse"><thead><tr className="text-white text-[10px] font-bold uppercase tracking-widest" style={{ backgroundColor: profile.theme.primaryColor }}>
-            <th className="px-6 py-4 rounded-tl-2xl">Item description</th><th className="px-4 py-4 text-center">HSN</th><th className="px-4 py-4 text-center">Qty.</th><th className="px-4 py-4 text-right">Rate</th><th className="px-6 py-4 text-right rounded-tr-2xl">Amount</th>
-          </tr></thead>
-          <tbody className="text-xs divide-y divide-slate-100">{items.map((item, idx) => (
-            <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-              <td className="px-6 py-6 font-medium text-slate-700">{idx + 1}. {item.description || 'No Description'}</td>
-              <td className="px-4 py-6 text-center text-slate-500">{item.hsnCode || '---'}</td>
-              <td className="px-4 py-6 text-center font-bold text-slate-800">{item.quantity}</td>
-              <td className="px-4 py-6 text-right text-slate-600">₹{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              <td className="px-6 py-6 text-right font-bold text-slate-800">₹{(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            </tr>
-          ))}</tbody></table>
-       </div>
-       <div className="grid grid-cols-2 gap-20 pt-12 border-t border-slate-100">
-          <div className="space-y-6">
-             <div className="space-y-4"><h4 className="text-[10px] font-black uppercase tracking-widest" style={{ color: profile.theme.primaryColor }}>Bank & Payment Info</h4>
-             <div className="text-[10px] font-bold text-slate-500 space-y-1.5 font-poppins">
-                <p>Bank: <span className="text-slate-800">{profile.bankName}</span></p><p>A/c: <span className="text-slate-800">{profile.accountNumber}</span></p><p>IFSC: <span className="text-slate-800">{profile.ifscCode}</span></p><p className="font-black pt-1 border-t border-slate-50" style={{ color: profile.theme.primaryColor }}>UPI ID: {profile.upiId}</p>
-             </div></div>
-             <div className="space-y-2"><h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Notes</h4><p className="text-[10px] text-slate-500 italic leading-relaxed">{profile.defaultNotes}</p></div>
+        </div>
+
+        {/* ── Place of Supply / Country of Supply ── */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="px-5 py-3 rounded-xl border border-slate-100 bg-slate-50/70">
+            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Place of Supply</p>
+            <p className="text-[11px] font-black text-slate-800 mt-0.5">{selectedCustomer?.state || profile.state}</p>
           </div>
-          <div className="space-y-6">
-             <div className="space-y-3 font-poppins">
-                <div className="flex justify-between text-sm font-bold text-slate-500"><span>Sub Total</span><span>₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-                <div className="flex justify-between text-sm font-bold text-emerald-500"><span>Tax (GST)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-             </div>
-             <div className="pt-6 border-t-2 border-slate-100 flex justify-between items-center">
-                <span className="text-2xl font-black uppercase tracking-tighter" style={{ color: profile.theme.primaryColor }}>Grand Total</span>
-                <span className="text-4xl font-black font-poppins" style={{ color: profile.theme.primaryColor }}>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-             </div>
+          <div className="px-5 py-3 rounded-xl border border-slate-100 bg-slate-50/70">
+            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Country of Supply</p>
+            <p className="text-[11px] font-black text-slate-800 mt-0.5">India</p>
           </div>
-       </div>
+        </div>
+
+        {/* ── Items Table ── */}
+        <div className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
+          <table className="w-full text-left border-collapse text-[10px]">
+            <thead>
+              <tr className="text-white font-black uppercase tracking-wide" style={{ backgroundColor: profile.theme.primaryColor }}>
+                <th className="px-3 py-3 w-7">#</th>
+                <th className="px-3 py-3">Item Description</th>
+                <th className="px-2 py-3 text-center">HSN/SAC</th>
+                <th className="px-2 py-3 text-center">Qty</th>
+                <th className="px-2 py-3 text-center">GST%</th>
+                <th className="px-3 py-3 text-right">Taxable Amt</th>
+                {gstType === GSTType.CGST_SGST ? (
+                  <>
+                    <th className="px-2 py-3 text-right">SGST</th>
+                    <th className="px-2 py-3 text-right">CGST</th>
+                  </>
+                ) : (
+                  <th className="px-2 py-3 text-right" colSpan={2}>IGST</th>
+                )}
+                <th className="px-3 py-3 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {items.map((item, idx) => {
+                const taxable = item.quantity * item.rate;
+                const itemTax = taxable * item.gstRate / 100;
+                const halfTax = itemTax / 2;
+                return (
+                  <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                    <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
+                    <td className="px-3 py-3 font-semibold text-slate-800">{item.description || 'No description'}</td>
+                    <td className="px-2 py-3 text-center text-slate-500">{item.hsnCode || '—'}</td>
+                    <td className="px-2 py-3 text-center font-black text-slate-800">{item.quantity}</td>
+                    <td className="px-2 py-3 text-center text-slate-500">{item.gstRate}%</td>
+                    <td className="px-3 py-3 text-right text-slate-700">₹{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    {gstType === GSTType.CGST_SGST ? (
+                      <>
+                        <td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      </>
+                    ) : (
+                      <td className="px-2 py-3 text-right text-slate-600" colSpan={2}>₹{itemTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    )}
+                    <td className="px-3 py-3 text-right font-black text-slate-900">₹{(taxable + itemTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Bank Details (left) + Totals (right) ── */}
+        <div className="grid grid-cols-2 gap-8 pt-1">
+          {/* Left column */}
+          <div className="space-y-5">
+            {/* Bank details */}
+            <div>
+              <p className="text-[8px] font-black uppercase tracking-[0.28em] mb-3" style={{ color: profile.theme.primaryColor }}>Bank & Payment Details</p>
+              <div className="flex gap-4 items-start">
+                <div className="flex-1 space-y-1.5 text-[10px]">
+                  {profile.bankName && <div className="flex justify-between"><span className="text-slate-400 font-bold">Bank</span><span className="text-slate-800 font-bold">{profile.bankName}</span></div>}
+                  {profile.accountNumber && <div className="flex justify-between"><span className="text-slate-400 font-bold">Account No.</span><span className="text-slate-800 font-bold">{profile.accountNumber}</span></div>}
+                  {profile.ifscCode && <div className="flex justify-between"><span className="text-slate-400 font-bold">IFSC</span><span className="text-slate-800 font-bold">{profile.ifscCode}</span></div>}
+                  {profile.upiId && <div className="flex justify-between pt-1.5 border-t border-slate-100"><span className="text-slate-400 font-bold">UPI ID</span><span className="font-black" style={{ color: profile.theme.primaryColor }}>{profile.upiId}</span></div>}
+                </div>
+                {profile.upiId && upiQrUrl && (
+                  <div className="flex-shrink-0 flex flex-col items-center">
+                    <p className="text-[6px] font-black text-slate-300 uppercase tracking-widest mb-1">Scan to Pay</p>
+                    <div className="p-1.5 border border-slate-100 rounded-xl bg-white shadow-sm">
+                      <img src={upiQrUrl} className="w-[56px] h-[56px]" alt="UPI QR" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Terms */}
+            {profile.termsAndConditions && (
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-[0.28em] mb-2" style={{ color: profile.theme.primaryColor }}>Terms & Conditions</p>
+                <p className="text-[9px] text-slate-500 leading-relaxed whitespace-pre-line">{profile.termsAndConditions}</p>
+              </div>
+            )}
+            {/* Notes */}
+            {profile.defaultNotes && (
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-[0.28em] mb-2" style={{ color: profile.theme.primaryColor }}>Additional Notes</p>
+                <p className="text-[9px] text-slate-500 italic leading-relaxed">{profile.defaultNotes}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Right column — Totals */}
+          <div className="space-y-0.5 text-[11px] font-bold">
+            <div className="flex justify-between py-2.5 border-b border-slate-100">
+              <span className="text-slate-400">Sub Total</span>
+              <span className="text-slate-800">₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            </div>
+            {gstType === GSTType.CGST_SGST ? (
+              <>
+                <div className="flex justify-between py-2">
+                  <span className="text-slate-400">CGST</span>
+                  <span className="text-slate-700">₹{(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-slate-400">SGST</span>
+                  <span className="text-slate-700">₹{(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between py-2">
+                <span className="text-slate-400">IGST</span>
+                <span className="text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-baseline pt-4 border-t-2" style={{ borderColor: profile.theme.primaryColor }}>
+              <span className="text-[18px] font-black tracking-tight" style={{ color: profile.theme.primaryColor }}>Total</span>
+              <span className="text-[28px] font-black tracking-tighter" style={{ color: profile.theme.primaryColor }}>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="pt-3">
+              <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Invoice Total (in words)</p>
+              <p className="text-[9px] font-black text-slate-700 italic leading-snug mt-1">{numberToWords(grandTotal)} Only</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Contact + Signature footer ── */}
+        <div className="flex justify-between items-end pt-5 border-t border-slate-100">
+          <div className="text-[9px] text-slate-400 font-medium space-y-0.5">
+            {profile.email && <p>✉ {profile.email}</p>}
+            {profile.phone && <p>✆ {profile.phone}</p>}
+          </div>
+          <div className="text-right">
+            <div className="w-28 border-t border-slate-200 ml-auto mb-1"></div>
+            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Authorised Signatory</p>
+            <p className="text-[9px] font-black text-slate-700 mt-0.5">{profile.name}</p>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 

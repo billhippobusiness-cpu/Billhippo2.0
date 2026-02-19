@@ -1,22 +1,23 @@
 /**
  * InvoicePDF — A4 tax invoice template for @react-pdf/renderer
  *
- * UPDATED: PDF now matches the HTML invoice preview templates exactly.
- *  - Reads business.theme.primaryColor  → all accents use the chosen color
- *  - Reads business.theme.templateId    → renders the matching layout:
- *      modern-2 (default): Large "Invoice" heading on left, business info right,
- *                          two "Billed by / Billed to" cards, items table,
- *                          totals box on right, bank details at bottom.
- *      modern-1:           Logo placeholder left, "Invoice" centered, date/inv# right,
- *                          two tinted-bg address cards, items table,
- *                          grand total in primary color box.
- *      minimal:            Falls back to modern-2 base layout.
+ * UPDATED: modern-1 PDF now matches the sample invoice style exactly:
+ *  - Logo box left | "Invoice" centred (primary colour) | Invoice#/Date right
+ *  - Primary-colour divider
+ *  - Two tinted "Billed by / Billed to" cards
+ *  - Place of Supply / Country of Supply row
+ *  - Full GST table: # | Description | HSN | Qty | GST% | Taxable | SGST | CGST | Total
+ *    (collapses SGST+CGST into single IGST column for inter-state invoices)
+ *  - Two-column footer: Bank details + QR (left) | Sub/CGST/SGST/Total (right)
+ *  - Terms & Conditions, Additional Notes, Contact + Signature strip
+ *
+ * modern-2 (default) is unchanged.
  *
  * Retained fixes:
- *  - No Font.register(): custom WOFF URLs fail silently; using Helvetica.
- *  - No <Image> logo: Firebase Storage URLs cause CORS inside the renderer.
- *  - wrap={false} on every table row → no row splits across pages.
- *  - Table header uses `fixed` prop  → repeats on every page.
+ *  - No Font.register() — using built-in Helvetica (custom WOFF URLs fail silently).
+ *  - No Firebase logo image — CORS inside renderer; first-letter initial used instead.
+ *  - wrap={false} on every table row — no row splits across pages.
+ *  - Table header uses `fixed` prop — repeats on every page.
  */
 
 import React from 'react';
@@ -25,11 +26,12 @@ import {
   Page,
   Text,
   View,
+  Image,
   StyleSheet,
 } from '@react-pdf/renderer';
 import { Invoice, BusinessProfile, Customer, GSTType } from '../../types';
 
-// ─── Static palette (non-theme colours) ──────────────────────────────────────
+// ─── Static palette ────────────────────────────────────────────────────────────
 const DARK    = '#1e293b';
 const MID     = '#475569';
 const LIGHT   = '#94a3b8';
@@ -38,7 +40,7 @@ const ALT     = '#f8fafc';
 const WHITE   = '#ffffff';
 const EMERALD = '#10b981';
 
-// ─── Helper: convert hex + alpha to rgba() ───────────────────────────────────
+// ─── Helper: hex → rgba() ─────────────────────────────────────────────────────
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -46,24 +48,50 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-// ─── Base StyleSheet (static, theme-independent) ─────────────────────────────
+// ─── Number → words ───────────────────────────────────────────────────────────
+function toWords(amount: number): string {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven',
+    'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen',
+    'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  function conv(n: number): string {
+    if (n === 0) return '';
+    if (n < 20)  return ones[n];
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
+    if (n < 1000) return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + conv(n % 100) : '');
+    if (n < 100000)   return conv(Math.floor(n / 1000))   + ' Thousand' + (n % 1000   ? ' ' + conv(n % 1000)   : '');
+    if (n < 10000000) return conv(Math.floor(n / 100000)) + ' Lakh'     + (n % 100000 ? ' ' + conv(n % 100000) : '');
+    return              conv(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + conv(n % 10000000) : '');
+  }
+  const rupees = Math.floor(amount);
+  const paise  = Math.round((amount - rupees) * 100);
+  let result   = conv(rupees) + ' Rupees';
+  if (paise > 0) result += ' and ' + conv(paise) + ' Paise';
+  return result + ' Only';
+}
+
+// ─── Currency formatter ───────────────────────────────────────────────────────
+const fmt = (n: number) =>
+  `Rs.${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// ─── Base stylesheet ──────────────────────────────────────────────────────────
 const S = StyleSheet.create({
   page: {
     fontFamily: 'Helvetica',
     fontSize: 9,
     backgroundColor: WHITE,
-    paddingTop: 36,
-    paddingBottom: 52,
-    paddingHorizontal: 36,
+    paddingTop: 32,
+    paddingBottom: 48,
+    paddingHorizontal: 32,
     color: DARK,
   },
 
   // ── Dividers ──
-  dividerPrimary: { height: 2, borderRadius: 2, marginBottom: 16 },
+  dividerPrimary: { height: 2, borderRadius: 2, marginBottom: 14 },
   dividerThin:    { height: 0.5, backgroundColor: BORDER, marginVertical: 10 },
 
   // ── Shared info boxes ──
-  infoRow:       { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  infoRow:       { flexDirection: 'row', gap: 12, marginBottom: 12 },
   infoBox:       { flex: 1, backgroundColor: ALT, borderRadius: 6, padding: 10, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid' },
   infoBoxTinted: { flex: 1, borderRadius: 6, padding: 10 },
   infoBoxLabel:  { fontSize: 7, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', letterSpacing: 0.9, marginBottom: 5 },
@@ -75,37 +103,29 @@ const S = StyleSheet.create({
   infoMetaValue: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
 
   // ── Status badge ──
-  badge:         { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20, alignSelf: 'flex-start', marginTop: 5 },
-  badgePaid:     { backgroundColor: '#dcfce7' },
-  badgeUnpaid:   { backgroundColor: '#fee2e2' },
-  badgePartial:  { backgroundColor: '#fef3c7' },
-  badgeText:     { fontSize: 7, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase' },
+  badge:            { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20, alignSelf: 'flex-start', marginTop: 5 },
+  badgePaid:        { backgroundColor: '#dcfce7' },
+  badgeUnpaid:      { backgroundColor: '#fee2e2' },
+  badgePartial:     { backgroundColor: '#fef3c7' },
+  badgeText:        { fontSize: 7, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase' },
   badgeTextPaid:    { color: '#16a34a' },
   badgeTextUnpaid:  { color: '#dc2626' },
   badgeTextPartial: { color: '#d97706' },
 
-  // ── Items table ──
+  // ── Generic table row ──
   tableHeader:     { flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 8, borderRadius: 3 },
   tableHeaderText: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: WHITE, textTransform: 'uppercase' },
-  tableRow:        { flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 8, borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' },
+  tableRow:        { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8, borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' },
   tableRowAlt:     { backgroundColor: ALT },
   tableCell:       { fontSize: 8, color: MID },
   tableCellBold:   { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
 
-  // modern-2 column widths (no Rate column — Amount = lineTotal before tax, GST shown separately)
+  // ── modern-2 column widths ──
   m2cDesc: { width: '42%' },
   m2cHsn:  { width: '15%', textAlign: 'center' },
   m2cQty:  { width: '10%', textAlign: 'center' },
   m2cGst:  { width: '10%', textAlign: 'center' },
   m2cAmt:  { width: '23%', textAlign: 'right' },
-
-  // modern-1 column widths (includes Rate)
-  m1cDesc: { width: '35%' },
-  m1cHsn:  { width: '13%', textAlign: 'center' },
-  m1cQty:  { width: '9%',  textAlign: 'center' },
-  m1cRate: { width: '14%', textAlign: 'right' },
-  m1cGst:  { width: '10%', textAlign: 'center' },
-  m1cAmt:  { width: '19%', textAlign: 'right' },
 
   // ── Totals (modern-2) ──
   totalsWrap:  { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10, marginBottom: 12 },
@@ -120,7 +140,7 @@ const S = StyleSheet.create({
   // ── Amount in words ──
   amtWords: { fontSize: 7.5, color: MID, fontFamily: 'Helvetica-Oblique', marginBottom: 10, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: ALT, borderRadius: 4 },
 
-  // ── Footer boxes ──
+  // ── Footer boxes (modern-2) ──
   footerRow:   { flexDirection: 'row', gap: 12, marginBottom: 12 },
   footerBox:   { flex: 1, backgroundColor: ALT, borderRadius: 5, padding: 9, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid' },
   footerLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 5 },
@@ -132,62 +152,85 @@ const S = StyleSheet.create({
   signLabel: { fontSize: 7, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
 
   // ── Page number ──
-  pageNum: { position: 'absolute', bottom: 18, left: 0, right: 0, textAlign: 'center', fontSize: 7, color: LIGHT },
+  pageNum: { position: 'absolute', bottom: 16, left: 0, right: 0, textAlign: 'center', fontSize: 7, color: LIGHT },
 
   // ── modern-2 header ──
-  m2HeaderRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  m2Title:       { fontSize: 32, fontFamily: 'Helvetica-Bold', letterSpacing: -1, lineHeight: 1 },
-  m2MetaLabel:   { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.9 },
-  m2MetaValue:   { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
-  m2BizName:     { fontSize: 12, fontFamily: 'Helvetica-Bold', color: DARK, textAlign: 'right' },
-  m2BizSub:      { fontSize: 7.5, color: MID, textAlign: 'right', lineHeight: 1.5 },
-  m2BizGst:      { fontSize: 7.5, fontFamily: 'Helvetica-Bold', textAlign: 'right', lineHeight: 1.5 },
+  m2HeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  m2Title:     { fontSize: 32, fontFamily: 'Helvetica-Bold', letterSpacing: -1, lineHeight: 1 },
+  m2MetaLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.9 },
+  m2MetaValue: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
+  m2BizName:   { fontSize: 12, fontFamily: 'Helvetica-Bold', color: DARK, textAlign: 'right' },
+  m2BizSub:    { fontSize: 7.5, color: MID, textAlign: 'right', lineHeight: 1.5 },
+  m2BizGst:    { fontSize: 7.5, fontFamily: 'Helvetica-Bold', textAlign: 'right', lineHeight: 1.5 },
 
-  // ── modern-1 header ──
-  m1HeaderRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: BORDER, borderBottomStyle: 'solid' },
-  m1LogoBox:    { width: 64, height: 64, backgroundColor: ALT, borderRadius: 8, alignItems: 'center', justifyContent: 'center', padding: 6 },
-  m1LogoText:   { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK, textAlign: 'center' },
-  m1TitleWrap:  { alignItems: 'center' },
-  m1Title:      { fontSize: 22, fontFamily: 'Helvetica-Bold', textAlign: 'center', letterSpacing: 2 },
-  m1TitleSub:   { fontSize: 7, color: LIGHT, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2, textAlign: 'center' },
-  m1MetaRight:  { alignItems: 'flex-end' },
-  m1MetaLabel:  { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
-  m1MetaValue:  { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
+  // ════════════════════════════════════════════════════════════════
+  //  MODERN-1 — unique styles
+  // ════════════════════════════════════════════════════════════════
 
-  // ── modern-1 footer grid ──
-  m1FootGrid:   { flexDirection: 'row', gap: 18, marginTop: 10, marginBottom: 12 },
-  m1BankCol:    { flex: 1 },
-  m1SumCol:     { flex: 1 },
-  m1GrandBox:   { borderRadius: 6, padding: 10, marginTop: 8 },
-  m1GrandLabel: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: WHITE },
-  m1GrandValue: { fontSize: 14, fontFamily: 'Helvetica-Bold', color: WHITE, marginTop: 2 },
+  // Header row
+  m1HdrRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  m1LogoBox:     { width: 54, height: 54, backgroundColor: ALT, borderRadius: 7, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid', alignItems: 'center', justifyContent: 'center' },
+  m1LogoInitial: { fontSize: 20, fontFamily: 'Helvetica-Bold', color: DARK },
+  m1TitleWrap:   { alignItems: 'center' },
+  m1Title:       { fontSize: 28, fontFamily: 'Helvetica-Bold', letterSpacing: -0.5, lineHeight: 1 },
+  m1TitleSub:    { fontSize: 6.5, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.9, marginTop: 2 },
+  m1MetaRight:   { alignItems: 'flex-end' },
+  m1MetaLabel:   { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
+  m1MetaValue:   { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
+
+  // Supply info strip
+  m1SupplyRow:   { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  m1SupplyBox:   { flex: 1, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 5, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid', backgroundColor: ALT },
+  m1SupplyLabel: { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8 },
+  m1SupplyValue: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK, marginTop: 2 },
+
+  // Table — modern-1 has CGST+SGST columns
+  // CGST_SGST mode: # | Desc | HSN | Qty | GST% | Taxable | SGST | CGST | Total
+  m1cNo:   { width: '4%' },
+  m1cDesc: { width: '24%' },
+  m1cHsn:  { width: '10%', textAlign: 'center' },
+  m1cQty:  { width: '6%',  textAlign: 'center' },
+  m1cGst:  { width: '7%',  textAlign: 'center' },
+  m1cTax:  { width: '13%', textAlign: 'right' },
+  m1cHalf: { width: '9%',  textAlign: 'right' },   // SGST or CGST column (each)
+  m1cIgst: { width: '18%', textAlign: 'right' },   // merged IGST column
+  m1cTot:  { width: '18%', textAlign: 'right' },
+
+  // Two-column footer
+  m1FooterGrid:   { flexDirection: 'row', gap: 14, marginTop: 12 },
+  m1FooterLeft:   { width: '56%' },
+  m1FooterRight:  { flex: 1 },
+  m1SecLabel:     { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
+
+  // Bank key-value rows
+  m1BankRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2.5 },
+  m1BankLabel: { fontSize: 7.5, color: LIGHT },
+  m1BankValue: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: DARK },
+
+  // QR code
+  m1QrWrap:  { alignItems: 'center', marginLeft: 12 },
+  m1QrLabel: { fontSize: 5.5, color: LIGHT, textAlign: 'center', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.6 },
+  m1QrImg:   { width: 52, height: 52 },
+
+  // Totals summary (right column)
+  m1TotRow:       { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3.5, borderBottomWidth: 0.5, borderBottomColor: BORDER, borderBottomStyle: 'solid' },
+  m1TotLabel:     { fontSize: 8.5, color: MID },
+  m1TotValue:     { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: DARK },
+  m1GrandSection: { marginTop: 6, paddingTop: 6 },
+  m1GrandRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  m1GrandLabel:   { fontSize: 12, fontFamily: 'Helvetica-Bold' },
+  m1GrandValue:   { fontSize: 15, fontFamily: 'Helvetica-Bold' },
+  m1WordsLabel:   { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 8 },
+  m1WordsText:    { fontSize: 7.5, fontFamily: 'Helvetica-Oblique', color: DARK, marginTop: 2, lineHeight: 1.4 },
+
+  // Contact + signature footer strip
+  m1ContactStrip: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 12, paddingTop: 9, borderTopWidth: 0.5, borderTopColor: BORDER, borderTopStyle: 'solid' },
+  m1ContactText:  { fontSize: 7.5, color: LIGHT, lineHeight: 1.6 },
+  m1SignCol:      { alignItems: 'flex-end' },
+  m1SignLine:     { width: 90, height: 0.5, backgroundColor: LIGHT, marginBottom: 4 },
+  m1SignLabel:    { fontSize: 6.5, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
+  m1SignName:     { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK, marginTop: 1 },
 });
-
-// ─── Number → words ───────────────────────────────────────────────────────────
-function toWords(amount: number): string {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven',
-    'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen',
-    'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  function conv(n: number): string {
-    if (n === 0) return '';
-    if (n < 20)  return ones[n];
-    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
-    if (n < 1000) return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + conv(n % 100) : '');
-    if (n < 100000)   return conv(Math.floor(n / 1000))    + ' Thousand' + (n % 1000    ? ' ' + conv(n % 1000)    : '');
-    if (n < 10000000) return conv(Math.floor(n / 100000))  + ' Lakh'     + (n % 100000  ? ' ' + conv(n % 100000)  : '');
-    return             conv(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + conv(n % 10000000) : '');
-  }
-  const rupees = Math.floor(amount);
-  const paise  = Math.round((amount - rupees) * 100);
-  let result   = conv(rupees) + ' Rupees';
-  if (paise > 0) result += ' and ' + conv(paise) + ' Paise';
-  return result + ' Only';
-}
-
-// ─── Currency formatter ───────────────────────────────────────────────────────
-const fmt = (n: number) =>
-  `Rs.${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface InvoicePDFProps {
@@ -201,61 +244,83 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
   const PRIMARY    = business.theme?.primaryColor || '#4c2de0';
   const templateId = business.theme?.templateId   || 'modern-2';
   const hasGst     = business.gstEnabled;
+  const isCgst     = invoice.gstType === GSTType.CGST_SGST;
 
   const itemsWithTax = invoice.items.map(item => {
     const lineTotal = item.quantity * item.rate;
     const taxAmt    = lineTotal * (item.gstRate / 100);
-    return { ...item, lineTotal, taxAmt, total: lineTotal + taxAmt };
+    const halfTax   = taxAmt / 2;
+    return { ...item, lineTotal, taxAmt, halfTax, grandLine: lineTotal + taxAmt };
   });
 
-  // Badge styles based on status
-  const badgeContainer = invoice.status === 'Paid'    ? [S.badge, S.badgePaid]
-                       : invoice.status === 'Unpaid'  ? [S.badge, S.badgeUnpaid]
-                       :                                [S.badge, S.badgePartial];
-  const badgeTxt       = invoice.status === 'Paid'    ? [S.badgeText, S.badgeTextPaid]
-                       : invoice.status === 'Unpaid'  ? [S.badgeText, S.badgeTextUnpaid]
-                       :                                [S.badgeText, S.badgeTextPartial];
+  // QR URL (external, not Firebase — no CORS issue)
+  const qrUrl = business.upiId
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+        `upi://pay?pa=${business.upiId}&pn=${encodeURIComponent(business.name)}&am=${invoice.totalAmount}&cu=INR`
+      )}`
+    : null;
+
+  // Badge
+  const badgeContainer = invoice.status === 'Paid'   ? [S.badge, S.badgePaid]
+                       : invoice.status === 'Unpaid' ? [S.badge, S.badgeUnpaid]
+                       :                               [S.badge, S.badgePartial];
+  const badgeTxt       = invoice.status === 'Paid'   ? [S.badgeText, S.badgeTextPaid]
+                       : invoice.status === 'Unpaid' ? [S.badgeText, S.badgeTextUnpaid]
+                       :                               [S.badgeText, S.badgeTextPartial];
 
   // ════════════════════════════════════════════════════════════════
   //  MODERN-1 TEMPLATE
-  //  Logo left | "Invoice" centered (primary) | Invoice#/Date right
-  //  Two tinted address cards | Items table | Grand total box
+  //  Matches the sample invoice style:
+  //  Logo | "Invoice" centred (primary) | Invoice#/Date
+  //  Primary divider
+  //  Tinted Billed by / Billed to cards
+  //  Place of Supply / Country of Supply strip
+  //  Full GST table (SGST + CGST columns, or merged IGST)
+  //  Bank details + QR (left) | Totals (right)
+  //  Terms · Notes · Contact + Signature
   // ════════════════════════════════════════════════════════════════
   if (templateId === 'modern-1') {
     return (
       <Document title={`Invoice ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
         <Page size="A4" style={S.page} wrap>
 
-          {/* ── Header ── */}
-          <View style={S.m1HeaderRow} fixed>
-            {/* Logo placeholder (left) */}
-            <View style={S.m1LogoBox}>
-              <Text style={S.m1LogoText}>{business.name.slice(0, 8)}</Text>
+          {/* ── Header (fixed — repeats on every page) ── */}
+          <View fixed style={{ marginBottom: 14 }}>
+            <View style={S.m1HdrRow}>
+              {/* Logo / initial (left) */}
+              <View style={S.m1LogoBox}>
+                <Text style={[S.m1LogoInitial, { color: PRIMARY }]}>
+                  {business.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+
+              {/* "Invoice" centred */}
+              <View style={S.m1TitleWrap}>
+                <Text style={[S.m1Title, { color: PRIMARY }]}>Invoice</Text>
+                <Text style={S.m1TitleSub}>GST Compliant Tax Invoice</Text>
+              </View>
+
+              {/* Invoice # / Date / Status (right) */}
+              <View style={S.m1MetaRight}>
+                <Text style={S.m1MetaLabel}>Invoice #</Text>
+                <Text style={S.m1MetaValue}>{invoice.invoiceNumber}</Text>
+                <View style={{ marginTop: 5 }}>
+                  <Text style={S.m1MetaLabel}>Invoice Date</Text>
+                  <Text style={S.m1MetaValue}>{invoice.date}</Text>
+                </View>
+                <View style={badgeContainer}>
+                  <Text style={badgeTxt}>{invoice.status}</Text>
+                </View>
+              </View>
             </View>
 
-            {/* Title (center) */}
-            <View style={S.m1TitleWrap}>
-              <Text style={[S.m1Title, { color: PRIMARY }]}>Invoice</Text>
-              <Text style={S.m1TitleSub}>GST Compliant Tax Invoice</Text>
-            </View>
-
-            {/* Invoice # / Date / Status (right) */}
-            <View style={S.m1MetaRight}>
-              <Text style={S.m1MetaLabel}>Inv #</Text>
-              <Text style={S.m1MetaValue}>{invoice.invoiceNumber}</Text>
-              <View style={{ marginTop: 6 }}>
-                <Text style={S.m1MetaLabel}>Date</Text>
-                <Text style={S.m1MetaValue}>{invoice.date}</Text>
-              </View>
-              <View style={badgeContainer}>
-                <Text style={badgeTxt}>{invoice.status}</Text>
-              </View>
-            </View>
+            {/* Primary-colour divider */}
+            <View style={[S.dividerPrimary, { backgroundColor: PRIMARY }]} />
           </View>
 
           {/* ── Billed By / Billed To (tinted cards) ── */}
           <View style={S.infoRow}>
-            <View style={[S.infoBoxTinted, { backgroundColor: hexToRgba(PRIMARY, 0.08) }]}>
+            <View style={[S.infoBoxTinted, { backgroundColor: hexToRgba(PRIMARY, 0.07) }]}>
               <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed By</Text>
               <Text style={S.infoName}>{business.name}</Text>
               <Text style={S.infoSm}>{business.address}, {business.city}, {business.state} – {business.pincode}</Text>
@@ -276,7 +341,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
               </View>
             </View>
 
-            <View style={[S.infoBoxTinted, { backgroundColor: hexToRgba(PRIMARY, 0.08) }]}>
+            <View style={[S.infoBoxTinted, { backgroundColor: hexToRgba(PRIMARY, 0.07) }]}>
               <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed To</Text>
               <Text style={S.infoName}>{customer.name}</Text>
               <Text style={S.infoSm}>{customer.address}, {customer.city}, {customer.state} – {customer.pincode}</Text>
@@ -292,109 +357,175 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
             </View>
           </View>
 
-          {/* ── Items table ── */}
-          <View style={[S.tableHeader, { backgroundColor: PRIMARY }]} fixed>
-            <Text style={[S.tableHeaderText, S.m1cDesc]}>Item Description</Text>
-            <Text style={[S.tableHeaderText, S.m1cHsn]}>HSN</Text>
-            <Text style={[S.tableHeaderText, S.m1cQty]}>Qty</Text>
-            <Text style={[S.tableHeaderText, S.m1cRate]}>Rate</Text>
-            {hasGst && <Text style={[S.tableHeaderText, S.m1cGst]}>GST%</Text>}
-            <Text style={[S.tableHeaderText, S.m1cAmt]}>Amount</Text>
+          {/* ── Place of Supply / Country of Supply ── */}
+          <View style={S.m1SupplyRow}>
+            <View style={S.m1SupplyBox}>
+              <Text style={S.m1SupplyLabel}>Place of Supply</Text>
+              <Text style={S.m1SupplyValue}>{customer.state || business.state}</Text>
+            </View>
+            <View style={S.m1SupplyBox}>
+              <Text style={S.m1SupplyLabel}>Country of Supply</Text>
+              <Text style={S.m1SupplyValue}>India</Text>
+            </View>
           </View>
 
+          {/* ── Items Table header ── */}
+          <View style={[S.tableHeader, { backgroundColor: PRIMARY }]} fixed>
+            <Text style={[S.tableHeaderText, S.m1cNo]}>#</Text>
+            <Text style={[S.tableHeaderText, S.m1cDesc]}>Item Description</Text>
+            <Text style={[S.tableHeaderText, S.m1cHsn]}>HSN/SAC</Text>
+            <Text style={[S.tableHeaderText, S.m1cQty]}>Qty</Text>
+            {hasGst && <Text style={[S.tableHeaderText, S.m1cGst]}>GST%</Text>}
+            <Text style={[S.tableHeaderText, S.m1cTax]}>Taxable Amt</Text>
+            {hasGst && isCgst ? (
+              <>
+                <Text style={[S.tableHeaderText, S.m1cHalf]}>SGST</Text>
+                <Text style={[S.tableHeaderText, S.m1cHalf]}>CGST</Text>
+              </>
+            ) : hasGst ? (
+              <Text style={[S.tableHeaderText, S.m1cIgst]}>IGST</Text>
+            ) : null}
+            <Text style={[S.tableHeaderText, S.m1cTot]}>Total</Text>
+          </View>
+
+          {/* ── Table rows ── */}
           {itemsWithTax.map((item, idx) => (
             <View key={item.id} style={[S.tableRow, idx % 2 === 1 ? S.tableRowAlt : {}]} wrap={false}>
-              <Text style={[S.tableCell, S.m1cDesc]}>{idx + 1}. {item.description}</Text>
+              <Text style={[S.tableCell, S.m1cNo]}>{idx + 1}</Text>
+              <Text style={[S.tableCell, S.m1cDesc]}>{item.description}</Text>
               <Text style={[S.tableCell, S.m1cHsn]}>{item.hsnCode || '—'}</Text>
               <Text style={[S.tableCell, S.m1cQty]}>{item.quantity}</Text>
-              <Text style={[S.tableCell, S.m1cRate]}>{fmt(item.rate)}</Text>
               {hasGst && <Text style={[S.tableCell, S.m1cGst]}>{item.gstRate}%</Text>}
-              <Text style={[S.tableCellBold, S.m1cAmt]}>{fmt(item.lineTotal)}</Text>
+              <Text style={[S.tableCell, S.m1cTax]}>{fmt(item.lineTotal)}</Text>
+              {hasGst && isCgst ? (
+                <>
+                  <Text style={[S.tableCell, S.m1cHalf]}>{fmt(item.halfTax)}</Text>
+                  <Text style={[S.tableCell, S.m1cHalf]}>{fmt(item.halfTax)}</Text>
+                </>
+              ) : hasGst ? (
+                <Text style={[S.tableCell, S.m1cIgst]}>{fmt(item.taxAmt)}</Text>
+              ) : null}
+              <Text style={[S.tableCellBold, S.m1cTot]}>{fmt(item.grandLine)}</Text>
             </View>
           ))}
 
-          {/* ── Footer: bank info (left) | totals (right) ── */}
-          <View style={S.m1FootGrid} wrap={false}>
-            {/* Bank & Notes column */}
-            <View style={S.m1BankCol}>
-              <Text style={[S.footerLabel, { marginBottom: 6 }]}>Bank & Payment Info</Text>
-              {business.bankName      && <Text style={S.footerValue}>Bank: {business.bankName}</Text>}
-              {business.accountNumber && <Text style={S.footerValue}>A/c: {business.accountNumber}</Text>}
-              {business.ifscCode      && <Text style={S.footerValue}>IFSC: {business.ifscCode}</Text>}
-              {business.upiId         && (
-                <Text style={[S.footerValue, { color: PRIMARY, fontFamily: 'Helvetica-Bold' }]}>
-                  UPI ID: {business.upiId}
-                </Text>
-              )}
+          {/* ── Two-column footer: Bank (left) | Totals (right) ── */}
+          <View style={S.m1FooterGrid} wrap={false}>
+
+            {/* ── LEFT: Bank + T&C + Notes ── */}
+            <View style={S.m1FooterLeft}>
+
+              {/* Bank details */}
+              <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Bank & Payment Details</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                <View style={{ flex: 1 }}>
+                  {business.bankName && (
+                    <View style={S.m1BankRow}>
+                      <Text style={S.m1BankLabel}>Bank</Text>
+                      <Text style={S.m1BankValue}>{business.bankName}</Text>
+                    </View>
+                  )}
+                  {business.accountNumber && (
+                    <View style={S.m1BankRow}>
+                      <Text style={S.m1BankLabel}>Account No.</Text>
+                      <Text style={S.m1BankValue}>{business.accountNumber}</Text>
+                    </View>
+                  )}
+                  {business.ifscCode && (
+                    <View style={S.m1BankRow}>
+                      <Text style={S.m1BankLabel}>IFSC</Text>
+                      <Text style={S.m1BankValue}>{business.ifscCode}</Text>
+                    </View>
+                  )}
+                  {business.upiId && (
+                    <View style={[S.m1BankRow, { borderTopWidth: 0.5, borderTopColor: BORDER, borderTopStyle: 'solid', paddingTop: 3, marginTop: 2 }]}>
+                      <Text style={S.m1BankLabel}>UPI ID</Text>
+                      <Text style={[S.m1BankValue, { color: PRIMARY }]}>{business.upiId}</Text>
+                    </View>
+                  )}
+                </View>
+                {/* QR code */}
+                {qrUrl && (
+                  <View style={S.m1QrWrap}>
+                    <Text style={S.m1QrLabel}>Scan to Pay</Text>
+                    <Image style={S.m1QrImg} src={qrUrl} />
+                  </View>
+                )}
+              </View>
+
+              {/* Terms & Conditions */}
+              {business.termsAndConditions ? (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Terms & Conditions</Text>
+                  <Text style={{ fontSize: 7.5, color: MID, lineHeight: 1.5 }}>
+                    {business.termsAndConditions}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Additional Notes */}
               {business.defaultNotes ? (
                 <View style={{ marginTop: 8 }}>
-                  <Text style={S.footerLabel}>Notes</Text>
-                  <Text style={[S.footerValue, { fontFamily: 'Helvetica-Oblique' }]}>
+                  <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Additional Notes</Text>
+                  <Text style={{ fontSize: 7.5, color: MID, fontFamily: 'Helvetica-Oblique', lineHeight: 1.5 }}>
                     {business.defaultNotes}
                   </Text>
                 </View>
               ) : null}
             </View>
 
-            {/* Summary column */}
-            <View style={S.m1SumCol}>
-              <View style={S.totalRow}>
-                <Text style={S.totalLabel}>Sub Total</Text>
-                <Text style={S.totalValue}>{fmt(invoice.totalBeforeTax)}</Text>
+            {/* ── RIGHT: Totals ── */}
+            <View style={S.m1FooterRight}>
+              <View style={S.m1TotRow}>
+                <Text style={S.m1TotLabel}>Sub Total</Text>
+                <Text style={S.m1TotValue}>{fmt(invoice.totalBeforeTax)}</Text>
               </View>
-              {hasGst && (
-                <View style={S.totalRow}>
-                  <Text style={[S.totalLabel, { color: EMERALD }]}>Tax (GST)</Text>
-                  <Text style={[S.totalValue, { color: EMERALD }]}>
-                    {fmt(invoice.gstType === GSTType.IGST ? invoice.igst : invoice.cgst + invoice.sgst)}
-                  </Text>
-                </View>
-              )}
-              {hasGst && invoice.gstType === GSTType.CGST_SGST && (
+              {hasGst && isCgst ? (
                 <>
-                  <View style={S.totalRow}>
-                    <Text style={[S.totalLabel, { fontSize: 7, paddingLeft: 8 }]}>CGST</Text>
-                    <Text style={[S.totalValue, { fontSize: 7 }]}>{fmt(invoice.cgst)}</Text>
+                  <View style={S.m1TotRow}>
+                    <Text style={S.m1TotLabel}>CGST</Text>
+                    <Text style={S.m1TotValue}>{fmt(invoice.cgst)}</Text>
                   </View>
-                  <View style={S.totalRow}>
-                    <Text style={[S.totalLabel, { fontSize: 7, paddingLeft: 8 }]}>SGST</Text>
-                    <Text style={[S.totalValue, { fontSize: 7 }]}>{fmt(invoice.sgst)}</Text>
+                  <View style={S.m1TotRow}>
+                    <Text style={S.m1TotLabel}>SGST</Text>
+                    <Text style={S.m1TotValue}>{fmt(invoice.sgst)}</Text>
                   </View>
                 </>
-              )}
-              {hasGst && invoice.gstType === GSTType.IGST && (
-                <View style={S.totalRow}>
-                  <Text style={[S.totalLabel, { fontSize: 7, paddingLeft: 8 }]}>IGST</Text>
-                  <Text style={[S.totalValue, { fontSize: 7 }]}>{fmt(invoice.igst)}</Text>
+              ) : hasGst ? (
+                <View style={S.m1TotRow}>
+                  <Text style={S.m1TotLabel}>IGST</Text>
+                  <Text style={S.m1TotValue}>{fmt(invoice.igst)}</Text>
                 </View>
-              )}
-              {/* Grand total box in primary color */}
-              <View style={[S.m1GrandBox, { backgroundColor: PRIMARY }]}>
-                <Text style={S.m1GrandLabel}>Grand Total</Text>
-                <Text style={S.m1GrandValue}>{fmt(invoice.totalAmount)}</Text>
+              ) : null}
+
+              {/* Grand Total */}
+              <View style={[S.m1GrandSection, { borderTopWidth: 2, borderTopColor: PRIMARY, borderTopStyle: 'solid' }]}>
+                <View style={S.m1GrandRow}>
+                  <Text style={[S.m1GrandLabel, { color: PRIMARY }]}>Total</Text>
+                  <Text style={[S.m1GrandValue, { color: PRIMARY }]}>{fmt(invoice.totalAmount)}</Text>
+                </View>
               </View>
+
               {/* Amount in words */}
-              <Text style={[S.amtWords, { marginTop: 6 }]}>
-                {toWords(invoice.totalAmount)}
-              </Text>
+              <Text style={S.m1WordsLabel}>Invoice Total (in words)</Text>
+              <Text style={S.m1WordsText}>{toWords(invoice.totalAmount)}</Text>
             </View>
           </View>
 
-          {/* Terms & Conditions */}
-          {business.termsAndConditions ? (
-            <View style={S.footerBox} wrap={false}>
-              <Text style={S.footerLabel}>Terms & Conditions</Text>
-              <Text style={S.footerValue}>{business.termsAndConditions}</Text>
+          {/* ── Contact + Signature strip ── */}
+          <View style={S.m1ContactStrip} wrap={false}>
+            <View>
+              {business.email ? <Text style={S.m1ContactText}>✉  {business.email}</Text> : null}
+              {business.phone ? <Text style={S.m1ContactText}>✆  {business.phone}</Text> : null}
             </View>
-          ) : null}
-
-          {/* Signature */}
-          <View style={S.signWrap} wrap={false}>
-            <View style={S.signLine} />
-            <Text style={S.signLabel}>Authorised Signatory – {business.name}</Text>
+            <View style={S.m1SignCol}>
+              <View style={S.m1SignLine} />
+              <Text style={S.m1SignLabel}>Authorised Signatory</Text>
+              <Text style={S.m1SignName}>{business.name}</Text>
+            </View>
           </View>
 
-          {/* Page number */}
+          {/* ── Page number ── */}
           <Text
             style={S.pageNum}
             render={({ pageNumber, totalPages }) =>
@@ -417,11 +548,9 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
     <Document title={`Invoice ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
       <Page size="A4" style={S.page} wrap>
 
-        {/* ── Fixed header (repeats every page) ── */}
+        {/* ── Fixed header ── */}
         <View fixed style={{ marginBottom: 14 }}>
           <View style={S.m2HeaderRow}>
-
-            {/* Left: large "Invoice" heading + invoice meta */}
             <View>
               <Text style={[S.m2Title, { color: PRIMARY }]}>Invoice</Text>
               <View style={{ marginTop: 6, gap: 3 }}>
@@ -438,29 +567,19 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                 </View>
               </View>
             </View>
-
-            {/* Right: business name + address */}
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={S.m2BizName}>{business.name}</Text>
-              {business.address ? (
-                <Text style={S.m2BizSub}>{business.address}, {business.city}</Text>
-              ) : null}
-              {business.state ? (
-                <Text style={S.m2BizSub}>{business.state} – {business.pincode}</Text>
-              ) : null}
-              {business.gstin ? (
-                <Text style={[S.m2BizGst, { color: PRIMARY }]}>GSTIN: {business.gstin}</Text>
-              ) : null}
-              {business.phone ? <Text style={S.m2BizSub}>Ph: {business.phone}</Text> : null}
-              {business.email ? <Text style={S.m2BizSub}>{business.email}</Text> : null}
+              {business.address ? <Text style={S.m2BizSub}>{business.address}, {business.city}</Text> : null}
+              {business.state   ? <Text style={S.m2BizSub}>{business.state} – {business.pincode}</Text> : null}
+              {business.gstin   ? <Text style={[S.m2BizGst, { color: PRIMARY }]}>GSTIN: {business.gstin}</Text> : null}
+              {business.phone   ? <Text style={S.m2BizSub}>Ph: {business.phone}</Text> : null}
+              {business.email   ? <Text style={S.m2BizSub}>{business.email}</Text> : null}
             </View>
           </View>
-
-          {/* Primary-colour divider */}
           <View style={[S.dividerPrimary, { backgroundColor: PRIMARY }]} />
         </View>
 
-        {/* ── Billed By / Billed To boxes ── */}
+        {/* ── Billed By / Billed To ── */}
         <View style={S.infoRow}>
           <View style={S.infoBox}>
             <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed By</Text>
@@ -482,7 +601,6 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
               ) : null}
             </View>
           </View>
-
           <View style={S.infoBox}>
             <Text style={[S.infoBoxLabel, { color: PRIMARY }]}>Billed To</Text>
             <Text style={S.infoName}>{customer.name}</Text>
@@ -499,7 +617,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
           </View>
         </View>
 
-        {/* ── Table header (fixed — repeats every page) ── */}
+        {/* ── Table header ── */}
         <View style={[S.tableHeader, { backgroundColor: PRIMARY }]} fixed>
           <Text style={[S.tableHeaderText, S.m2cDesc]}>Item Description</Text>
           <Text style={[S.tableHeaderText, S.m2cHsn]}>HSN/SAC</Text>
@@ -519,7 +637,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
           </View>
         ))}
 
-        {/* ── Totals (right-aligned) ── */}
+        {/* ── Totals ── */}
         <View style={S.totalsWrap} wrap={false}>
           <View style={S.totalsInner}>
             <View style={S.totalRow}>
@@ -534,7 +652,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                 </Text>
               </View>
             )}
-            {hasGst && invoice.gstType === GSTType.CGST_SGST && (
+            {hasGst && isCgst && (
               <>
                 <View style={S.totalRow}>
                   <Text style={[S.totalLabel, { fontSize: 7 }]}>  CGST</Text>
@@ -546,13 +664,12 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                 </View>
               </>
             )}
-            {hasGst && invoice.gstType === GSTType.IGST && (
+            {hasGst && !isCgst && (
               <View style={S.totalRow}>
                 <Text style={[S.totalLabel, { fontSize: 7 }]}>  IGST</Text>
                 <Text style={[S.totalValue, { fontSize: 7 }]}>{fmt(invoice.igst)}</Text>
               </View>
             )}
-            {/* Grand total */}
             <View style={[S.grandRow, { backgroundColor: PRIMARY }]}>
               <Text style={S.grandLabel}>TOTAL PAYABLE</Text>
               <Text style={S.grandValue}>{fmt(invoice.totalAmount)}</Text>
@@ -565,7 +682,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
 
         <View style={S.dividerThin} />
 
-        {/* ── Bank details / Notes / T&C ── */}
+        {/* ── Bank / Notes / T&C ── */}
         <View style={S.footerRow} wrap={false}>
           {(business.bankName || business.accountNumber) ? (
             <View style={S.footerBox}>
