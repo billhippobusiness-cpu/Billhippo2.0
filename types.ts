@@ -31,8 +31,21 @@ export interface BusinessProfile {
   defaultNotes?: string;
   termsAndConditions?: string;
   gstEnabled: boolean;
+  businessType?: 'service' | 'trading';
   theme: BusinessTheme;
   signatureUrl?: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  description?: string;
+  hsnCode: string;
+  unit: string;
+  sellingPrice: number;
+  costPrice?: number;
+  gstRate: number;
+  stock?: number;
 }
 
 export interface Customer {

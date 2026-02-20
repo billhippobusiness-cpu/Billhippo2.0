@@ -26,7 +26,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { BusinessProfile, Customer, Invoice, LedgerEntry } from '../types';
+import type { BusinessProfile, Customer, Invoice, LedgerEntry, InventoryItem } from '../types';
 
 // ── Helper: get user-scoped collection reference ──
 function userCollection(userId: string, collectionName: string) {
@@ -137,4 +137,33 @@ export async function addLedgerEntry(userId: string, entry: Omit<LedgerEntry, 'i
 
 export async function deleteLedgerEntry(userId: string, entryId: string) {
   await deleteDoc(userDoc(userId, 'ledger', entryId));
+}
+
+// ═══════════════════════════════════════════
+//  INVENTORY
+// ═══════════════════════════════════════════
+
+export async function getInventoryItems(userId: string): Promise<InventoryItem[]> {
+  const snap = await getDocs(userCollection(userId, 'inventory'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as InventoryItem));
+  return docs.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function addInventoryItem(userId: string, item: Omit<InventoryItem, 'id'>): Promise<string> {
+  const ref = await addDoc(userCollection(userId, 'inventory'), {
+    ...item,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateInventoryItem(userId: string, itemId: string, data: Partial<InventoryItem>) {
+  await updateDoc(userDoc(userId, 'inventory', itemId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteInventoryItem(userId: string, itemId: string) {
+  await deleteDoc(userDoc(userId, 'inventory', itemId));
 }

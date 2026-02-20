@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search } from 'lucide-react';
-import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile } from '../types';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer } from '../lib/firestore';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X } from 'lucide-react';
+import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem } from '../types';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 
@@ -62,6 +62,21 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Customer dropdown state
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
+
+  // Quick-create customer modal
+  const [showQuickCreate, setShowQuickCreate] = useState(false);
+  const [qcForm, setQcForm] = useState({ name: '', phone: '', gstin: '', state: 'Maharashtra' });
+  const [qcSaving, setQcSaving] = useState(false);
+
+  // Inventory picker (trading only)
+  const [showInventoryPicker, setShowInventoryPicker] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -114,6 +129,58 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     setError(null);
     setSaveSuccess(false);
     setMode('editing');
+  };
+
+  // Quick-create customer handler
+  const handleQuickCreateCustomer = async () => {
+    if (!qcForm.name.trim()) return;
+    setQcSaving(true);
+    try {
+      const id = await addCustomer(userId, {
+        name: qcForm.name.trim(),
+        phone: qcForm.phone,
+        gstin: qcForm.gstin,
+        state: qcForm.state,
+        email: '', address: '', city: '', pincode: '', balance: 0,
+      });
+      const newCustomer: Customer = { id, name: qcForm.name.trim(), phone: qcForm.phone, gstin: qcForm.gstin, state: qcForm.state, email: '', address: '', city: '', pincode: '', balance: 0 };
+      setCustomers(prev => [...prev, newCustomer].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedCustomerId(id);
+      setShowQuickCreate(false);
+      setQcForm({ name: '', phone: '', gstin: '', state: 'Maharashtra' });
+    } finally {
+      setQcSaving(false);
+    }
+  };
+
+  // Open inventory picker (lazy-load items)
+  const openInventoryPicker = async () => {
+    if (!inventoryLoaded) {
+      const data = await getInventoryItems(userId);
+      setInventoryItems(data);
+      setInventoryLoaded(true);
+    }
+    setInventorySearch('');
+    setShowInventoryPicker(true);
+  };
+
+  // Select an inventory item → add as a line item
+  const handlePickInventoryItem = (item: InventoryItem) => {
+    const firstEmpty = items.find(i => !i.description.trim());
+    const newLineItem: InvoiceItem = {
+      id: firstEmpty?.id || Math.random().toString(36).substr(2, 9),
+      description: item.name,
+      hsnCode: item.hsnCode,
+      quantity: 1,
+      rate: item.sellingPrice,
+      gstRate: item.gstRate,
+    };
+    if (firstEmpty) {
+      setItems(prev => prev.map(i => i.id === firstEmpty.id ? newLineItem : i));
+    } else {
+      setItems(prev => [...prev, newLineItem]);
+    }
+    setShowInventoryPicker(false);
   };
 
   const handleFinalize = async () => {
@@ -780,17 +847,67 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
         <div className="lg:col-span-8 space-y-8">
           <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 font-poppins">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="space-y-3">
+              <div className="space-y-3 relative">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Party / Customer *</label>
-                 <div className="relative group">
-                    <select value={selectedCustomerId} onChange={(e) => { setSelectedCustomerId(e.target.value); setError(null); }}
-                      className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 appearance-none font-bold text-slate-700 focus:ring-2 ring-indigo-50">
-                      <option value="">Select Customer...</option>
-                      {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.state})</option>)}
-                    </select>
-                    <ChevronDown className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                 {/* Custom customer dropdown */}
+                 <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => { setShowCustomerDropdown(v => !v); setCustomerSearch(''); setError(null); }}
+                      className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50 flex items-center justify-between text-left"
+                    >
+                      <span className={selectedCustomer ? 'text-slate-800' : 'text-slate-400'}>
+                        {selectedCustomer ? `${selectedCustomer.name} (${selectedCustomer.state})` : 'Select Customer…'}
+                      </span>
+                      <ChevronDown size={18} className="text-slate-300 flex-shrink-0" />
+                    </button>
+                    {showCustomerDropdown && (
+                      <div className="absolute z-30 mt-2 w-full bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+                        {/* Search */}
+                        <div className="p-3 border-b border-slate-50">
+                          <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                            <input
+                              autoFocus
+                              type="text"
+                              placeholder="Search customers…"
+                              value={customerSearch}
+                              onChange={e => setCustomerSearch(e.target.value)}
+                              className="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 rounded-xl border-none focus:ring-2 ring-indigo-50 font-medium"
+                            />
+                          </div>
+                        </div>
+                        {/* Create new option */}
+                        <button
+                          type="button"
+                          onClick={() => { setShowCustomerDropdown(false); setShowQuickCreate(true); }}
+                          className="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-profee-blue hover:bg-indigo-50 transition-colors border-b border-slate-50"
+                        >
+                          <UserPlus size={16} /> + Create New Customer
+                        </button>
+                        {/* Customer list */}
+                        <div className="max-h-52 overflow-y-auto">
+                          {customers
+                            .filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()) || (c.state || '').toLowerCase().includes(customerSearch.toLowerCase()))
+                            .map(c => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => { setSelectedCustomerId(c.id); setShowCustomerDropdown(false); setCustomerSearch(''); setError(null); }}
+                                className={`w-full flex items-center justify-between px-5 py-3 text-sm hover:bg-indigo-50 transition-colors text-left ${c.id === selectedCustomerId ? 'bg-indigo-50 text-profee-blue font-bold' : 'font-medium text-slate-700'}`}
+                              >
+                                <span>{c.name}</span>
+                                <span className="text-xs text-slate-400">{c.state}</span>
+                              </button>
+                            ))
+                          }
+                          {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).length === 0 && customerSearch && (
+                            <p className="px-5 py-3 text-xs text-slate-400 italic">No customers found. Create one above.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                  </div>
-                 {customers.length === 0 && <p className="text-[10px] text-amber-500 font-bold ml-4">Add customers from the Customers tab first.</p>}
               </div>
               <div className="space-y-3">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Invoice Number</label>
@@ -805,7 +922,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
           <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 font-poppins">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold flex items-center gap-3"><Plus className="text-profee-blue" size={22} /> Particulars</h3>
-              <div className="px-5 py-2 rounded-xl bg-indigo-50 text-profee-blue text-[10px] font-black uppercase">Tax Logic: {gstType}</div>
+              <div className="flex items-center gap-3">
+                {profile.businessType === 'trading' && (
+                  <button
+                    type="button"
+                    onClick={openInventoryPicker}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors text-xs font-bold border border-amber-200"
+                  >
+                    <Package size={14} /> Pick from Inventory
+                  </button>
+                )}
+                <div className="px-5 py-2 rounded-xl bg-indigo-50 text-profee-blue text-[10px] font-black uppercase">Tax Logic: {gstType}</div>
+              </div>
             </div>
             <div className="space-y-4">
               {items.map((item) => (
@@ -839,6 +967,138 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
                 <div className="p-4 bg-slate-50 rounded-2xl flex justify-between"><span>Items</span><span className="text-slate-800">{items.length}</span></div>
               </div>
            </div>
+        </div>
+      </div>
+
+      {/* ── Click-outside overlay to close customer dropdown ── */}
+      {showCustomerDropdown && (
+        <div className="fixed inset-0 z-20" onClick={() => setShowCustomerDropdown(false)} />
+      )}
+
+      {/* ── Quick-create customer modal ── */}
+      {showQuickCreate && (
+        <QuickCreateCustomerModal
+          form={qcForm}
+          setForm={setQcForm}
+          onSave={handleQuickCreateCustomer}
+          onClose={() => setShowQuickCreate(false)}
+          saving={qcSaving}
+        />
+      )}
+
+      {/* ── Inventory picker modal (trading only) ── */}
+      {showInventoryPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="text-base font-bold font-poppins text-slate-900 flex items-center gap-2"><Package size={18} className="text-amber-600" /> Pick from Inventory</h2>
+              <button onClick={() => setShowInventoryPicker(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><X size={16} /></button>
+            </div>
+            <div className="px-6 py-3 border-b border-slate-50">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input
+                  autoFocus type="text" placeholder="Search items…"
+                  value={inventorySearch} onChange={e => setInventorySearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 rounded-xl border-none focus:ring-2 ring-amber-100 font-poppins font-medium"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {inventoryItems
+                .filter(it => it.name.toLowerCase().includes(inventorySearch.toLowerCase()) || it.hsnCode.toLowerCase().includes(inventorySearch.toLowerCase()))
+                .map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handlePickInventoryItem(item)}
+                    className="w-full flex items-center justify-between px-6 py-4 hover:bg-amber-50 border-b border-slate-50 transition-colors text-left group"
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 group-hover:text-amber-800">{item.name}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">HSN: {item.hsnCode || '—'} · {item.unit} · GST {item.gstRate}%</p>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-4">
+                      <p className="text-sm font-black text-slate-900">₹{item.sellingPrice.toLocaleString('en-IN')}</p>
+                      {(item.stock ?? 0) > 0
+                        ? <p className="text-xs text-emerald-600">Stock: {item.stock}</p>
+                        : <p className="text-xs text-rose-500">Out of stock</p>
+                      }
+                    </div>
+                  </button>
+                ))
+              }
+              {inventoryItems.length === 0 && (
+                <div className="px-6 py-12 text-center text-sm text-slate-400">
+                  No inventory items found. Add items from the Inventory page.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════
+//  QUICK-CREATE CUSTOMER MODAL
+// ══════════════════════════════════════════════════
+const QuickCreateCustomerModal: React.FC<{
+  form: { name: string; phone: string; gstin: string; state: string };
+  setForm: (f: any) => void;
+  onSave: () => void;
+  onClose: () => void;
+  saving: boolean;
+}> = ({ form, setForm, onSave, onClose, saving }) => {
+  const STATES = ['Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Delhi','Jammu and Kashmir','Ladakh','Puducherry','Chandigarh','Dadra and Nagar Haveli and Daman and Diu','Lakshadweep','Andaman and Nicobar Islands'];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h2 className="text-base font-bold font-poppins text-slate-900">New Customer</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><X size={16} /></button>
+        </div>
+        <div className="px-6 py-5 space-y-4 font-poppins">
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Customer Name *</label>
+            <input
+              autoFocus type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Raj Traders"
+              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Phone</label>
+            <input
+              type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
+              placeholder="10-digit mobile"
+              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">GSTIN</label>
+            <input
+              type="text" value={form.gstin} onChange={e => setForm({ ...form, gstin: e.target.value.toUpperCase() })}
+              placeholder="15-digit GSTIN"
+              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100 uppercase"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">State *</label>
+            <select
+              value={form.state} onChange={e => setForm({ ...form, state: e.target.value })}
+              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100 appearance-none"
+            >
+              {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-poppins font-medium">Cancel</button>
+          <button onClick={onSave} disabled={saving || !form.name.trim()} className="px-5 py-2 text-sm bg-profee-blue hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl font-poppins transition-colors">
+            {saving ? 'Saving…' : 'Create Customer'}
+          </button>
         </div>
       </div>
     </div>

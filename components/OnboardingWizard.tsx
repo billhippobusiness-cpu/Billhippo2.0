@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, MapPin, CreditCard, ArrowRight, ArrowLeft, CheckCircle, Loader2, Rocket } from 'lucide-react';
+import { Building2, MapPin, CreditCard, ArrowRight, ArrowLeft, CheckCircle, Loader2, Rocket, Briefcase, ShoppingCart } from 'lucide-react';
 import { BusinessProfile } from '../types';
 import { saveBusinessProfile } from '../lib/firestore';
 
@@ -43,6 +43,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
     defaultNotes: 'Thank you for your business. Payments are due within 15 days.',
     termsAndConditions: '1. Goods once sold will not be taken back.',
     gstEnabled: true,
+    businessType: undefined,
     theme: {
       templateId: 'modern-2',
       primaryColor: '#4c2de0',
@@ -52,7 +53,9 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
     }
   });
 
+  // Step 0 = business type; steps 1-3 = original wizard steps
   const steps = [
+    { title: 'Business Type', subtitle: 'Tell us what kind of business you run', icon: Briefcase },
     { title: 'Business Details', subtitle: 'Tell us about your business', icon: Building2 },
     { title: 'Address & GST', subtitle: 'Your place of supply', icon: MapPin },
     { title: 'Bank & UPI', subtitle: 'Payment details for invoices', icon: CreditCard },
@@ -61,10 +64,13 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
   const validateStep = (): boolean => {
     setError(null);
     if (step === 0) {
+      if (!profile.businessType) { setError('Please select your business type to continue'); return false; }
+    }
+    if (step === 1) {
       if (!profile.name.trim()) { setError('Business name is required'); return false; }
       if (!profile.phone.trim()) { setError('Contact number is required'); return false; }
     }
-    if (step === 1) {
+    if (step === 2) {
       if (!profile.city.trim()) { setError('City is required'); return false; }
       if (!profile.state.trim()) { setError('State is required'); return false; }
     }
@@ -73,9 +79,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
 
   const handleNext = () => {
     if (!validateStep()) return;
-    if (step < steps.length - 1) {
-      setStep(step + 1);
-    }
+    if (step < steps.length - 1) setStep(step + 1);
   };
 
   const handleBack = () => {
@@ -122,7 +126,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
                 {i < step ? <CheckCircle size={18} /> : i + 1}
               </div>
               {i < steps.length - 1 && (
-                <div className={`w-16 h-1 rounded-full transition-all duration-300 ${i < step ? 'bg-emerald-500' : 'bg-slate-100'}`} />
+                <div className={`w-12 h-1 rounded-full transition-all duration-300 ${i < step ? 'bg-emerald-500' : 'bg-slate-100'}`} />
               )}
             </div>
           ))}
@@ -144,8 +148,87 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
             </div>
           )}
 
-          {/* Step 0: Business Details */}
+          {/* Step 0: Business Type */}
           {step === 0 && (
+            <div className="space-y-5 animate-in fade-in duration-300">
+              <p className="text-sm text-slate-500 font-medium font-poppins -mt-2 mb-6">
+                This helps BillHippo personalise features for you — inventory management is available for Trading businesses only.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Service */}
+                <button
+                  onClick={() => setProfile({ ...profile, businessType: 'service' })}
+                  className={`relative p-8 rounded-[2rem] border-2 text-left transition-all group ${
+                    profile.businessType === 'service'
+                      ? 'border-profee-blue bg-indigo-50 shadow-lg shadow-indigo-100'
+                      : 'border-slate-100 bg-slate-50/60 hover:border-slate-200'
+                  }`}
+                >
+                  {profile.businessType === 'service' && (
+                    <div className="absolute top-4 right-4 bg-profee-blue text-white p-1.5 rounded-full">
+                      <CheckCircle size={14} />
+                    </div>
+                  )}
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-5 ${
+                    profile.businessType === 'service' ? 'bg-profee-blue' : 'bg-slate-200 group-hover:bg-slate-300'
+                  }`}>
+                    <Briefcase size={26} className={profile.businessType === 'service' ? 'text-white' : 'text-slate-500'} />
+                  </div>
+                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-2">Service Business</h3>
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Consultants, lawyers, agencies, freelancers, IT services, architects, doctors, etc.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {['Consulting', 'IT Services', 'Legal', 'Design'].map(t => (
+                      <span key={t} className={`text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest ${
+                        profile.businessType === 'service' ? 'bg-indigo-100 text-profee-blue' : 'bg-slate-100 text-slate-400'
+                      }`}>{t}</span>
+                    ))}
+                  </div>
+                </button>
+
+                {/* Trading */}
+                <button
+                  onClick={() => setProfile({ ...profile, businessType: 'trading' })}
+                  className={`relative p-8 rounded-[2rem] border-2 text-left transition-all group ${
+                    profile.businessType === 'trading'
+                      ? 'border-amber-400 bg-amber-50 shadow-lg shadow-amber-100'
+                      : 'border-slate-100 bg-slate-50/60 hover:border-slate-200'
+                  }`}
+                >
+                  {profile.businessType === 'trading' && (
+                    <div className="absolute top-4 right-4 bg-amber-500 text-white p-1.5 rounded-full">
+                      <CheckCircle size={14} />
+                    </div>
+                  )}
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-5 ${
+                    profile.businessType === 'trading' ? 'bg-amber-500' : 'bg-slate-200 group-hover:bg-slate-300'
+                  }`}>
+                    <ShoppingCart size={26} className={profile.businessType === 'trading' ? 'text-white' : 'text-slate-500'} />
+                  </div>
+                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-2">Trading Business</h3>
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Retailers, wholesalers, manufacturers, distributors — any business selling physical goods.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {['Retail', 'Wholesale', 'Manufacturing', 'Distribution'].map(t => (
+                      <span key={t} className={`text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest ${
+                        profile.businessType === 'trading' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'
+                      }`}>{t}</span>
+                    ))}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-amber-100/60">
+                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">
+                      ✦ Includes Inventory Management
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 1: Business Details */}
+          {step === 1 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-poppins animate-in fade-in duration-300">
               <div className="md:col-span-2">
                 <Input label="Business / Legal Name *" value={profile.name} onChange={v => setProfile({...profile, name: v})} placeholder="e.g. Sharma Electronics Pvt Ltd" />
@@ -157,8 +240,8 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
             </div>
           )}
 
-          {/* Step 1: Address & GST */}
-          {step === 1 && (
+          {/* Step 2: Address & GST */}
+          {step === 2 && (
             <div className="space-y-6 font-poppins animate-in fade-in duration-300">
               <Input label="Street Address" value={profile.address} onChange={v => setProfile({...profile, address: v})} placeholder="Shop no. 5, MG Road" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -191,8 +274,8 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
             </div>
           )}
 
-          {/* Step 2: Bank & UPI */}
-          {step === 2 && (
+          {/* Step 3: Bank & UPI */}
+          {step === 3 && (
             <div className="space-y-6 font-poppins animate-in fade-in duration-300">
               <p className="text-xs text-slate-400 font-medium -mt-4 mb-2">These details will appear on your invoices for customer payments. You can skip and add later.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

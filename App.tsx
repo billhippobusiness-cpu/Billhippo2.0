@@ -16,6 +16,7 @@ import ProfileSettings from './components/ProfileSettings';
 import InvoiceTheme from './components/InvoiceTheme';
 import CustomerManager from './components/CustomerManager';
 import OnboardingWizard from './components/OnboardingWizard';
+import InventoryManager from './components/InventoryManager';
 
 const App: React.FC = () => {
   const [view, setView] = useState<'landing' | 'auth' | 'app' | 'onboarding'>('landing');
@@ -24,6 +25,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [businessType, setBusinessType] = useState<'service' | 'trading' | undefined>(undefined);
 
   useEffect(() => {
     document.body.className = "bg-[#f8fafc] text-slate-900 overflow-x-hidden antialiased";
@@ -37,6 +39,7 @@ const App: React.FC = () => {
         try {
           const profile = await getBusinessProfile(firebaseUser.uid);
           if (profile && profile.name) {
+            setBusinessType(profile.businessType);
             setView('app');
           } else {
             setView('onboarding');
@@ -100,6 +103,7 @@ const App: React.FC = () => {
       case 'gst': return <GSTReports userId={userId} />;
       case 'theme': return <InvoiceTheme userId={userId} />;
       case 'settings': return <ProfileSettings userId={userId} />;
+      case 'inventory': return <InventoryManager userId={userId} />;
       default: return <Dashboard userId={userId} />;
     }
   };
@@ -156,6 +160,7 @@ const App: React.FC = () => {
         setIsOpen={setIsSidebarOpen}
         user={user}
         onLogout={handleLogout}
+        showInventory={businessType === 'trading'}
       />
 
       <main className="flex-1 flex flex-col min-w-0">
