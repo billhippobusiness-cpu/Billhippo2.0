@@ -102,7 +102,7 @@ const App: React.FC = () => {
       case 'ledger': return <LedgerView userId={userId} />;
       case 'gst': return <GSTReports userId={userId} />;
       case 'theme': return <InvoiceTheme userId={userId} />;
-      case 'settings': return <ProfileSettings userId={userId} />;
+      case 'settings': return <ProfileSettings userId={userId} onBusinessTypeChange={setBusinessType} />;
       case 'inventory': return <InventoryManager userId={userId} />;
       default: return <Dashboard userId={userId} />;
     }
