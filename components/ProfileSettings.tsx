@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2 } from 'lucide-react';
+import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X } from 'lucide-react';
 import { BusinessProfile } from '../types';
 import { getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 
@@ -50,6 +50,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId }) => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [qrUrl, setQrUrl] = useState('');
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [signatureUploading, setSignatureUploading] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -78,6 +80,66 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId }) => {
       setQrUrl('');
     }
   }, [profile.upiId, profile.name]);
+
+  // Compress & convert image to PNG data URL (preserves transparency)
+  const compressImage = (file: File, maxWidth: number, maxHeight: number): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new window.Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxWidth || height > maxHeight) {
+            const scale = Math.min(maxWidth / width, maxHeight / height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoUploading(true);
+    setError(null);
+    try {
+      const dataUrl = await compressImage(file, 400, 400);
+      setProfile(p => ({ ...p, theme: { ...p.theme, logoUrl: dataUrl } }));
+    } catch {
+      setError('Failed to process logo image. Please try again.');
+    } finally {
+      setLogoUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSignatureUploading(true);
+    setError(null);
+    try {
+      const dataUrl = await compressImage(file, 600, 200);
+      setProfile(p => ({ ...p, signatureUrl: dataUrl }));
+    } catch {
+      setError('Failed to process signature image. Please try again.');
+    } finally {
+      setSignatureUploading(false);
+      e.target.value = '';
+    }
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -145,6 +207,98 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId }) => {
               <Input label="PAN Number" value={profile.pan} onChange={v => setProfile({...profile, pan: v})} placeholder="ABCDE1234F" />
               <Input label="Contact Number" value={profile.phone} onChange={v => setProfile({...profile, phone: v})} placeholder="+91 98765 43210" />
               <Input label="Business Tagline" value={profile.tagline || ''} onChange={v => setProfile({...profile, tagline: v})} placeholder="Your tagline" />
+            </div>
+          </div>
+
+          {/* ── Business Branding: Logo & Signature ── */}
+          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8">
+            <h3 className="text-xl font-bold font-poppins flex items-center gap-3">
+              <ImageIcon className="text-profee-blue" size={22} /> Business Branding
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+
+              {/* Logo */}
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-bold text-slate-700 font-poppins">Business Logo</p>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Recommended: <span className="font-bold text-slate-500">400×400 px</span>, PNG with transparent background. Max ~500 KB.
+                  </p>
+                </div>
+                <div className="w-32 h-32 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden relative">
+                  {profile.theme?.logoUrl ? (
+                    <img src={profile.theme.logoUrl} alt="Business logo" className="w-full h-full object-contain p-2" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-slate-300">
+                      <ImageIcon size={28} />
+                      <span className="text-[10px] font-medium">No logo</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <label className={`cursor-pointer flex items-center gap-2 bg-indigo-50 text-profee-blue px-4 py-2.5 rounded-xl text-sm font-bold font-poppins hover:bg-indigo-100 transition-all ${logoUploading ? 'opacity-60 pointer-events-none' : ''}`}>
+                    {logoUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {logoUploading ? 'Processing…' : 'Upload Logo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={handleLogoUpload}
+                      disabled={logoUploading}
+                    />
+                  </label>
+                  {profile.theme?.logoUrl && (
+                    <button
+                      onClick={() => setProfile(p => ({ ...p, theme: { ...p.theme, logoUrl: undefined } }))}
+                      className="flex items-center gap-1.5 text-rose-400 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-rose-50 transition-all"
+                    >
+                      <X size={14} /> Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Signature */}
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-bold text-slate-700 font-poppins">Authorised Signature</p>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Recommended: <span className="font-bold text-slate-500">600×200 px</span>, PNG with transparent background. Max ~500 KB.
+                  </p>
+                </div>
+                <div className="w-52 h-24 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden">
+                  {profile.signatureUrl ? (
+                    <img src={profile.signatureUrl} alt="Signature" className="w-full h-full object-contain p-2" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-slate-300">
+                      <PenLine size={24} />
+                      <span className="text-[10px] font-medium">No signature</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <label className={`cursor-pointer flex items-center gap-2 bg-indigo-50 text-profee-blue px-4 py-2.5 rounded-xl text-sm font-bold font-poppins hover:bg-indigo-100 transition-all ${signatureUploading ? 'opacity-60 pointer-events-none' : ''}`}>
+                    {signatureUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {signatureUploading ? 'Processing…' : 'Upload Signature'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={handleSignatureUpload}
+                      disabled={signatureUploading}
+                    />
+                  </label>
+                  {profile.signatureUrl && (
+                    <button
+                      onClick={() => setProfile(p => ({ ...p, signatureUrl: undefined }))}
+                      className="flex items-center gap-1.5 text-rose-400 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-rose-50 transition-all"
+                    >
+                      <X size={14} /> Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+
             </div>
           </div>
 

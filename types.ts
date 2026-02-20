@@ -32,6 +32,7 @@ export interface BusinessProfile {
   termsAndConditions?: string;
   gstEnabled: boolean;
   theme: BusinessTheme;
+  signatureUrl?: string;
 }
 
 export interface Customer {
