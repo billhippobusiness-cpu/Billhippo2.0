@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile } from '../types';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, addLedgerEntry, updateCustomer } from '../lib/firestore';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 
@@ -32,6 +32,15 @@ const numberToWords = (num: number) => {
   return inWords(Math.floor(num));
 };
 
+// DD-MM-YYYY display helper
+const formatDate = (d: string) => {
+  if (!d) return '';
+  const p = d.split('-');
+  return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : d;
+};
+// INR formatter
+const inr = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 interface InvoiceGeneratorProps { userId: string; }
 
 const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
@@ -48,6 +57,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const [pdfModal, setPdfModal] = useState<{ open: boolean; invoice: Invoice | null; customer: Customer | null }>({
     open: false, invoice: null, customer: null,
   });
+
+  // Edit & search state
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -92,6 +105,17 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
   };
 
+  const handleEditInvoice = (inv: Invoice) => {
+    setEditingInvoice(inv);
+    setSelectedCustomerId(inv.customerId);
+    setInvoiceNumber(inv.invoiceNumber);
+    setInvoiceDate(inv.date);
+    setItems(inv.items);
+    setError(null);
+    setSaveSuccess(false);
+    setMode('editing');
+  };
+
   const handleFinalize = async () => {
     if (!selectedCustomerId) { setError('Please select a customer'); return; }
     if (items.every(i => !i.description.trim())) { setError('Add at least one item with a description'); return; }
@@ -101,17 +125,27 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
       const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
       const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
-      const invoiceId = await addInvoice(userId, {
+      const invoicePayload = {
         invoiceNumber, date: invoiceDate, customerId: selectedCustomerId,
         customerName: selectedCustomer?.name || '', items, gstType,
-        totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: grandTotal, status: 'Unpaid'
-      });
-      await addLedgerEntry(userId, {
-        date: invoiceDate, type: 'Debit', amount: grandTotal,
-        description: `Sale - ${invoiceNumber}`, invoiceId, customerId: selectedCustomerId
-      });
-      if (selectedCustomer) {
-        await updateCustomer(userId, selectedCustomerId, { balance: (selectedCustomer.balance || 0) + grandTotal });
+        totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: grandTotal,
+        status: (editingInvoice?.status || 'Unpaid') as 'Paid' | 'Unpaid' | 'Partial',
+      };
+
+      if (editingInvoice) {
+        await updateInvoice(userId, editingInvoice.id, invoicePayload);
+        setAllInvoices(prev =>
+          prev.map(inv => inv.id === editingInvoice.id ? { ...inv, ...invoicePayload } : inv)
+        );
+      } else {
+        const invoiceId = await addInvoice(userId, invoicePayload);
+        await addLedgerEntry(userId, {
+          date: invoiceDate, type: 'Debit', amount: grandTotal,
+          description: `Sale - ${invoiceNumber}`, invoiceId, customerId: selectedCustomerId
+        });
+        if (selectedCustomer) {
+          await updateCustomer(userId, selectedCustomerId, { balance: (selectedCustomer.balance || 0) + grandTotal });
+        }
       }
       setSaveSuccess(true); setMode('preview');
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -145,6 +179,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   };
 
   const handleNewInvoice = () => {
+    setEditingInvoice(null);
     setSelectedCustomerId(''); setItems([{ id: '1', description: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }]);
     setInvoiceDate(new Date().toISOString().split('T')[0]);
     setSaveSuccess(false); setError(null); setMode('editing'); loadData();
@@ -476,15 +511,30 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const invoiceTemplate = profile.theme.templateId === 'modern-2' ? modern2Template : modern1Template;
 
   // ═══════════════════════════════════════════
-  //  LIST VIEW: All invoices + Create Invoice button
+  //  LIST VIEW: Searchable table of all invoices
   // ═══════════════════════════════════════════
   if (mode === 'list') {
+    const q = searchQuery.toLowerCase().trim();
+    const filteredInvoices = q
+      ? allInvoices.filter(inv =>
+          inv.invoiceNumber.toLowerCase().includes(q) ||
+          inv.customerName.toLowerCase().includes(q) ||
+          formatDate(inv.date).includes(q) ||
+          inv.date.includes(q) ||
+          inv.status.toLowerCase().includes(q)
+        )
+      : allInvoices;
+
     return (
       <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
+        {/* ── Header ── */}
         <div className="flex justify-between items-end mb-4">
           <div>
             <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
-            <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">{allInvoices.length} invoice{allInvoices.length !== 1 ? 's' : ''} created</p>
+            <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">
+              {allInvoices.length} invoice{allInvoices.length !== 1 ? 's' : ''}
+              {q ? ` · ${filteredInvoices.length} matching` : ''}
+            </p>
           </div>
           <button
             onClick={handleNewInvoice}
@@ -511,46 +561,133 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-[2.5rem] p-8 premium-shadow border border-slate-50">
-            <div className="space-y-3">
-              {allInvoices.map(inv => (
-                <div key={inv.id} className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl hover:bg-slate-100 transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center">
-                      <FileText className="text-profee-blue" size={20} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-800 font-poppins">{inv.invoiceNumber}</p>
-                      <p className="text-xs text-slate-400 font-medium font-poppins">{inv.customerName} &bull; {inv.date}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-slate-800 font-poppins">₹{inv.totalAmount.toLocaleString('en-IN')}</p>
-                      <span className={`text-[10px] font-bold px-3 py-1 rounded-full ${
-                        inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-600' :
-                        inv.status === 'Partial' ? 'bg-amber-100 text-amber-600' :
-                        'bg-rose-100 text-rose-600'
-                      }`}>{inv.status}</span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const cust = customers.find(c => c.id === inv.customerId) || null;
-                        openPDFModal(inv, cust);
-                      }}
-                      title="Download PDF"
-                      className="p-3 rounded-2xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
-                    >
-                      <Download size={18} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+          <div className="bg-white rounded-[2.5rem] premium-shadow border border-slate-50 overflow-hidden">
+            {/* ── Search bar ── */}
+            <div className="px-8 pt-8 pb-5 border-b border-slate-50">
+              <div className="relative max-w-md">
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                <input
+                  type="text"
+                  placeholder="Search by invoice #, party, date or status…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-5 py-3.5 bg-slate-50 rounded-2xl text-sm font-medium text-slate-700 placeholder-slate-300 border-none focus:ring-2 ring-indigo-50 font-poppins"
+                />
+              </div>
             </div>
+
+            {/* ── Table ── */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse font-poppins">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Date</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Invoice #</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Party Name</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right whitespace-nowrap">Taxable Amt</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right whitespace-nowrap">Tax</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right whitespace-nowrap">Invoice Value</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredInvoices.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-16 text-center text-sm text-slate-400 font-medium">
+                        No invoices match &ldquo;{searchQuery}&rdquo;
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredInvoices.map((inv, idx) => {
+                      const tax = (inv.cgst || 0) + (inv.sgst || 0) + (inv.igst || 0);
+                      const custObj = customers.find(c => c.id === inv.customerId) || null;
+                      return (
+                        <tr
+                          key={inv.id}
+                          className={`hover:bg-indigo-50/30 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}`}
+                        >
+                          <td className="px-6 py-4 text-sm font-bold text-slate-600 whitespace-nowrap">
+                            {formatDate(inv.date)}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-black text-slate-900 whitespace-nowrap">
+                            {inv.invoiceNumber}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-medium text-slate-700 max-w-[180px] truncate">
+                            {inv.customerName}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-bold text-slate-700 text-right whitespace-nowrap">
+                            {inr(inv.totalBeforeTax)}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-bold text-emerald-600 text-right whitespace-nowrap">
+                            {inr(tax)}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-black text-slate-900 text-right whitespace-nowrap">
+                            {inr(inv.totalAmount)}
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`inline-block text-[10px] font-bold px-3 py-1.5 rounded-full whitespace-nowrap ${
+                              inv.status === 'Paid'    ? 'bg-emerald-100 text-emerald-700' :
+                              inv.status === 'Partial' ? 'bg-amber-100 text-amber-700'    :
+                                                         'bg-rose-100 text-rose-700'
+                            }`}>
+                              {inv.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-center gap-2">
+                              {/* View */}
+                              <button
+                                onClick={() => openPDFModal(inv, custObj)}
+                                title="View Invoice"
+                                className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
+                              >
+                                <Eye size={15} />
+                              </button>
+                              {/* Edit */}
+                              <button
+                                onClick={() => handleEditInvoice(inv)}
+                                title="Edit Invoice"
+                                className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-700 hover:text-white transition-all"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              {/* Download PDF */}
+                              <button
+                                onClick={() => openPDFModal(inv, custObj)}
+                                title="Download PDF"
+                                className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
+                              >
+                                <Download size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── Footer summary ── */}
+            {filteredInvoices.length > 0 && (
+              <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center gap-8 font-poppins">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}
+                </span>
+                <span className="text-[10px] font-bold text-slate-500">
+                  Total Value: <span className="text-slate-900 font-black">{inr(filteredInvoices.reduce((s, i) => s + i.totalAmount, 0))}</span>
+                </span>
+                <span className="text-[10px] font-bold text-slate-500">
+                  Total Tax: <span className="text-emerald-700 font-black">{inr(filteredInvoices.reduce((s, i) => s + (i.cgst || 0) + (i.sgst || 0) + (i.igst || 0), 0))}</span>
+                </span>
+              </div>
+            )}
           </div>
         )}
 
-        {/* PDF Preview Modal (list view) */}
+        {/* PDF Preview Modal */}
         {pdfModal.open && pdfModal.invoice && (
           <PDFPreviewModal
             open={pdfModal.open}
@@ -626,14 +763,16 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
           <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins"><ArrowLeft size={18} /></button>
           <div>
             <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
-            <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">New Bill Entry &bull; {invoiceNumber}</p>
+            <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">
+              {editingInvoice ? `Editing ${editingInvoice.invoiceNumber}` : `New Bill Entry \u2022 ${invoiceNumber}`}
+            </p>
           </div>
         </div>
         <div className="flex gap-4 items-center">
            {error && <span className="text-sm font-bold text-rose-500 font-poppins">{error}</span>}
            <button onClick={() => setMode('preview')} className="bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-slate-50 transition-all font-poppins"><Eye size={20} /> Preview</button>
            <button onClick={handleFinalize} disabled={saving} className="bg-profee-blue text-white px-12 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins disabled:opacity-50">
-             {saving ? <><Loader2 size={20} className="animate-spin" /> Saving...</> : <><Save size={20} /> Finalize Bill</>}
+             {saving ? <><Loader2 size={20} className="animate-spin" /> Saving...</> : editingInvoice ? <><Save size={20} /> Update Invoice</> : <><Save size={20} /> Finalize Bill</>}
            </button>
         </div>
       </div>
