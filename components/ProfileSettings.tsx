@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X } from 'lucide-react';
+import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart } from 'lucide-react';
 import { BusinessProfile } from '../types';
 import { getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 
@@ -41,9 +41,10 @@ const DEFAULT_PROFILE: BusinessProfile = {
 
 interface ProfileSettingsProps {
   userId: string;
+  onBusinessTypeChange?: (type: 'service' | 'trading') => void;
 }
 
-const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId }) => {
+const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTypeChange }) => {
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -149,6 +150,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId }) => {
       await saveBusinessProfile(userId, profile);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      if (profile.businessType) onBusinessTypeChange?.(profile.businessType);
     } catch (err: any) {
       setError('Failed to save. Please try again.');
       console.error('Save profile error:', err);
@@ -300,6 +302,90 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId }) => {
               </div>
 
             </div>
+          </div>
+
+          {/* ── Business Type ── */}
+          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-6">
+            <div>
+              <h3 className="text-xl font-bold font-poppins flex items-center gap-3">
+                <ShoppingCart className="text-amber-500" size={22} /> Business Type
+              </h3>
+              <p className="text-xs text-slate-400 mt-1.5 ml-10 font-poppins">Determines available features. Trading unlocks Inventory Management.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {/* Service option */}
+              <button
+                type="button"
+                onClick={() => setProfile(p => ({ ...p, businessType: 'service' }))}
+                className={`relative flex flex-col items-start gap-3 p-6 rounded-2xl border-2 transition-all text-left ${
+                  profile.businessType === 'service' || !profile.businessType
+                    ? 'border-profee-blue bg-indigo-50'
+                    : 'border-slate-100 bg-slate-50 hover:border-slate-200'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  profile.businessType === 'service' || !profile.businessType
+                    ? 'bg-profee-blue text-white'
+                    : 'bg-slate-200 text-slate-400'
+                }`}>
+                  <Briefcase size={20} />
+                </div>
+                <div>
+                  <p className={`text-sm font-bold font-poppins ${
+                    profile.businessType === 'service' || !profile.businessType ? 'text-profee-blue' : 'text-slate-500'
+                  }`}>Service</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5 font-poppins leading-relaxed">Consulting, IT, Legal, Design</p>
+                </div>
+                {(profile.businessType === 'service' || !profile.businessType) && (
+                  <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-profee-blue flex items-center justify-center">
+                    <CheckCircle size={12} className="text-white" />
+                  </div>
+                )}
+              </button>
+
+              {/* Trading option */}
+              <button
+                type="button"
+                onClick={() => setProfile(p => ({ ...p, businessType: 'trading' }))}
+                className={`relative flex flex-col items-start gap-3 p-6 rounded-2xl border-2 transition-all text-left ${
+                  profile.businessType === 'trading'
+                    ? 'border-amber-500 bg-amber-50'
+                    : 'border-slate-100 bg-slate-50 hover:border-slate-200'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  profile.businessType === 'trading'
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-slate-200 text-slate-400'
+                }`}>
+                  <ShoppingCart size={20} />
+                </div>
+                <div>
+                  <p className={`text-sm font-bold font-poppins ${
+                    profile.businessType === 'trading' ? 'text-amber-700' : 'text-slate-500'
+                  }`}>Trading</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5 font-poppins leading-relaxed">Retail, Wholesale, Manufacturing</p>
+                </div>
+                {profile.businessType === 'trading' && (
+                  <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
+                    <CheckCircle size={12} className="text-white" />
+                  </div>
+                )}
+                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                  profile.businessType === 'trading'
+                    ? 'bg-amber-200 text-amber-800'
+                    : 'bg-slate-200 text-slate-400'
+                }`}>
+                  + Inventory
+                </span>
+              </button>
+            </div>
+            {profile.businessType === 'trading' && (
+              <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 rounded-xl border border-amber-100">
+                <ShoppingCart size={14} className="text-amber-600 flex-shrink-0" />
+                <p className="text-xs font-bold text-amber-700 font-poppins">Inventory Management tab is enabled. Save to apply changes.</p>
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8">
