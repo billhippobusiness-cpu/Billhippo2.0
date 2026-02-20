@@ -17,7 +17,7 @@
  *  - All the same quality sections as modern-2
  *
  * Retained fixes:
- *  - No Font.register() — using built-in Helvetica (custom WOFF URLs fail silently).
+ *  - Poppins registered via Font.register() from @fontsource/poppins on jsDelivr CDN (CORS-safe).
  *  - No Firebase logo image — CORS inside renderer; first-letter initial used instead.
  *  - wrap={false} on every table row — no row splits across pages.
  *  - Table header uses `fixed` prop — repeats on every page.
@@ -31,8 +31,27 @@ import {
   View,
   Image,
   StyleSheet,
+  Font,
 } from '@react-pdf/renderer';
 import { Invoice, BusinessProfile, Customer, GSTType } from '../../types';
+
+// ─── Register Poppins (all weights) from @fontsource via jsDelivr CDN ─────────
+// jsDelivr serves with Access-Control-Allow-Origin: * so CORS is never an issue.
+const FONT_BASE = 'https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.0.8/files';
+Font.register({
+  family: 'Poppins',
+  fonts: [
+    { src: `${FONT_BASE}/poppins-latin-400-normal.woff2`,  fontWeight: 400 },
+    { src: `${FONT_BASE}/poppins-latin-400-italic.woff2`,  fontWeight: 400, fontStyle: 'italic' },
+    { src: `${FONT_BASE}/poppins-latin-500-normal.woff2`,  fontWeight: 500 },
+    { src: `${FONT_BASE}/poppins-latin-600-normal.woff2`,  fontWeight: 600 },
+    { src: `${FONT_BASE}/poppins-latin-700-normal.woff2`,  fontWeight: 700 },
+    { src: `${FONT_BASE}/poppins-latin-800-normal.woff2`,  fontWeight: 800 },
+  ],
+});
+
+// Disable word-level hyphenation — keeps text blocks clean
+Font.registerHyphenationCallback(word => [word]);
 
 // ─── Static palette ────────────────────────────────────────────────────────────
 const DARK    = '#1e293b';
@@ -82,12 +101,13 @@ function formatDate(dateStr: string): string {
 
 // ─── Currency formatter ───────────────────────────────────────────────────────
 const fmt = (n: number) =>
-  `Rs.${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `\u20B9${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ─── Base stylesheet ──────────────────────────────────────────────────────────
 const S = StyleSheet.create({
   page: {
-    fontFamily: 'Helvetica',
+    fontFamily: 'Poppins',
+    fontWeight: 400,
     fontSize: 9,
     backgroundColor: WHITE,
     paddingTop: 32,
@@ -104,31 +124,31 @@ const S = StyleSheet.create({
   infoRow:       { flexDirection: 'row', gap: 12, marginBottom: 12 },
   infoBox:       { flex: 1, backgroundColor: ALT, borderRadius: 6, padding: 10, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid' },
   infoBoxTinted: { flex: 1, borderRadius: 6, padding: 10 },
-  infoBoxLabel:  { fontSize: 7, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', letterSpacing: 0.9, marginBottom: 5 },
-  infoName:      { fontSize: 11, fontFamily: 'Helvetica-Bold', color: DARK, marginBottom: 2 },
+  infoBoxLabel:  { fontSize: 7, fontFamily: 'Poppins', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.9, marginBottom: 5 },
+  infoName:      { fontSize: 11, fontFamily: 'Poppins', fontWeight: 700, color: DARK, marginBottom: 2 },
   infoSm:        { fontSize: 7.5, color: MID, lineHeight: 1.5 },
   infoMeta:      { flexDirection: 'row', gap: 14, marginTop: 6, paddingTop: 5, borderTopWidth: 0.5, borderTopColor: BORDER, borderTopStyle: 'solid' },
   infoMetaCol:   { flexDirection: 'column' },
-  infoMetaLabel: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
-  infoMetaValue: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
+  infoMetaLabel: { fontSize: 7, fontFamily: 'Poppins', fontWeight: 500, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
+  infoMetaValue: { fontSize: 8, fontFamily: 'Poppins', fontWeight: 600, color: DARK },
 
   // ── Status badge ──
   badge:            { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20, alignSelf: 'flex-start', marginTop: 5 },
   badgePaid:        { backgroundColor: '#dcfce7' },
   badgeUnpaid:      { backgroundColor: '#fee2e2' },
   badgePartial:     { backgroundColor: '#fef3c7' },
-  badgeText:        { fontSize: 7, fontFamily: 'Helvetica-Bold', textTransform: 'uppercase' },
+  badgeText:        { fontSize: 7, fontFamily: 'Poppins', fontWeight: 700, textTransform: 'uppercase' },
   badgeTextPaid:    { color: '#16a34a' },
   badgeTextUnpaid:  { color: '#dc2626' },
   badgeTextPartial: { color: '#d97706' },
 
   // ── Generic table row ──
   tableHeader:     { flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 8, borderRadius: 3 },
-  tableHeaderText: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: WHITE, textTransform: 'uppercase' },
+  tableHeaderText: { fontSize: 7, fontFamily: 'Poppins', fontWeight: 700, color: WHITE, textTransform: 'uppercase' },
   tableRow:        { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8, borderBottomWidth: 0.5, borderBottomColor: '#f1f5f9', borderBottomStyle: 'solid' },
   tableRowAlt:     { backgroundColor: ALT },
   tableCell:       { fontSize: 8, color: MID },
-  tableCellBold:   { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK },
+  tableCellBold:   { fontSize: 8, fontFamily: 'Poppins', fontWeight: 600, color: DARK },
 
   // ── Page number ──
   pageNum: { position: 'absolute', bottom: 16, left: 0, right: 0, textAlign: 'center', fontSize: 7, color: LIGHT },
@@ -140,19 +160,19 @@ const S = StyleSheet.create({
   // Header row
   m1HdrRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   m1LogoBox:     { width: 54, height: 54, backgroundColor: ALT, borderRadius: 7, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid', alignItems: 'center', justifyContent: 'center' },
-  m1LogoInitial: { fontSize: 20, fontFamily: 'Helvetica-Bold', color: DARK },
+  m1LogoInitial: { fontSize: 20, fontFamily: 'Poppins', fontWeight: 800, color: DARK },
   m1TitleWrap:   { alignItems: 'center' },
-  m1Title:       { fontSize: 36, fontFamily: 'Helvetica-Bold', letterSpacing: -0.5, lineHeight: 1 },
+  m1Title:       { fontSize: 38, fontFamily: 'Poppins', fontWeight: 800, letterSpacing: -0.5, lineHeight: 1 },
   m1TitleSub:    { fontSize: 6.5, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.9, marginTop: 2 },
   m1MetaRight:   { alignItems: 'flex-end' },
-  m1MetaLabel:   { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
-  m1MetaValue:   { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
+  m1MetaLabel:   { fontSize: 6.5, fontFamily: 'Poppins', fontWeight: 500, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
+  m1MetaValue:   { fontSize: 9, fontFamily: 'Poppins', fontWeight: 600, color: DARK },
 
   // Supply info strip (shared by both templates)
   m1SupplyRow:   { flexDirection: 'row', gap: 10, marginBottom: 12 },
   m1SupplyBox:   { flex: 1, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 5, borderWidth: 0.5, borderColor: BORDER, borderStyle: 'solid', backgroundColor: ALT },
-  m1SupplyLabel: { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8 },
-  m1SupplyValue: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK, marginTop: 2 },
+  m1SupplyLabel: { fontSize: 6.5, fontFamily: 'Poppins', fontWeight: 500, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8 },
+  m1SupplyValue: { fontSize: 9, fontFamily: 'Poppins', fontWeight: 600, color: DARK, marginTop: 2 },
 
   // Table columns (shared by both templates)
   // CGST_SGST mode: # | Desc | HSN | Qty | GST% | Taxable | SGST | CGST | Total
@@ -170,12 +190,12 @@ const S = StyleSheet.create({
   m1FooterGrid:   { flexDirection: 'row', gap: 14, marginTop: 12 },
   m1FooterLeft:   { width: '56%' },
   m1FooterRight:  { flex: 1 },
-  m1SecLabel:     { fontSize: 7, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
+  m1SecLabel:     { fontSize: 7, fontFamily: 'Poppins', fontWeight: 600, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
 
   // Bank key-value rows
   m1BankRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2.5 },
   m1BankLabel: { fontSize: 7.5, color: LIGHT },
-  m1BankValue: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: DARK },
+  m1BankValue: { fontSize: 7.5, fontFamily: 'Poppins', fontWeight: 600, color: DARK },
 
   // QR code
   m1QrWrap:  { alignItems: 'center', marginLeft: 12 },
@@ -185,13 +205,13 @@ const S = StyleSheet.create({
   // Totals summary (right column, shared by both templates)
   m1TotRow:       { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3.5, borderBottomWidth: 0.5, borderBottomColor: BORDER, borderBottomStyle: 'solid' },
   m1TotLabel:     { fontSize: 8.5, color: MID },
-  m1TotValue:     { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: DARK },
+  m1TotValue:     { fontSize: 8.5, fontFamily: 'Poppins', fontWeight: 600, color: DARK },
   m1GrandSection: { marginTop: 6, paddingTop: 6 },
   m1GrandRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  m1GrandLabel:   { fontSize: 16, fontFamily: 'Helvetica-Bold' },
-  m1GrandValue:   { fontSize: 20, fontFamily: 'Helvetica-Bold' },
-  m1WordsLabel:   { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 8 },
-  m1WordsText:    { fontSize: 7.5, fontFamily: 'Helvetica-Oblique', color: DARK, marginTop: 2, lineHeight: 1.4 },
+  m1GrandLabel:   { fontSize: 18, fontFamily: 'Poppins', fontWeight: 800 },
+  m1GrandValue:   { fontSize: 24, fontFamily: 'Poppins', fontWeight: 800 },
+  m1WordsLabel:   { fontSize: 6.5, fontFamily: 'Poppins', fontWeight: 500, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 8 },
+  m1WordsText:    { fontSize: 7.5, fontFamily: 'Poppins', fontStyle: 'italic', color: DARK, marginTop: 2, lineHeight: 1.4 },
 
   // Contact + signature footer strip (shared by both templates)
   m1ContactStrip: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 12, paddingTop: 9, borderTopWidth: 0.5, borderTopColor: BORDER, borderTopStyle: 'solid' },
@@ -199,7 +219,7 @@ const S = StyleSheet.create({
   m1SignCol:      { alignItems: 'flex-end' },
   m1SignLine:     { width: 90, height: 0.5, backgroundColor: LIGHT, marginBottom: 4 },
   m1SignLabel:    { fontSize: 6.5, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
-  m1SignName:     { fontSize: 8, fontFamily: 'Helvetica-Bold', color: DARK, marginTop: 1 },
+  m1SignName:     { fontSize: 8, fontFamily: 'Poppins', fontWeight: 600, color: DARK, marginTop: 1 },
 
   // ════════════════════════════════════════════════════════════════
   //  MODERN-2 — unique header styles
@@ -209,16 +229,16 @@ const S = StyleSheet.create({
   m2HdrRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
   m2HdrLeft:     { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 },
   m2LogoBox:     { width: 46, height: 46, borderRadius: 8, borderWidth: 0.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  m2LogoInitial: { fontSize: 19, fontFamily: 'Helvetica-Bold' },
+  m2LogoInitial: { fontSize: 19, fontFamily: 'Poppins', fontWeight: 800 },
   m2BizBlock:    { flexDirection: 'column', flex: 1 },
-  m2BizNameLg:   { fontSize: 13, fontFamily: 'Helvetica-Bold', color: DARK, marginBottom: 2 },
+  m2BizNameLg:   { fontSize: 13, fontFamily: 'Poppins', fontWeight: 700, color: DARK, marginBottom: 2 },
   m2BizDetail:   { fontSize: 7.5, color: MID, lineHeight: 1.5 },
-  m2BizGstin:    { fontSize: 7.5, fontFamily: 'Helvetica-Bold', lineHeight: 1.5 },
+  m2BizGstin:    { fontSize: 7.5, fontFamily: 'Poppins', fontWeight: 600, lineHeight: 1.5 },
   m2InvRight:    { alignItems: 'flex-end', flexShrink: 0 },
-  m2InvTitle:    { fontSize: 36, fontFamily: 'Helvetica-Bold', letterSpacing: -0.5, lineHeight: 1 },
+  m2InvTitle:    { fontSize: 38, fontFamily: 'Poppins', fontWeight: 800, letterSpacing: -0.5, lineHeight: 1 },
   m2InvMeta:     { marginTop: 6, alignItems: 'flex-end', gap: 3 },
-  m2InvLabel:    { fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
-  m2InvValue:    { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
+  m2InvLabel:    { fontSize: 6.5, fontFamily: 'Poppins', fontWeight: 500, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
+  m2InvValue:    { fontSize: 9, fontFamily: 'Poppins', fontWeight: 600, color: DARK },
 });
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -353,7 +373,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
         {business.defaultNotes ? (
           <View style={{ marginTop: 8 }}>
             <Text style={[S.m1SecLabel, { color: PRIMARY }]}>Additional Notes</Text>
-            <Text style={{ fontSize: 7.5, color: MID, fontFamily: 'Helvetica-Oblique', lineHeight: 1.5 }}>
+            <Text style={{ fontSize: 7.5, color: MID, fontFamily: 'Poppins', fontStyle: 'italic', lineHeight: 1.5 }}>
               {business.defaultNotes}
             </Text>
           </View>
