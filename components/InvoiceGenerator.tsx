@@ -346,9 +346,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
                  <div className="flex justify-between text-xs font-medium text-slate-400"><span>SGST ({items[0]?.gstRate/2}%)</span><span>₹{(taxAmount/2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                </>) : (<div className="flex justify-between text-xs font-medium text-slate-400"><span>IGST ({items[0]?.gstRate}%)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
             </div>
-            <div className="pt-8 border-t-2 border-slate-100 flex justify-between items-center px-6">
-               <span className="text-[38px] font-black uppercase tracking-tighter text-slate-900 font-montserrat">Total</span>
-               <span className="text-6xl font-black text-slate-900 font-montserrat tracking-tighter">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <div className="pt-8 border-t-2 border-slate-100 flex justify-between items-center px-6 gap-4">
+               <span className="text-2xl font-black uppercase tracking-tighter text-slate-900 font-montserrat shrink-0">Total</span>
+               <span className="text-4xl font-black text-slate-900 font-montserrat tracking-tighter text-right min-w-0">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
             </div>
             <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 font-poppins space-y-2 shadow-sm">
                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Amount in Words</p>
