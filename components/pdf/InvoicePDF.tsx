@@ -35,18 +35,19 @@ import {
 } from '@react-pdf/renderer';
 import { Invoice, BusinessProfile, Customer, GSTType } from '../../types';
 
-// ─── Register Poppins (all weights) from @fontsource via jsDelivr CDN ─────────
-// jsDelivr serves with Access-Control-Allow-Origin: * so CORS is never an issue.
-const FONT_BASE = 'https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.0.8/files';
+// ─── Register Poppins (all weights) from local TTF files ──────────────────────
+// woff2 causes "RangeError: Offset is outside the bounds of the DataView" in
+// @react-pdf/renderer's fontkit parser. TTF files work reliably.
+// Files are served from /public/fonts/ via Vite's static asset serving.
 Font.register({
   family: 'Poppins',
   fonts: [
-    { src: `${FONT_BASE}/poppins-latin-400-normal.woff2`,  fontWeight: 400 },
-    { src: `${FONT_BASE}/poppins-latin-400-italic.woff2`,  fontWeight: 400, fontStyle: 'italic' },
-    { src: `${FONT_BASE}/poppins-latin-500-normal.woff2`,  fontWeight: 500 },
-    { src: `${FONT_BASE}/poppins-latin-600-normal.woff2`,  fontWeight: 600 },
-    { src: `${FONT_BASE}/poppins-latin-700-normal.woff2`,  fontWeight: 700 },
-    { src: `${FONT_BASE}/poppins-latin-800-normal.woff2`,  fontWeight: 800 },
+    { src: '/fonts/Poppins-Regular.ttf',   fontWeight: 400 },
+    { src: '/fonts/Poppins-Italic.ttf',    fontWeight: 400, fontStyle: 'italic' },
+    { src: '/fonts/Poppins-Medium.ttf',    fontWeight: 500 },
+    { src: '/fonts/Poppins-SemiBold.ttf',  fontWeight: 600 },
+    { src: '/fonts/Poppins-Bold.ttf',      fontWeight: 700 },
+    { src: '/fonts/Poppins-ExtraBold.ttf', fontWeight: 800 },
   ],
 });
 
