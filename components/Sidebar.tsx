@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, IndianRupee, Users, FileText, Settings, LogOut, ChevronRight, Palette, UserCircle } from 'lucide-react';
+import { LayoutDashboard, IndianRupee, Users, FileText, Settings, LogOut, ChevronRight, Palette, UserCircle, Package } from 'lucide-react';
 import { type User } from 'firebase/auth';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
@@ -13,10 +13,11 @@ interface SidebarProps {
   setIsOpen: (open: boolean) => void;
   user?: User | null;
   onLogout?: () => void;
+  showInventory?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setIsOpen, user, onLogout }) => {
-  const menuItems = [
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setIsOpen, user, onLogout, showInventory }) => {
+  const baseItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
     { id: 'customers', icon: UserCircle, label: 'Customers' },
     { id: 'ledger', icon: Users, label: 'Parties & Ledger' },
@@ -25,6 +26,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
     { id: 'theme', icon: Palette, label: 'Invoice Theme' },
     { id: 'settings', icon: Settings, label: 'Settings' },
   ];
+  const menuItems = showInventory
+    ? [
+        ...baseItems.slice(0, 4),
+        { id: 'inventory', icon: Package, label: 'Inventory' },
+        ...baseItems.slice(4),
+      ]
+    : baseItems;
 
   const displayName = user?.displayName || user?.email?.split('@')[0] || 'Admin User';
   const displayEmail = user?.email || 'billing@billhippo.in';
