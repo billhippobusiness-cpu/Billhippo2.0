@@ -72,6 +72,14 @@ function toWords(amount: number): string {
   return result + ' Only';
 }
 
+// ─── Date formatter: YYYY-MM-DD → DD-MM-YYYY ─────────────────────────────────
+function formatDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}-${parts[1]}-${parts[0]}`;
+}
+
 // ─── Currency formatter ───────────────────────────────────────────────────────
 const fmt = (n: number) =>
   `Rs.${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -397,7 +405,14 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
         {business.phone ? <Text style={S.m1ContactText}>✆  {business.phone}</Text> : null}
       </View>
       <View style={S.m1SignCol}>
-        <View style={S.m1SignLine} />
+        {business.signatureUrl ? (
+          <Image
+            style={{ width: 120, height: 40, objectFit: 'contain', marginBottom: 4 }}
+            src={business.signatureUrl}
+          />
+        ) : (
+          <View style={S.m1SignLine} />
+        )}
         <Text style={S.m1SignLabel}>Authorised Signatory</Text>
         <Text style={S.m1SignName}>{business.name}</Text>
       </View>
@@ -491,9 +506,16 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
             <View style={S.m1HdrRow}>
               {/* Logo / initial (left) */}
               <View style={S.m1LogoBox}>
-                <Text style={[S.m1LogoInitial, { color: PRIMARY }]}>
-                  {business.name.charAt(0).toUpperCase()}
-                </Text>
+                {business.theme?.logoUrl ? (
+                  <Image
+                    style={{ width: 48, height: 48, objectFit: 'contain' }}
+                    src={business.theme.logoUrl}
+                  />
+                ) : (
+                  <Text style={[S.m1LogoInitial, { color: PRIMARY }]}>
+                    {business.name.charAt(0).toUpperCase()}
+                  </Text>
+                )}
               </View>
 
               {/* "Invoice" centred */}
@@ -508,7 +530,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                 <Text style={S.m1MetaValue}>{invoice.invoiceNumber}</Text>
                 <View style={{ marginTop: 5 }}>
                   <Text style={S.m1MetaLabel}>Invoice Date</Text>
-                  <Text style={S.m1MetaValue}>{invoice.date}</Text>
+                  <Text style={S.m1MetaValue}>{formatDate(invoice.date)}</Text>
                 </View>
                 <View style={badgeContainer}>
                   <Text style={badgeTxt}>{invoice.status}</Text>
@@ -554,9 +576,16 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
             {/* LEFT: Business logo initial + details */}
             <View style={S.m2HdrLeft}>
               <View style={[S.m2LogoBox, { backgroundColor: hexToRgba(PRIMARY, 0.10), borderColor: hexToRgba(PRIMARY, 0.25), borderStyle: 'solid' }]}>
-                <Text style={[S.m2LogoInitial, { color: PRIMARY }]}>
-                  {business.name.charAt(0).toUpperCase()}
-                </Text>
+                {business.theme?.logoUrl ? (
+                  <Image
+                    style={{ width: 40, height: 40, objectFit: 'contain' }}
+                    src={business.theme.logoUrl}
+                  />
+                ) : (
+                  <Text style={[S.m2LogoInitial, { color: PRIMARY }]}>
+                    {business.name.charAt(0).toUpperCase()}
+                  </Text>
+                )}
               </View>
               <View style={S.m2BizBlock}>
                 <Text style={S.m2BizNameLg}>{business.name}</Text>
@@ -579,7 +608,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text style={S.m2InvLabel}>Date</Text>
-                  <Text style={S.m2InvValue}>{invoice.date}</Text>
+                  <Text style={S.m2InvValue}>{formatDate(invoice.date)}</Text>
                 </View>
                 <View style={[badgeContainer[0], badgeContainer[1], { alignSelf: 'flex-end' }]}>
                   <Text style={badgeTxt}>{invoice.status}</Text>
