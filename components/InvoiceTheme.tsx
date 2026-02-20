@@ -125,15 +125,42 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
             </h3>
 
             <div className="space-y-6">
-              <div className="grid grid-cols-6 gap-3">
+              <div className="grid grid-cols-7 gap-3">
                  {COLORS.map(c => (
                    <button
                       key={c.value}
                       onClick={() => setTheme({...theme, primaryColor: c.value})}
                       className={`h-12 rounded-xl transition-all ${theme.primaryColor === c.value ? 'ring-4 ring-indigo-100 scale-105 shadow-md' : 'hover:scale-105'}`}
                       style={{ backgroundColor: c.value }}
+                      title={c.name}
                    />
                  ))}
+                 {/* Custom colour picker — 7th swatch */}
+                 <div className="relative h-12" title="Pick any custom colour">
+                   <div
+                     className={`h-full w-full rounded-xl transition-all flex items-center justify-center pointer-events-none ${
+                       !COLORS.some(c => c.value === theme.primaryColor)
+                         ? 'ring-4 ring-indigo-100 scale-105 shadow-md'
+                         : 'hover:scale-105'
+                     }`}
+                     style={{
+                       background: !COLORS.some(c => c.value === theme.primaryColor)
+                         ? theme.primaryColor
+                         : 'conic-gradient(from 0deg, #f44336, #ff9800, #ffeb3b, #4caf50, #2196f3, #9c27b0, #f44336)',
+                     }}
+                   >
+                     {!COLORS.some(c => c.value === theme.primaryColor)
+                       ? <Check size={14} className="text-white drop-shadow" />
+                       : <Palette size={14} className="text-white drop-shadow" />}
+                   </div>
+                   <input
+                     type="color"
+                     value={theme.primaryColor}
+                     onChange={e => setTheme({ ...theme, primaryColor: e.target.value })}
+                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                     title="Pick custom colour"
+                   />
+                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
