@@ -84,6 +84,8 @@ export interface Invoice {
   igst: number;
   totalAmount: number;
   status: 'Paid' | 'Unpaid' | 'Partial';
+  deleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface LedgerEntry {

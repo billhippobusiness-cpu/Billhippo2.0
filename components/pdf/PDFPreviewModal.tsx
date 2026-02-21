@@ -170,3 +170,38 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
 };
 
 export default PDFPreviewModal;
+
+/**
+ * PDFDirectDownload — renders a PDF document invisibly and auto-downloads it.
+ * Mount this component when you want a "Download PDF" button that skips the preview modal.
+ * Calls onDone() once the download has been triggered.
+ */
+interface PDFDirectDownloadProps {
+  document: React.ReactElement;
+  fileName: string;
+  onDone: () => void;
+}
+
+export const PDFDirectDownload: React.FC<PDFDirectDownloadProps> = ({
+  document: pdfDoc,
+  fileName,
+  onDone,
+}) => {
+  const [instance] = usePDF({ document: pdfDoc });
+  const doneRef = useRef(false);
+
+  useEffect(() => {
+    if (instance.url && !doneRef.current) {
+      doneRef.current = true;
+      const a = window.document.createElement('a');
+      a.href = instance.url;
+      a.download = fileName;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      setTimeout(onDone, 100);
+    }
+  }, [instance.url, fileName, onDone]);
+
+  return null;
+};

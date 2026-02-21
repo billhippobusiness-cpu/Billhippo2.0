@@ -92,7 +92,18 @@ export async function deleteCustomer(userId: string, customerId: string) {
 export async function getInvoices(userId: string): Promise<Invoice[]> {
   const snap = await getDocs(userCollection(userId, 'invoices'));
   const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice));
-  return docs.sort((a, b) => b.date.localeCompare(a.date));
+  return docs.filter(inv => !inv.deleted).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function getDeletedInvoices(userId: string): Promise<Invoice[]> {
+  const snap = await getDocs(userCollection(userId, 'invoices'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice));
+  return docs.filter(inv => !!inv.deleted).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function getTotalInvoiceCount(userId: string): Promise<number> {
+  const snap = await getDocs(userCollection(userId, 'invoices'));
+  return snap.docs.length;
 }
 
 export async function addInvoice(userId: string, invoice: Omit<Invoice, 'id'>) {
@@ -106,6 +117,22 @@ export async function addInvoice(userId: string, invoice: Omit<Invoice, 'id'>) {
 export async function updateInvoice(userId: string, invoiceId: string, data: Partial<Invoice>) {
   await updateDoc(userDoc(userId, 'invoices', invoiceId), {
     ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function softDeleteInvoice(userId: string, invoiceId: string): Promise<void> {
+  await updateDoc(userDoc(userId, 'invoices', invoiceId), {
+    deleted: true,
+    deletedAt: new Date().toISOString().split('T')[0],
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function restoreInvoice(userId: string, invoiceId: string): Promise<void> {
+  await updateDoc(userDoc(userId, 'invoices', invoiceId), {
+    deleted: false,
+    deletedAt: null,
     updatedAt: serverTimestamp(),
   });
 }
