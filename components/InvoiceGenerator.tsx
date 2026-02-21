@@ -5,6 +5,7 @@ import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -54,6 +55,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteConfirmInvoice, setDeleteConfirmInvoice] = useState<Invoice | null>(null);
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
 
   // PDF Modal state
   const [pdfModal, setPdfModal] = useState<{ open: boolean; invoice: Invoice | null; customer: Customer | null }>({
@@ -139,12 +142,23 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     setMode('editing');
   };
 
-  const handleDeleteInvoice = async (inv: Invoice, e: React.MouseEvent) => {
+  const handleDeleteInvoice = (inv: Invoice, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(`Delete invoice ${inv.invoiceNumber}? It will be moved to the deleted archive. The invoice number will not be reused.`)) return;
-    await softDeleteInvoice(userId, inv.id);
-    setAllInvoices(prev => prev.filter(i => i.id !== inv.id));
-    setDeletedInvoices(prev => [{ ...inv, deleted: true, deletedAt: new Date().toISOString().split('T')[0] }, ...prev]);
+    setDeleteConfirmInvoice(inv);
+  };
+
+  const handleDeleteInvoiceConfirmed = async () => {
+    if (!deleteConfirmInvoice) return;
+    const inv = deleteConfirmInvoice;
+    setDeleteConfirmInvoice(null);
+    setDeletingInvoiceId(inv.id);
+    // Play the deletion animation, then commit to Firestore
+    setTimeout(async () => {
+      await softDeleteInvoice(userId, inv.id);
+      setAllInvoices(prev => prev.filter(i => i.id !== inv.id));
+      setDeletedInvoices(prev => [{ ...inv, deleted: true, deletedAt: new Date().toISOString().split('T')[0] }, ...prev]);
+      setDeletingInvoiceId(null);
+    }, 400);
   };
 
   const handleRestoreInvoice = async (inv: Invoice, e: React.MouseEvent) => {
@@ -695,7 +709,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
                       return (
                         <tr
                           key={inv.id}
-                          className={`hover:bg-indigo-50/30 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}`}
+                          className={`hover:bg-indigo-50/30 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'} ${deletingInvoiceId === inv.id ? 'deleting-item' : ''}`}
                         >
                           <td className="px-6 py-4 text-sm font-bold text-slate-600 whitespace-nowrap">
                             {formatDate(inv.date)}
@@ -884,6 +898,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
             onDone={() => setDownloadTarget(null)}
           />
         )}
+
+        {/* Delete confirmation modal */}
+        <DeleteConfirmationModal
+          isOpen={deleteConfirmInvoice !== null}
+          title={`Delete Invoice ${deleteConfirmInvoice?.invoiceNumber ?? ''}?`}
+          message="This invoice will be moved to the deleted archive. The invoice number will not be reused."
+          onCancel={() => setDeleteConfirmInvoice(null)}
+          onConfirm={handleDeleteInvoiceConfirmed}
+        />
       </div>
     );
   }
