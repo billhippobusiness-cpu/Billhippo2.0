@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, Edit3, Trash2, X, Save, UserCircle, Phone, Mail,
-  MapPin, Loader2, Users, ChevronLeft, FileText, IndianRupee, Receipt,
+  MapPin, Loader2, Users, ChevronLeft, FileText, IndianRupee, Receipt, Download,
 } from 'lucide-react';
 import { Customer, LedgerEntry, Invoice, BusinessProfile } from '../types';
 import {
@@ -11,6 +11,8 @@ import {
 } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
+import LedgerPDF from './pdf/LedgerPDF';
+import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -47,7 +49,9 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
 
   // ── PDF / receipt modal state ──
   const [pdfModal, setPdfModal] = useState<{ open: boolean; invoice: Invoice | null }>({ open: false, invoice: null });
-  const [receiptModal, setReceiptModal] = useState<{ open: boolean; entry: (LedgerEntry & { runningBalance: number }) | null }>({ open: false, entry: null });
+  const [receiptModal, setReceiptModal] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
+  const [ledgerPdfOpen, setLedgerPdfOpen] = useState(false);
+  const [receiptPdfData, setReceiptPdfData] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
 
   useEffect(() => {
     loadCustomers();
@@ -200,12 +204,22 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
           >
             <ChevronLeft size={16} /> All Customers
           </button>
-          <button
-            onClick={e => handleEdit(selectedCustomer, e)}
-            className="flex items-center gap-2 bg-white border border-slate-100 px-5 py-2.5 rounded-2xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm font-poppins"
-          >
-            <Edit3 size={15} className="text-profee-blue" /> Edit Profile
-          </button>
+          <div className="flex items-center gap-3">
+            {ledgerEntries.length > 0 && businessProfile && (
+              <button
+                onClick={() => setLedgerPdfOpen(true)}
+                className="flex items-center gap-2 bg-profee-blue text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:scale-105 active:scale-95 transition-all shadow-xl shadow-indigo-100 font-poppins"
+              >
+                <Download size={15} /> Download Statement
+              </button>
+            )}
+            <button
+              onClick={e => handleEdit(selectedCustomer, e)}
+              className="flex items-center gap-2 bg-white border border-slate-100 px-5 py-2.5 rounded-2xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm font-poppins"
+            >
+              <Edit3 size={15} className="text-profee-blue" /> Edit Profile
+            </button>
+          </div>
         </div>
 
         {/* Customer card */}
@@ -251,7 +265,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
             <div className="overflow-x-auto">
               <table className="w-full text-left font-poppins">
                 <thead>
-                  <tr className="bg-slate-50 text-slate-400 text-[10px] font-bold uppercase tracking-widest">
+                  <tr className="bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-widest">
                     <th className="px-6 py-4 rounded-tl-2xl">Date</th>
                     <th className="px-6 py-4">Type</th>
                     <th className="px-6 py-4">Description</th>
@@ -276,25 +290,25 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                             setReceiptModal({ open: true, entry });
                           }
                         }}
-                        className={`transition-colors text-xs font-medium ${(isInvoice || isPayment) ? 'cursor-pointer hover:bg-indigo-50/50' : ''}`}
+                        className={`transition-colors text-sm font-medium ${(isInvoice || isPayment) ? 'cursor-pointer hover:bg-indigo-50/50' : ''}`}
                       >
                         <td className="px-6 py-5 text-slate-400 whitespace-nowrap">{entry.date}</td>
                         <td className="px-6 py-5">
                           {isInvoice ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-profee-blue text-[10px] font-bold rounded-full">
-                              <FileText size={10} /> Invoice
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-profee-blue text-xs font-bold rounded-full">
+                              <FileText size={11} /> Invoice
                             </span>
                           ) : isPayment ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-bold rounded-full">
-                              <Receipt size={10} /> Receipt
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-full">
+                              <Receipt size={11} /> Receipt
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-50 text-slate-400 text-[10px] font-bold rounded-full">
-                              <IndianRupee size={10} /> Entry
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-400 text-xs font-bold rounded-full">
+                              <IndianRupee size={11} /> Entry
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-5 text-slate-600 max-w-[200px] truncate">{entry.description}</td>
+                        <td className="px-6 py-5 text-slate-600 max-w-[220px] truncate">{entry.description}</td>
                         <td className="px-6 py-5 text-right font-bold text-rose-500">
                           {entry.type === 'Debit' ? `₹${entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                         </td>
@@ -303,7 +317,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                         </td>
                         <td className="px-6 py-5 text-right font-bold text-slate-900">
                           ₹{Math.abs(entry.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          <span className="text-[9px] text-slate-400 ml-1">{entry.runningBalance >= 0 ? 'Dr' : 'Cr'}</span>
+                          <span className="text-[10px] text-slate-400 ml-1">{entry.runningBalance >= 0 ? 'Dr' : 'Cr'}</span>
                         </td>
                       </tr>
                     );
@@ -434,38 +448,99 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
               <div className="space-y-5">
                 <div className="bg-slate-50 rounded-2xl p-6 space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Date</span>
                     <span className="text-sm font-bold text-slate-700">{receiptModal.entry.date}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Customer</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Customer</span>
                     <span className="text-sm font-bold text-slate-700">{selectedCustomer.name}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Description</span>
                     <span className="text-sm font-bold text-slate-700">{receiptModal.entry.description}</span>
                   </div>
                 </div>
                 <div className="bg-emerald-50 rounded-2xl p-6 flex justify-between items-center border border-emerald-100">
-                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Amount Received</span>
+                  <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Amount Received</span>
                   <span className="text-2xl font-bold text-emerald-600">₹{receiptModal.entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="bg-slate-900 rounded-2xl p-6 flex justify-between items-center text-white">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balance After</span>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Balance After</span>
                   <span className="text-lg font-bold">
                     ₹{Math.abs(receiptModal.entry.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     <span className="text-[10px] opacity-50 ml-1">{receiptModal.entry.runningBalance >= 0 ? 'Dr' : 'Cr'}</span>
                   </span>
                 </div>
               </div>
-              <button
-                onClick={() => setReceiptModal({ open: false, entry: null })}
-                className="w-full mt-8 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100"
-              >
-                Close
-              </button>
+              <div className="flex gap-3 mt-8">
+                <button
+                  onClick={() => setReceiptModal({ open: false, entry: null })}
+                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100"
+                >
+                  Close
+                </button>
+                {businessProfile && (
+                  <button
+                    onClick={() => {
+                      const entry = receiptModal.entry;
+                      setReceiptModal({ open: false, entry: null });
+                      setReceiptPdfData({ open: true, entry });
+                    }}
+                    className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
+                  >
+                    <Download size={16} /> Download PDF
+                  </button>
+                )}
+              </div>
             </div>
           </div>
+        )}
+
+        {/* Ledger Statement PDF Modal */}
+        {ledgerPdfOpen && businessProfile && (
+          <PDFPreviewModal
+            open={ledgerPdfOpen}
+            onClose={() => setLedgerPdfOpen(false)}
+            document={
+              <LedgerPDF
+                customer={selectedCustomer}
+                entries={ledgerEntries}
+                businessName={businessProfile.name}
+                businessInfo={{
+                  gstin: businessProfile.gstin || '',
+                  address: [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode].filter(Boolean).join(', '),
+                  phone: businessProfile.phone || '',
+                  email: businessProfile.email || '',
+                }}
+                logoUrl={businessProfile.theme?.logoUrl}
+                statementDate={new Date().toLocaleDateString('en-IN')}
+              />
+            }
+            fileName={`Statement-${selectedCustomer.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`}
+          />
+        )}
+
+        {/* Receipt PDF Modal */}
+        {receiptPdfData.open && receiptPdfData.entry && businessProfile && (
+          <PDFPreviewModal
+            open={receiptPdfData.open}
+            onClose={() => setReceiptPdfData({ open: false, entry: null })}
+            document={
+              <ReceiptPDF
+                entry={receiptPdfData.entry}
+                customer={selectedCustomer}
+                businessName={businessProfile.name}
+                businessInfo={{
+                  gstin: businessProfile.gstin || '',
+                  address: [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode].filter(Boolean).join(', '),
+                  phone: businessProfile.phone || '',
+                  email: businessProfile.email || '',
+                }}
+                logoUrl={businessProfile.theme?.logoUrl}
+              />
+            }
+            fileName={`Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
+          />
         )}
       </div>
     );
