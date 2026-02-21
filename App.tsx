@@ -9,7 +9,6 @@ import LandingPage from './components/LandingPage';
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
 import InvoiceGenerator from './components/InvoiceGenerator';
-import LedgerView from './components/LedgerView';
 import GSTReports from './components/GSTReports';
 import Sidebar from './components/Sidebar';
 import ProfileSettings from './components/ProfileSettings';
@@ -99,7 +98,6 @@ const App: React.FC = () => {
       case 'dashboard': return <Dashboard userId={userId} />;
       case 'customers': return <CustomerManager userId={userId} />;
       case 'invoices': return <InvoiceGenerator userId={userId} />;
-      case 'ledger': return <LedgerView userId={userId} />;
       case 'gst': return <GSTReports userId={userId} />;
       case 'theme': return <InvoiceTheme userId={userId} />;
       case 'settings': return <ProfileSettings userId={userId} onBusinessTypeChange={setBusinessType} />;

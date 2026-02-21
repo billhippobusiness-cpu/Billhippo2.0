@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, IndianRupee, Users, FileText, Settings, LogOut, ChevronRight, Palette, UserCircle, Package } from 'lucide-react';
+import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package } from 'lucide-react';
 import { type User } from 'firebase/auth';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
@@ -20,7 +20,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
   const baseItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
     { id: 'customers', icon: UserCircle, label: 'Customers' },
-    { id: 'ledger', icon: Users, label: 'Parties & Ledger' },
     { id: 'invoices', icon: IndianRupee, label: 'Invoice Maker' },
     { id: 'gst', icon: FileText, label: 'Tax Reports' },
     { id: 'theme', icon: Palette, label: 'Invoice Theme' },
