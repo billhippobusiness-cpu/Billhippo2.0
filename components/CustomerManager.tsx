@@ -3,16 +3,19 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, Edit3, Trash2, X, Save, UserCircle, Phone, Mail,
   MapPin, Loader2, Users, ChevronLeft, FileText, IndianRupee, Receipt, Download,
+  TrendingDown, TrendingUp,
 } from 'lucide-react';
-import { Customer, LedgerEntry, Invoice, BusinessProfile } from '../types';
+import { Customer, LedgerEntry, Invoice, BusinessProfile, CreditNote, DebitNote } from '../types';
 import {
   getCustomers, addCustomer, updateCustomer, deleteCustomer,
   getLedgerEntries, getInvoices, getBusinessProfile,
+  getCreditNotes, getDebitNotes,
 } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import LedgerPDF from './pdf/LedgerPDF';
 import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
+import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -52,6 +55,9 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
   const [receiptModal, setReceiptModal] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
   const [ledgerPdfOpen, setLedgerPdfOpen] = useState(false);
   const [receiptPdfData, setReceiptPdfData] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
+  const [creditNotesMap, setCreditNotesMap] = useState<Record<string, CreditNote>>({});
+  const [debitNotesMap, setDebitNotesMap] = useState<Record<string, DebitNote>>({});
+  const [noteModal, setNoteModal] = useState<{ open: boolean; note: CreditNote | DebitNote | null; noteType: 'credit' | 'debit' }>({ open: false, note: null, noteType: 'credit' });
 
   useEffect(() => {
     loadCustomers();
@@ -139,14 +145,22 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     setSelectedCustomer(customer);
     setLoadingLedger(true);
     try {
-      const [entries, allInvoices] = await Promise.all([
+      const [entries, allInvoices, allCreditNotes, allDebitNotes] = await Promise.all([
         getLedgerEntries(userId, customer.id),
         getInvoices(userId),
+        getCreditNotes(userId),
+        getDebitNotes(userId),
       ]);
       setLedgerEntries(entries);
       const map: Record<string, Invoice> = {};
       allInvoices.forEach(inv => { map[inv.id] = inv; });
       setInvoicesMap(map);
+      const cnMap: Record<string, CreditNote> = {};
+      allCreditNotes.forEach(cn => { cnMap[cn.id] = cn; });
+      setCreditNotesMap(cnMap);
+      const dnMap: Record<string, DebitNote> = {};
+      allDebitNotes.forEach(dn => { dnMap[dn.id] = dn; });
+      setDebitNotesMap(dnMap);
     } catch (err) { console.error(err); }
     finally { setLoadingLedger(false); }
   };
@@ -155,8 +169,11 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     setSelectedCustomer(null);
     setLedgerEntries([]);
     setInvoicesMap({});
+    setCreditNotesMap({});
+    setDebitNotesMap({});
     setPdfModal({ open: false, invoice: null });
     setReceiptModal({ open: false, entry: null });
+    setNoteModal({ open: false, note: null, noteType: 'credit' });
   };
 
   // ── Running balance ──
@@ -277,7 +294,10 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                 <tbody className="divide-y divide-slate-50">
                   {runningEntries.map((entry, idx) => {
                     const isInvoice = entry.type === 'Debit' && !!entry.invoiceId;
-                    const isPayment = entry.type === 'Credit';
+                    const isCreditNote = !!entry.creditNoteId;
+                    const isDebitNote = !!entry.debitNoteId;
+                    const isPayment = entry.type === 'Credit' && !entry.creditNoteId;
+                    const isClickable = isInvoice || isCreditNote || isDebitNote || isPayment;
 
                     return (
                       <tr
@@ -286,17 +306,31 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                           if (isInvoice && entry.invoiceId) {
                             const inv = invoicesMap[entry.invoiceId];
                             if (inv) setPdfModal({ open: true, invoice: inv });
+                          } else if (isCreditNote && entry.creditNoteId) {
+                            const cn = creditNotesMap[entry.creditNoteId];
+                            if (cn) setNoteModal({ open: true, note: cn, noteType: 'credit' });
+                          } else if (isDebitNote && entry.debitNoteId) {
+                            const dn = debitNotesMap[entry.debitNoteId];
+                            if (dn) setNoteModal({ open: true, note: dn, noteType: 'debit' });
                           } else if (isPayment) {
                             setReceiptModal({ open: true, entry });
                           }
                         }}
-                        className={`transition-colors text-sm font-medium ${(isInvoice || isPayment) ? 'cursor-pointer hover:bg-indigo-50/50' : ''}`}
+                        className={`transition-colors text-sm font-medium ${isClickable ? 'cursor-pointer hover:bg-indigo-50/50' : ''}`}
                       >
                         <td className="px-6 py-5 text-slate-400 whitespace-nowrap">{entry.date}</td>
                         <td className="px-6 py-5">
                           {isInvoice ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-profee-blue text-xs font-bold rounded-full">
                               <FileText size={11} /> Invoice
+                            </span>
+                          ) : isCreditNote ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-full">
+                              <TrendingDown size={11} /> Credit Note
+                            </span>
+                          ) : isDebitNote ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-600 text-xs font-bold rounded-full">
+                              <TrendingUp size={11} /> Debit Note
                             </span>
                           ) : isPayment ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-full">
@@ -540,6 +574,23 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
               />
             }
             fileName={`Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
+          />
+        )}
+
+        {/* Credit / Debit Note PDF Modal */}
+        {noteModal.open && noteModal.note && businessProfile && (
+          <PDFPreviewModal
+            open={noteModal.open}
+            onClose={() => setNoteModal({ open: false, note: null, noteType: 'credit' })}
+            document={
+              <CreditDebitNotePDF
+                note={noteModal.note}
+                noteType={noteModal.noteType}
+                business={businessProfile}
+                customer={selectedCustomer}
+              />
+            }
+            fileName={`${noteModal.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${noteModal.note.noteNumber.replace(/\//g, '-')}.pdf`}
           />
         )}
       </div>
