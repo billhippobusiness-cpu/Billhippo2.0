@@ -13,6 +13,14 @@ export interface BusinessTheme {
   autoNumbering: boolean;
 }
 
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  accountNumber: string;
+  ifscCode: string;
+  upiId?: string;
+}
+
 export interface BusinessProfile {
   name: string;
   gstin: string;
@@ -28,6 +36,8 @@ export interface BusinessProfile {
   accountNumber?: string;
   ifscCode?: string;
   upiId?: string;
+  bankAccounts?: BankAccount[];
+  selectedBankId?: string;
   defaultNotes?: string;
   termsAndConditions?: string;
   gstEnabled: boolean;

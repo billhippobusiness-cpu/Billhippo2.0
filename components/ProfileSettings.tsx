@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart } from 'lucide-react';
-import { BusinessProfile } from '../types';
+import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart, Plus, Pencil, Trash2, Check } from 'lucide-react';
+import { BusinessProfile, BankAccount } from '../types';
 import { getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 
 const INDIAN_STATES = [
@@ -54,6 +54,11 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
   const [logoUploading, setLogoUploading] = useState(false);
   const [signatureUploading, setSignatureUploading] = useState(false);
 
+  // Multi-bank state
+  const [showBankForm, setShowBankForm] = useState(false);
+  const [editingBankId, setEditingBankId] = useState<string | null>(null);
+  const [bankForm, setBankForm] = useState({ bankName: '', accountNumber: '', ifscCode: '', upiId: '' });
+
   useEffect(() => {
     loadProfile();
   }, [userId]);
@@ -63,7 +68,19 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
       setLoading(true);
       const data = await getBusinessProfile(userId);
       if (data) {
-        setProfile(data);
+        // Migrate old single-bank fields into bankAccounts array
+        if (!data.bankAccounts?.length && (data.bankName || data.accountNumber || data.ifscCode)) {
+          const migrated: BankAccount = {
+            id: 'default',
+            bankName: data.bankName || '',
+            accountNumber: data.accountNumber || '',
+            ifscCode: data.ifscCode || '',
+            upiId: data.upiId || '',
+          };
+          setProfile({ ...data, bankAccounts: [migrated], selectedBankId: 'default' });
+        } else {
+          setProfile(data);
+        }
       }
     } catch (err: any) {
       setError('Failed to load profile. Please refresh.');
@@ -74,13 +91,15 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
   };
 
   useEffect(() => {
-    if (profile.upiId) {
-      const upiLink = `upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}&cu=INR`;
+    const selectedBank = profile.bankAccounts?.find(b => b.id === profile.selectedBankId);
+    const effectiveUpi = selectedBank?.upiId || profile.upiId || '';
+    if (effectiveUpi) {
+      const upiLink = `upi://pay?pa=${effectiveUpi}&pn=${encodeURIComponent(profile.name)}&cu=INR`;
       setQrUrl(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiLink)}`);
     } else {
       setQrUrl('');
     }
-  }, [profile.upiId, profile.name]);
+  }, [profile.upiId, profile.name, profile.selectedBankId, profile.bankAccounts]);
 
   // Compress & convert image to PNG data URL (preserves transparency)
   const compressImage = (file: File, maxWidth: number, maxHeight: number): Promise<string> =>
@@ -147,7 +166,12 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
     setError(null);
     setSaveSuccess(false);
     try {
-      await saveBusinessProfile(userId, profile);
+      // Sync selected bank into top-level fields for backward compat with PDFs
+      const selectedBank = profile.bankAccounts?.find(b => b.id === profile.selectedBankId);
+      const profileToSave: BusinessProfile = selectedBank
+        ? { ...profile, bankName: selectedBank.bankName, accountNumber: selectedBank.accountNumber, ifscCode: selectedBank.ifscCode, upiId: selectedBank.upiId || '' }
+        : profile;
+      await saveBusinessProfile(userId, profileToSave);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
       if (profile.businessType) onBusinessTypeChange?.(profile.businessType);
@@ -157,6 +181,37 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleAddBank = () => {
+    if (!bankForm.bankName.trim() || !bankForm.accountNumber.trim()) return;
+    const newBank: BankAccount = { id: Date.now().toString(), ...bankForm };
+    const bankAccounts = [...(profile.bankAccounts || []), newBank];
+    const selectedBankId = profile.selectedBankId || newBank.id;
+    setProfile(p => ({ ...p, bankAccounts, selectedBankId }));
+    setBankForm({ bankName: '', accountNumber: '', ifscCode: '', upiId: '' });
+    setShowBankForm(false);
+  };
+
+  const handleUpdateBank = () => {
+    if (!editingBankId) return;
+    const bankAccounts = (profile.bankAccounts || []).map(b =>
+      b.id === editingBankId ? { ...b, ...bankForm } : b
+    );
+    setProfile(p => ({ ...p, bankAccounts }));
+    setEditingBankId(null);
+    setBankForm({ bankName: '', accountNumber: '', ifscCode: '', upiId: '' });
+  };
+
+  const handleDeleteBank = (id: string) => {
+    const bankAccounts = (profile.bankAccounts || []).filter(b => b.id !== id);
+    const selectedBankId = profile.selectedBankId === id ? (bankAccounts[0]?.id || undefined) : profile.selectedBankId;
+    setProfile(p => ({ ...p, bankAccounts, selectedBankId }));
+    if (editingBankId === id) setEditingBankId(null);
+  };
+
+  const handleSelectBank = (id: string) => {
+    setProfile(p => ({ ...p, selectedBankId: id }));
   };
 
   if (loading) {
@@ -388,24 +443,115 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
             )}
           </div>
 
-          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8">
-            <h3 className="text-xl font-bold font-poppins flex items-center gap-3">
-              <CreditCard className="text-emerald-500" size={22} /> Bank & Payments
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-poppins">
-              <Input label="Bank Name" value={profile.bankName || ''} onChange={v => setProfile({...profile, bankName: v})} placeholder="HDFC Bank" />
-              <Input label="Account Number" value={profile.accountNumber || ''} onChange={v => setProfile({...profile, accountNumber: v})} placeholder="50100234567890" />
-              <Input label="IFSC Code" value={profile.ifscCode || ''} onChange={v => setProfile({...profile, ifscCode: v})} placeholder="HDFC0000123" />
-              <Input label="UPI ID" value={profile.upiId || ''} onChange={v => setProfile({...profile, upiId: v})} placeholder="name@upi" />
+          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold font-poppins flex items-center gap-3">
+                <CreditCard className="text-emerald-500" size={22} /> Bank & Payments
+              </h3>
+              <button
+                onClick={() => { setShowBankForm(true); setEditingBankId(null); setBankForm({ bankName: '', accountNumber: '', ifscCode: '', upiId: '' }); }}
+                className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl text-sm font-bold font-poppins hover:bg-emerald-100 transition-all"
+              >
+                <Plus size={15} /> Add Bank
+              </button>
             </div>
-            {profile.upiId && (
-              <div className="mt-4 p-6 bg-emerald-50/50 rounded-3xl flex items-center gap-6 border border-emerald-100">
+
+            {/* Bank account list */}
+            <div className="space-y-3">
+              {(profile.bankAccounts || []).map(bank => (
+                <div
+                  key={bank.id}
+                  className={`rounded-2xl border-2 transition-all ${profile.selectedBankId === bank.id ? 'border-emerald-400 bg-emerald-50/60' : 'border-slate-100 bg-slate-50'}`}
+                >
+                  {editingBankId === bank.id ? (
+                    <div className="p-6 space-y-4 font-poppins">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Input label="Bank Name" value={bankForm.bankName} onChange={v => setBankForm(f => ({ ...f, bankName: v }))} placeholder="HDFC Bank" />
+                        <Input label="Account Number" value={bankForm.accountNumber} onChange={v => setBankForm(f => ({ ...f, accountNumber: v }))} placeholder="50100234567890" />
+                        <Input label="IFSC Code" value={bankForm.ifscCode} onChange={v => setBankForm(f => ({ ...f, ifscCode: v }))} placeholder="HDFC0000123" />
+                        <Input label="UPI ID" value={bankForm.upiId} onChange={v => setBankForm(f => ({ ...f, upiId: v }))} placeholder="name@upi" />
+                      </div>
+                      <div className="flex gap-3 pt-1">
+                        <button onClick={handleUpdateBank} className="px-6 py-2.5 bg-profee-blue text-white rounded-xl text-sm font-bold font-poppins hover:scale-105 active:scale-95 transition-all">Update</button>
+                        <button onClick={() => setEditingBankId(null)} className="px-6 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-500 hover:bg-white transition-all font-poppins">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-5 flex items-center gap-4">
+                      {/* Select tick */}
+                      <button
+                        onClick={() => handleSelectBank(bank.id)}
+                        className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center border-2 transition-all ${profile.selectedBankId === bank.id ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-400'}`}
+                        title="Set as active bank"
+                      >
+                        {profile.selectedBankId === bank.id && <Check size={15} className="text-white" />}
+                      </button>
+                      {/* Bank info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-slate-800 text-sm font-poppins truncate">{bank.bankName}</p>
+                        <p className="text-xs text-slate-400 font-medium mt-0.5">A/c: {bank.accountNumber}{bank.ifscCode ? ` · IFSC: ${bank.ifscCode}` : ''}</p>
+                        {bank.upiId && <p className="text-xs text-emerald-600 font-bold mt-0.5">UPI: {bank.upiId}</p>}
+                      </div>
+                      {profile.selectedBankId === bank.id && (
+                        <span className="text-[10px] font-black bg-emerald-200 text-emerald-800 px-2.5 py-0.5 rounded-full uppercase tracking-wider flex-shrink-0">Active</span>
+                      )}
+                      {/* Edit / Delete */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => { setEditingBankId(bank.id); setBankForm({ bankName: bank.bankName, accountNumber: bank.accountNumber, ifscCode: bank.ifscCode, upiId: bank.upiId || '' }); setShowBankForm(false); }}
+                          className="p-2 hover:bg-white rounded-xl transition-all text-slate-400 hover:text-profee-blue"
+                          title="Edit"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBank(bank.id)}
+                          className="p-2 hover:bg-white rounded-xl transition-all text-slate-400 hover:text-rose-500"
+                          title="Delete"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Empty state */}
+              {(!profile.bankAccounts || profile.bankAccounts.length === 0) && !showBankForm && (
+                <div className="text-center py-8 text-slate-300">
+                  <CreditCard size={32} className="mx-auto mb-2" />
+                  <p className="text-sm font-bold font-poppins">No bank accounts added yet</p>
+                </div>
+              )}
+            </div>
+
+            {/* Add bank form */}
+            {showBankForm && (
+              <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 space-y-4 font-poppins">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">New Bank Account</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input label="Bank Name" value={bankForm.bankName} onChange={v => setBankForm(f => ({ ...f, bankName: v }))} placeholder="HDFC Bank" />
+                  <Input label="Account Number" value={bankForm.accountNumber} onChange={v => setBankForm(f => ({ ...f, accountNumber: v }))} placeholder="50100234567890" />
+                  <Input label="IFSC Code" value={bankForm.ifscCode} onChange={v => setBankForm(f => ({ ...f, ifscCode: v }))} placeholder="HDFC0000123" />
+                  <Input label="UPI ID" value={bankForm.upiId} onChange={v => setBankForm(f => ({ ...f, upiId: v }))} placeholder="name@upi" />
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button onClick={handleAddBank} className="px-6 py-2.5 bg-profee-blue text-white rounded-xl text-sm font-bold font-poppins hover:scale-105 active:scale-95 transition-all">Save Bank</button>
+                  <button onClick={() => setShowBankForm(false)} className="px-6 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-500 hover:bg-white transition-all font-poppins">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* UPI QR for selected bank */}
+            {qrUrl && (
+              <div className="p-6 bg-emerald-50/50 rounded-3xl flex items-center gap-6 border border-emerald-100">
                 <div className="p-2 bg-white rounded-2xl shadow-sm">
                   <img src={qrUrl} alt="UPI QR" className="w-24 h-24" />
                 </div>
                 <div>
-                   <h4 className="text-sm font-bold font-poppins text-emerald-900">UPI QR Enabled</h4>
-                   <p className="text-xs text-emerald-700 mt-1 max-w-xs font-medium">Auto-generated QR will appear in all invoices for instant customer payments.</p>
+                  <h4 className="text-sm font-bold font-poppins text-emerald-900">UPI QR Enabled</h4>
+                  <p className="text-xs text-emerald-700 mt-1 max-w-xs font-medium">Auto-generated QR for the active bank will appear in all invoices for instant customer payments.</p>
                 </div>
               </div>
             )}
