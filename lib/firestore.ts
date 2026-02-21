@@ -26,7 +26,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { BusinessProfile, Customer, Invoice, LedgerEntry, InventoryItem } from '../types';
+import type { BusinessProfile, Customer, Invoice, LedgerEntry, InventoryItem, CreditNote, DebitNote } from '../types';
 
 // ── Helper: get user-scoped collection reference ──
 function userCollection(userId: string, collectionName: string) {
@@ -166,4 +166,62 @@ export async function updateInventoryItem(userId: string, itemId: string, data: 
 
 export async function deleteInventoryItem(userId: string, itemId: string) {
   await deleteDoc(userDoc(userId, 'inventory', itemId));
+}
+
+// ═══════════════════════════════════════════
+//  CREDIT NOTES
+// ═══════════════════════════════════════════
+
+export async function getCreditNotes(userId: string): Promise<CreditNote[]> {
+  const snap = await getDocs(userCollection(userId, 'creditNotes'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CreditNote));
+  return docs.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function addCreditNote(userId: string, note: Omit<CreditNote, 'id'>): Promise<string> {
+  const ref = await addDoc(userCollection(userId, 'creditNotes'), {
+    ...note,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateCreditNote(userId: string, noteId: string, data: Partial<CreditNote>) {
+  await updateDoc(userDoc(userId, 'creditNotes', noteId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteCreditNote(userId: string, noteId: string) {
+  await deleteDoc(userDoc(userId, 'creditNotes', noteId));
+}
+
+// ═══════════════════════════════════════════
+//  DEBIT NOTES
+// ═══════════════════════════════════════════
+
+export async function getDebitNotes(userId: string): Promise<DebitNote[]> {
+  const snap = await getDocs(userCollection(userId, 'debitNotes'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as DebitNote));
+  return docs.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function addDebitNote(userId: string, note: Omit<DebitNote, 'id'>): Promise<string> {
+  const ref = await addDoc(userCollection(userId, 'debitNotes'), {
+    ...note,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateDebitNote(userId: string, noteId: string, data: Partial<DebitNote>) {
+  await updateDoc(userDoc(userId, 'debitNotes', noteId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteDebitNote(userId: string, noteId: string) {
+  await deleteDoc(userDoc(userId, 'debitNotes', noteId));
 }

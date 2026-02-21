@@ -16,6 +16,7 @@ import InvoiceTheme from './components/InvoiceTheme';
 import CustomerManager from './components/CustomerManager';
 import OnboardingWizard from './components/OnboardingWizard';
 import InventoryManager from './components/InventoryManager';
+import CreditDebitNotes from './components/CreditDebitNotes';
 
 const App: React.FC = () => {
   const [view, setView] = useState<'landing' | 'auth' | 'app' | 'onboarding'>('landing');
@@ -98,6 +99,7 @@ const App: React.FC = () => {
       case 'dashboard': return <Dashboard userId={userId} />;
       case 'customers': return <CustomerManager userId={userId} />;
       case 'invoices': return <InvoiceGenerator userId={userId} />;
+      case 'notes': return <CreditDebitNotes userId={userId} />;
       case 'gst': return <GSTReports userId={userId} />;
       case 'theme': return <InvoiceTheme userId={userId} />;
       case 'settings': return <ProfileSettings userId={userId} onBusinessTypeChange={setBusinessType} />;

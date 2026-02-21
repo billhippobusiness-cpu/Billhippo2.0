@@ -93,5 +93,52 @@ export interface LedgerEntry {
   amount: number;
   description: string;
   invoiceId?: string;
+  creditNoteId?: string;
+  debitNoteId?: string;
   customerId: string;
+}
+
+export interface CreditDebitNoteItem {
+  id: string;
+  description: string;
+  hsnCode: string;
+  quantity: number;
+  rate: number;
+  gstRate: number;
+}
+
+export interface CreditNote {
+  id: string;
+  noteNumber: string;
+  date: string;
+  originalInvoiceId?: string;
+  originalInvoiceNumber?: string;
+  reason: string;
+  customerId: string;
+  customerName: string;
+  items: CreditDebitNoteItem[];
+  gstType: GSTType;
+  totalBeforeTax: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  totalAmount: number;
+}
+
+export interface DebitNote {
+  id: string;
+  noteNumber: string;
+  date: string;
+  originalInvoiceId?: string;
+  originalInvoiceNumber?: string;
+  reason: string;
+  customerId: string;
+  customerName: string;
+  items: CreditDebitNoteItem[];
+  gstType: GSTType;
+  totalBeforeTax: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  totalAmount: number;
 }
