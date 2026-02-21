@@ -17,6 +17,7 @@ import {
   deleteInventoryItem,
 } from '../lib/firestore';
 import type { InventoryItem } from '../types';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 const UNITS = ['PCS', 'KG', 'GMS', 'LTR', 'MTR', 'BOX', 'NOS', 'SET', 'BAG', 'PKT'];
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -45,6 +46,7 @@ export default function InventoryManager({ userId }: Props) {
   const [form, setForm] = useState<Omit<InventoryItem, 'id'>>(emptyForm());
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadItems();
@@ -122,10 +124,15 @@ export default function InventoryManager({ userId }: Props) {
     }
   }
 
-  async function handleDelete(id: string) {
-    await deleteInventoryItem(userId, id);
-    setItems((prev) => prev.filter((it) => it.id !== id));
+  function handleDelete(id: string) {
     setDeleteConfirm(null);
+    setDeletingId(id);
+    // Play animation, then commit deletion to Firestore
+    setTimeout(async () => {
+      await deleteInventoryItem(userId, id);
+      setItems((prev) => prev.filter((it) => it.id !== id));
+      setDeletingId(null);
+    }, 400);
   }
 
   const inr = (n: number) =>
@@ -209,7 +216,7 @@ export default function InventoryManager({ userId }: Props) {
                     key={item.id}
                     className={`border-b border-gray-100 hover:bg-amber-50/40 transition-colors ${
                       idx % 2 === 0 ? '' : 'bg-gray-50/50'
-                    }`}
+                    } ${deletingId === item.id ? 'deleting-item' : ''}`}
                   >
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{item.name}</div>
@@ -273,31 +280,14 @@ export default function InventoryManager({ userId }: Props) {
         )}
       </div>
 
-      {/* ── Delete confirm ── */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Item?</h3>
-            <p className="text-sm text-gray-500 mb-5">
-              This will permanently remove the item from your inventory. This action cannot be undone.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Delete confirmation modal ── */}
+      <DeleteConfirmationModal
+        isOpen={deleteConfirm !== null}
+        title="Delete Inventory Item?"
+        message="This will permanently remove the item from your inventory. This action cannot be undone."
+        onCancel={() => setDeleteConfirm(null)}
+        onConfirm={() => deleteConfirm && handleDelete(deleteConfirm)}
+      />
 
       {/* ── Add / Edit Modal ── */}
       {showModal && (

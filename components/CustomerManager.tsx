@@ -16,6 +16,7 @@ import InvoicePDF from './pdf/InvoicePDF';
 import LedgerPDF from './pdf/LedgerPDF';
 import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
 import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -42,6 +43,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // ── Ledger / detail state ──
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -112,15 +115,27 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this customer? This cannot be undone.')) return;
-    try {
-      await deleteCustomer(userId, id);
-      await loadCustomers();
-    } catch (err: any) {
-      setError('Failed to delete customer.');
-      console.error(err);
-    }
+  const handleDelete = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const handleDeleteConfirmed = async () => {
+    if (!deleteConfirmId) return;
+    const id = deleteConfirmId;
+    setDeleteConfirmId(null);
+    setDeletingId(id);
+    // Wait for the deletion animation to play out before removing from Firestore
+    setTimeout(async () => {
+      try {
+        await deleteCustomer(userId, id);
+        await loadCustomers();
+      } catch (err: any) {
+        setError('Failed to delete customer.');
+        console.error(err);
+      } finally {
+        setDeletingId(null);
+      }
+    }, 400);
   };
 
   const handleEdit = (customer: Customer, e: React.MouseEvent) => {
@@ -927,7 +942,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
             <div
               key={customer.id}
               onClick={() => handleSelectCustomer(customer)}
-              className="bg-white rounded-[2rem] px-8 py-6 premium-shadow border border-slate-50 hover:border-indigo-100 transition-all cursor-pointer flex items-center gap-6 group"
+              className={`bg-white rounded-[2rem] px-8 py-6 premium-shadow border border-slate-50 hover:border-indigo-100 transition-all cursor-pointer flex items-center gap-6 group ${deletingId === customer.id ? 'deleting-item' : ''}`}
             >
               {/* Avatar */}
               <div className="w-12 h-12 rounded-2xl bg-profee-blue/10 text-profee-blue flex items-center justify-center font-bold font-poppins text-lg shrink-0">
@@ -974,6 +989,15 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
           ))}
         </div>
       )}
+
+      {/* Delete confirmation modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteConfirmId !== null}
+        title="Delete Customer?"
+        message="This will permanently remove the customer and all associated data. This action cannot be undone."
+        onCancel={() => setDeleteConfirmId(null)}
+        onConfirm={handleDeleteConfirmed}
+      />
     </div>
   );
 };
