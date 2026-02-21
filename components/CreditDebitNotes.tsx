@@ -17,16 +17,16 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus, Trash2, ChevronDown, Eye, Save, Loader2, FileText,
   ArrowLeft, Download, Pencil, Search, X, CheckCircle, Info,
-  TrendingDown, TrendingUp, FileCheck2,
+  TrendingDown, TrendingUp, FileCheck2, Package,
 } from 'lucide-react';
 import {
-  GSTType, CreditDebitNoteItem, CreditNote, DebitNote, Customer, BusinessProfile,
+  GSTType, CreditDebitNoteItem, CreditNote, DebitNote, Customer, BusinessProfile, InventoryItem,
 } from '../types';
 import {
   getCustomers, getBusinessProfile,
   getCreditNotes, addCreditNote, updateCreditNote,
   getDebitNotes, addDebitNote, updateDebitNote,
-  addLedgerEntry, updateCustomer,
+  addLedgerEntry, updateCustomer, getInventoryItems,
 } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
@@ -96,6 +96,12 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Inventory picker
+  const [showInventoryPicker, setShowInventoryPicker] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
 
   // PDF modal
   const [pdfModal, setPdfModal] = useState<{
@@ -171,6 +177,35 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
   };
 
+  // ── Inventory picker ──
+  const openInventoryPicker = async () => {
+    if (!inventoryLoaded) {
+      const data = await getInventoryItems(userId);
+      setInventoryItems(data);
+      setInventoryLoaded(true);
+    }
+    setInventorySearch('');
+    setShowInventoryPicker(true);
+  };
+
+  const handlePickInventoryItem = (item: InventoryItem) => {
+    const firstEmpty = items.find(i => !i.description.trim());
+    const newLineItem: CreditDebitNoteItem = {
+      id: firstEmpty?.id || Math.random().toString(36).substr(2, 9),
+      description: item.name,
+      hsnCode: item.hsnCode,
+      quantity: 1,
+      rate: item.sellingPrice,
+      gstRate: item.gstRate,
+    };
+    if (firstEmpty) {
+      setItems(prev => prev.map(i => i.id === firstEmpty.id ? newLineItem : i));
+    } else {
+      setItems(prev => [...prev, newLineItem]);
+    }
+    setShowInventoryPicker(false);
+  };
+
   // ── Edit note ──
   const handleEditNote = (note: CreditNote | DebitNote, type: NoteTab) => {
     setActiveTab(type);
@@ -220,7 +255,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
       const payload = {
         noteNumber, date: noteDate, customerId: selectedCustomerId,
         customerName: selectedCustomer?.name || '',
-        originalInvoiceNumber: originalInvoiceNumber.trim() || undefined,
+        ...(originalInvoiceNumber.trim() ? { originalInvoiceNumber: originalInvoiceNumber.trim() } : {}),
         reason: reason.trim(),
         items, gstType,
         totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: grandTotal,
@@ -595,8 +630,17 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                 <h3 className="text-xl font-bold flex items-center gap-3">
                   <Plus className={accentText} size={22} /> Particulars
                 </h3>
-                <div className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase ${accentBg} ${accentText}`}>
-                  GST Logic: {gstType}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={openInventoryPicker}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors text-xs font-bold border border-amber-200"
+                  >
+                    <Package size={14} /> Pick from Inventory
+                  </button>
+                  <div className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase ${accentBg} ${accentText}`}>
+                    GST Logic: {gstType}
+                  </div>
                 </div>
               </div>
               <div className="space-y-4">
@@ -716,9 +760,71 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
           </div>
         </div>
 
-        {/* Click-outside overlay */}
+        {/* Click-outside overlay for customer dropdown */}
         {showCustomerDropdown && (
           <div className="fixed inset-0 z-20" onClick={() => setShowCustomerDropdown(false)} />
+        )}
+
+        {/* ── Inventory picker modal ── */}
+        {showInventoryPicker && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                <h2 className="text-base font-bold font-poppins text-slate-900 flex items-center gap-2">
+                  <Package size={18} className="text-amber-600" /> Pick from Inventory
+                </h2>
+                <button
+                  onClick={() => setShowInventoryPicker(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="px-6 py-3 border-b border-slate-50">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                  <input
+                    autoFocus type="text" placeholder="Search items…"
+                    value={inventorySearch} onChange={e => setInventorySearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 rounded-xl border-none focus:ring-2 ring-amber-100 font-poppins font-medium"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {inventoryItems
+                  .filter(it =>
+                    it.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                    it.hsnCode.toLowerCase().includes(inventorySearch.toLowerCase())
+                  )
+                  .map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handlePickInventoryItem(item)}
+                      className="w-full flex items-center justify-between px-6 py-4 hover:bg-amber-50 border-b border-slate-50 transition-colors text-left group"
+                    >
+                      <div>
+                        <p className="text-sm font-bold text-slate-800 group-hover:text-amber-800">{item.name}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">HSN: {item.hsnCode || '—'} · {item.unit} · GST {item.gstRate}%</p>
+                      </div>
+                      <div className="text-right flex-shrink-0 ml-4">
+                        <p className="text-sm font-black text-slate-900">₹{item.sellingPrice.toLocaleString('en-IN')}</p>
+                        {(item.stock ?? 0) > 0
+                          ? <p className="text-xs text-emerald-600">Stock: {item.stock}</p>
+                          : <p className="text-xs text-rose-500">Out of stock</p>
+                        }
+                      </div>
+                    </button>
+                  ))
+                }
+                {inventoryItems.length === 0 && (
+                  <div className="px-6 py-12 text-center text-sm text-slate-400 font-poppins">
+                    No inventory items found. Add items from the Inventory page.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         {pdfModal.open && pdfModal.note && (
