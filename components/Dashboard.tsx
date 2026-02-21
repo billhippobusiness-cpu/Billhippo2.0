@@ -3,9 +3,11 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
-import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, Loader2, ChevronDown, Calendar, RefreshCw, X } from 'lucide-react';
+import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, Loader2, ChevronDown, Calendar, RefreshCw, X, ExternalLink } from 'lucide-react';
 import { Invoice, Customer, LedgerEntry, BusinessProfile } from '../types';
 import { getInvoices, getCustomers, getLedgerEntries, getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
+import PDFPreviewModal from './pdf/PDFPreviewModal';
+import InvoicePDF from './pdf/InvoicePDF';
 
 interface DashboardProps { userId: string; }
 
@@ -57,6 +59,9 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
   const [showResetModal, setShowResetModal] = useState(false);
   const [pendingFY, setPendingFY] = useState('');
   const [savingPrefix, setSavingPrefix] = useState(false);
+
+  // ── PDF preview modal ──
+  const [pdfModal, setPdfModal] = useState<{ open: boolean; invoice: Invoice | null; customer: Customer | null }>({ open: false, invoice: null, customer: null });
 
   const fyOptions = useMemo(() => generateFYOptions(), []);
 
@@ -421,23 +426,49 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
         <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
           <h3 className="text-xl font-bold font-poppins text-slate-900 mb-6">Recent Invoices</h3>
           <div className="space-y-3">
-            {invoices.slice(0, 5).map(inv => (
-              <div key={inv.id} className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl">
-                <div className="flex items-center gap-4">
-                  <FileText className="text-profee-blue" size={20} />
-                  <div>
-                    <p className="text-sm font-bold text-slate-800 font-poppins">{inv.invoiceNumber}</p>
-                    <p className="text-xs text-slate-400 font-medium">{inv.customerName} • {inv.date}</p>
+            {invoices.slice(0, 5).map(inv => {
+              const customer = customers.find(c => c.id === inv.customerId) || null;
+              return (
+                <button
+                  key={inv.id}
+                  onClick={() => profile && setPdfModal({ open: true, invoice: inv, customer })}
+                  className="w-full flex items-center justify-between p-6 bg-slate-50 rounded-2xl hover:bg-indigo-50/60 hover:shadow-sm transition-all duration-200 group text-left"
+                >
+                  <div className="flex items-center gap-4">
+                    <FileText className="text-profee-blue group-hover:scale-110 transition-transform" size={20} />
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 font-poppins">{inv.invoiceNumber}</p>
+                      <p className="text-xs text-slate-400 font-medium">{inv.customerName} • {inv.date}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-slate-800 font-poppins">₹{inv.totalAmount.toLocaleString('en-IN')}</p>
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-600' : inv.status === 'Partial' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>{inv.status}</span>
-                </div>
-              </div>
-            ))}
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-slate-800 font-poppins">₹{inv.totalAmount.toLocaleString('en-IN')}</p>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-600' : inv.status === 'Partial' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>{inv.status}</span>
+                    </div>
+                    <ExternalLink size={16} className="text-slate-300 group-hover:text-profee-blue transition-colors flex-shrink-0" />
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
+      )}
+
+      {/* Invoice PDF Preview Modal */}
+      {pdfModal.open && pdfModal.invoice && profile && (
+        <PDFPreviewModal
+          open={pdfModal.open}
+          onClose={() => setPdfModal({ open: false, invoice: null, customer: null })}
+          document={
+            <InvoicePDF
+              invoice={pdfModal.invoice}
+              business={profile}
+              customer={pdfModal.customer || { id: '', name: pdfModal.invoice.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
+            />
+          }
+          fileName={`Invoice-${pdfModal.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+        />
       )}
     </div>
   );
