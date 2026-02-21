@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem } from '../types';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems } from '../lib/firestore';
-import PDFPreviewModal from './pdf/PDFPreviewModal';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount } from '../lib/firestore';
+import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
@@ -48,6 +48,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
+  const [deletedInvoices, setDeletedInvoices] = useState<Invoice[]>([]);
+  const [showDeletedSection, setShowDeletedSection] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -57,6 +59,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const [pdfModal, setPdfModal] = useState<{ open: boolean; invoice: Invoice | null; customer: Customer | null }>({
     open: false, invoice: null, customer: null,
   });
+
+  // Direct download state (mounts PDFDirectDownload invisibly then auto-downloads)
+  const [downloadTarget, setDownloadTarget] = useState<{ invoice: Invoice; customer: Customer | null } | null>(null);
 
   // Edit & search state
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -89,14 +94,17 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [profileData, customerData, invoiceData] = await Promise.all([
-        getBusinessProfile(userId), getCustomers(userId), getInvoices(userId)
+      const [profileData, customerData, invoiceData, deletedData, totalCount] = await Promise.all([
+        getBusinessProfile(userId), getCustomers(userId), getInvoices(userId),
+        getDeletedInvoices(userId), getTotalInvoiceCount(userId),
       ]);
       if (profileData) setProfile(profileData);
       setCustomers(customerData);
       setAllInvoices(invoiceData);
+      setDeletedInvoices(deletedData);
       const prefix = profileData?.theme?.invoicePrefix || 'INV/2026/';
-      setInvoiceNumber(`${prefix}${String(invoiceData.length + 1).padStart(3, '0')}`);
+      // Use total count (including deleted) so deleted invoice numbers are never reused
+      setInvoiceNumber(`${prefix}${String(totalCount + 1).padStart(3, '0')}`);
     } catch (err) {
       setError('Failed to load data. Please refresh.');
     } finally { setLoading(false); }
@@ -129,6 +137,21 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     setError(null);
     setSaveSuccess(false);
     setMode('editing');
+  };
+
+  const handleDeleteInvoice = async (inv: Invoice, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete invoice ${inv.invoiceNumber}? It will be moved to the deleted archive. The invoice number will not be reused.`)) return;
+    await softDeleteInvoice(userId, inv.id);
+    setAllInvoices(prev => prev.filter(i => i.id !== inv.id));
+    setDeletedInvoices(prev => [{ ...inv, deleted: true, deletedAt: new Date().toISOString().split('T')[0] }, ...prev]);
+  };
+
+  const handleRestoreInvoice = async (inv: Invoice, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await restoreInvoice(userId, inv.id);
+    setDeletedInvoices(prev => prev.filter(i => i.id !== inv.id));
+    setAllInvoices(prev => [{ ...inv, deleted: false, deletedAt: undefined }, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
   };
 
   // Quick-create customer handler
@@ -703,10 +726,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center justify-center gap-2">
-                              {/* View */}
+                              {/* Preview PDF */}
                               <button
                                 onClick={() => openPDFModal(inv, custObj)}
-                                title="View Invoice"
+                                title="Preview Invoice PDF"
                                 className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
                               >
                                 <Eye size={15} />
@@ -719,13 +742,21 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
                               >
                                 <Pencil size={15} />
                               </button>
-                              {/* Download PDF */}
+                              {/* Download PDF directly */}
                               <button
-                                onClick={() => openPDFModal(inv, custObj)}
+                                onClick={() => setDownloadTarget({ invoice: inv, customer: custObj })}
                                 title="Download PDF"
                                 className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
                               >
                                 <Download size={15} />
+                              </button>
+                              {/* Delete (soft) */}
+                              <button
+                                onClick={e => handleDeleteInvoice(inv, e)}
+                                title="Delete Invoice"
+                                className="p-2 rounded-xl bg-rose-50 text-rose-400 hover:bg-rose-500 hover:text-white transition-all"
+                              >
+                                <Trash2 size={15} />
                               </button>
                             </div>
                           </td>
@@ -754,6 +785,75 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
           </div>
         )}
 
+        {/* ── Deleted Invoices Archive ── */}
+        {deletedInvoices.length > 0 && (
+          <div className="bg-white rounded-[2.5rem] premium-shadow border border-rose-100 overflow-hidden">
+            <button
+              onClick={() => setShowDeletedSection(v => !v)}
+              className="w-full flex items-center justify-between px-8 py-5 hover:bg-rose-50/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <ArchiveX size={18} className="text-rose-400" />
+                <span className="text-sm font-bold font-poppins text-rose-500">
+                  Deleted Invoices ({deletedInvoices.length})
+                </span>
+                <span className="text-xs font-medium text-rose-300 font-poppins">
+                  · Invoice numbers reserved permanently
+                </span>
+              </div>
+              <span className="text-xs font-bold text-rose-300 font-poppins">
+                {showDeletedSection ? 'Hide ▲' : 'Show ▼'}
+              </span>
+            </button>
+            {showDeletedSection && (
+              <div className="overflow-x-auto border-t border-rose-100">
+                <table className="w-full text-left font-poppins">
+                  <thead>
+                    <tr className="bg-rose-50 border-b border-rose-100">
+                      <th className="px-6 py-3 text-[10px] font-black text-rose-300 uppercase tracking-widest">Deleted On</th>
+                      <th className="px-6 py-3 text-[10px] font-black text-rose-300 uppercase tracking-widest">Invoice #</th>
+                      <th className="px-6 py-3 text-[10px] font-black text-rose-300 uppercase tracking-widest">Party</th>
+                      <th className="px-6 py-3 text-[10px] font-black text-rose-300 uppercase tracking-widest text-right">Amount</th>
+                      <th className="px-6 py-3 text-[10px] font-black text-rose-300 uppercase tracking-widest text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-rose-50">
+                    {deletedInvoices.map(inv => {
+                      const custObj = customers.find(c => c.id === inv.customerId) || null;
+                      return (
+                        <tr key={inv.id} className="bg-white opacity-70 hover:opacity-100 transition-opacity">
+                          <td className="px-6 py-3 text-sm text-slate-400">{formatDate(inv.deletedAt || inv.date)}</td>
+                          <td className="px-6 py-3 text-sm font-bold text-slate-400 line-through">{inv.invoiceNumber}</td>
+                          <td className="px-6 py-3 text-sm text-slate-400">{inv.customerName}</td>
+                          <td className="px-6 py-3 text-sm font-bold text-slate-400 text-right">{inr(inv.totalAmount)}</td>
+                          <td className="px-6 py-3">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => openPDFModal(inv, custObj)}
+                                title="Preview Invoice"
+                                className="p-1.5 rounded-xl bg-slate-50 text-slate-400 hover:bg-slate-600 hover:text-white transition-all"
+                              >
+                                <Eye size={13} />
+                              </button>
+                              <button
+                                onClick={e => handleRestoreInvoice(inv, e)}
+                                title="Restore Invoice"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all text-xs font-bold"
+                              >
+                                <RotateCcw size={12} /> Restore
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* PDF Preview Modal */}
         {pdfModal.open && pdfModal.invoice && (
           <PDFPreviewModal
@@ -767,6 +867,21 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
               />
             }
             fileName={`Invoice-${pdfModal.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+          />
+        )}
+
+        {/* Direct download — renders PDF invisibly, auto-downloads, then unmounts */}
+        {downloadTarget && (
+          <PDFDirectDownload
+            document={
+              <InvoicePDF
+                invoice={downloadTarget.invoice}
+                business={profile}
+                customer={downloadTarget.customer || { id: '', name: downloadTarget.invoice.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
+              />
+            }
+            fileName={`Invoice-${downloadTarget.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+            onDone={() => setDownloadTarget(null)}
           />
         )}
       </div>

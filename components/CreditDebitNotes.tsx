@@ -28,7 +28,7 @@ import {
   getDebitNotes, addDebitNote, updateDebitNote,
   addLedgerEntry, updateCustomer, getInventoryItems,
 } from '../lib/firestore';
-import PDFPreviewModal from './pdf/PDFPreviewModal';
+import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -110,6 +110,13 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     noteType: NoteTab;
     customer: Customer | null;
   }>({ open: false, note: null, noteType: 'credit', customer: null });
+
+  // Direct-download target (no modal)
+  const [downloadTarget, setDownloadTarget] = useState<{
+    note: CreditNote | DebitNote;
+    noteType: NoteTab;
+    customer: Customer | null;
+  } | null>(null);
 
   useEffect(() => { loadData(); }, [userId]);
 
@@ -367,6 +374,12 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
             )}
             <button
               onClick={() => openPDFModal(note, activeTab, custObj)}
+              className="bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all"
+            >
+              <Eye size={18} /> Preview PDF
+            </button>
+            <button
+              onClick={() => setDownloadTarget({ note, noteType: activeTab, customer: custObj })}
               className="bg-profee-blue text-white px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
             >
               <Download size={18} /> Download PDF
@@ -466,6 +479,21 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
               />
             }
             fileName={`${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${pdfModal.note.noteNumber.replace(/\//g, '-')}.pdf`}
+          />
+        )}
+
+        {downloadTarget && (
+          <PDFDirectDownload
+            document={
+              <CreditDebitNotePDF
+                note={downloadTarget.note}
+                noteType={downloadTarget.noteType}
+                business={profile}
+                customer={downloadTarget.customer || { id: '', name: downloadTarget.note.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
+              />
+            }
+            fileName={`${downloadTarget.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${downloadTarget.note.noteNumber.replace(/\//g, '-')}.pdf`}
+            onDone={() => setDownloadTarget(null)}
           />
         )}
       </div>
@@ -1042,10 +1070,10 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                         </td>
                         <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-2">
-                            {/* View PDF */}
+                            {/* Preview PDF */}
                             <button
                               onClick={() => openPDFModal(note, activeTab, custObj)}
-                              title="Preview & Download PDF"
+                              title="Preview PDF"
                               className={`p-2 rounded-xl transition-all ${activeTab === 'credit' ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white' : 'bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white'}`}
                             >
                               <Eye size={15} />
@@ -1058,11 +1086,11 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                             >
                               <Pencil size={15} />
                             </button>
-                            {/* Download PDF */}
+                            {/* Download PDF — direct, no modal */}
                             <button
-                              onClick={() => openPDFModal(note, activeTab, custObj)}
+                              onClick={() => setDownloadTarget({ note, noteType: activeTab, customer: custObj })}
                               title="Download PDF"
-                              className={`p-2 rounded-xl transition-all ${activeTab === 'credit' ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white' : 'bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white'}`}
+                              className="p-2 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all"
                             >
                               <Download size={15} />
                             </button>
@@ -1113,6 +1141,22 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
             />
           }
           fileName={`${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${pdfModal.note.noteNumber.replace(/\//g, '-')}.pdf`}
+        />
+      )}
+
+      {/* Direct-download (headless) */}
+      {downloadTarget && (
+        <PDFDirectDownload
+          document={
+            <CreditDebitNotePDF
+              note={downloadTarget.note}
+              noteType={downloadTarget.noteType}
+              business={profile}
+              customer={downloadTarget.customer || { id: '', name: downloadTarget.note.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
+            />
+          }
+          fileName={`${downloadTarget.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${downloadTarget.note.noteNumber.replace(/\//g, '-')}.pdf`}
+          onDone={() => setDownloadTarget(null)}
         />
       )}
     </div>

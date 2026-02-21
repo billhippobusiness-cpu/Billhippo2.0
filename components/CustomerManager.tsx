@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, Edit3, Trash2, X, Save, UserCircle, Phone, Mail,
   MapPin, Loader2, Users, ChevronLeft, FileText, IndianRupee, Receipt, Download,
-  TrendingDown, TrendingUp,
+  TrendingDown, TrendingUp, Eye,
 } from 'lucide-react';
 import { Customer, LedgerEntry, Invoice, BusinessProfile, CreditNote, DebitNote } from '../types';
 import {
@@ -11,7 +11,7 @@ import {
   getLedgerEntries, getInvoices, getBusinessProfile,
   getCreditNotes, getDebitNotes,
 } from '../lib/firestore';
-import PDFPreviewModal from './pdf/PDFPreviewModal';
+import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import LedgerPDF from './pdf/LedgerPDF';
 import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
@@ -58,6 +58,13 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
   const [creditNotesMap, setCreditNotesMap] = useState<Record<string, CreditNote>>({});
   const [debitNotesMap, setDebitNotesMap] = useState<Record<string, DebitNote>>({});
   const [noteModal, setNoteModal] = useState<{ open: boolean; note: CreditNote | DebitNote | null; noteType: 'credit' | 'debit' }>({ open: false, note: null, noteType: 'credit' });
+
+  // Intermediate detail modals (row click → detail card → PDF preview or download)
+  const [invoiceDetailModal, setInvoiceDetailModal] = useState<{ open: boolean; invoice: Invoice | null }>({ open: false, invoice: null });
+  const [noteDetailModal, setNoteDetailModal] = useState<{ open: boolean; note: CreditNote | DebitNote | null; noteType: 'credit' | 'debit' }>({ open: false, note: null, noteType: 'credit' });
+
+  // Direct-download target (headless PDF render, no modal shown)
+  const [downloadTarget, setDownloadTarget] = useState<{ document: React.ReactElement; fileName: string } | null>(null);
 
   useEffect(() => {
     loadCustomers();
@@ -174,6 +181,9 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     setPdfModal({ open: false, invoice: null });
     setReceiptModal({ open: false, entry: null });
     setNoteModal({ open: false, note: null, noteType: 'credit' });
+    setInvoiceDetailModal({ open: false, invoice: null });
+    setNoteDetailModal({ open: false, note: null, noteType: 'credit' });
+    setDownloadTarget(null);
   };
 
   // ── Running balance ──
@@ -305,13 +315,13 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                         onClick={() => {
                           if (isInvoice && entry.invoiceId) {
                             const inv = invoicesMap[entry.invoiceId];
-                            if (inv) setPdfModal({ open: true, invoice: inv });
+                            if (inv) setInvoiceDetailModal({ open: true, invoice: inv });
                           } else if (isCreditNote && entry.creditNoteId) {
                             const cn = creditNotesMap[entry.creditNoteId];
-                            if (cn) setNoteModal({ open: true, note: cn, noteType: 'credit' });
+                            if (cn) setNoteDetailModal({ open: true, note: cn, noteType: 'credit' });
                           } else if (isDebitNote && entry.debitNoteId) {
                             const dn = debitNotesMap[entry.debitNoteId];
-                            if (dn) setNoteModal({ open: true, note: dn, noteType: 'debit' });
+                            if (dn) setNoteDetailModal({ open: true, note: dn, noteType: 'debit' });
                           } else if (isPayment) {
                             setReceiptModal({ open: true, entry });
                           }
@@ -448,7 +458,83 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
           </div>
         )}
 
-        {/* Invoice PDF Modal */}
+        {/* ── Invoice Detail Modal (row click → this → View PDF or Download) ── */}
+        {invoiceDetailModal.open && invoiceDetailModal.invoice && businessProfile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                    <FileText size={18} className="text-profee-blue" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">Invoice Detail</h3>
+                </div>
+                <button onClick={() => setInvoiceDetailModal({ open: false, invoice: null })} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+              <div className="space-y-5">
+                <div className="bg-slate-50 rounded-2xl p-6 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Invoice #</span>
+                    <span className="text-sm font-bold text-slate-700">{invoiceDetailModal.invoice.invoiceNumber}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Date</span>
+                    <span className="text-sm font-bold text-slate-700">{invoiceDetailModal.invoice.date}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Customer</span>
+                    <span className="text-sm font-bold text-slate-700">{invoiceDetailModal.invoice.customerName}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Status</span>
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${invoiceDetailModal.invoice.status === 'Paid' ? 'bg-emerald-50 text-emerald-600' : invoiceDetailModal.invoice.status === 'Partial' ? 'bg-amber-50 text-amber-600' : 'bg-rose-50 text-rose-500'}`}>
+                      {invoiceDetailModal.invoice.status}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-indigo-50 rounded-2xl p-6 flex justify-between items-center border border-indigo-100">
+                  <span className="text-xs font-bold text-profee-blue uppercase tracking-widest">Total Amount</span>
+                  <span className="text-2xl font-bold text-profee-blue">₹{invoiceDetailModal.invoice.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button
+                  onClick={() => setInvoiceDetailModal({ open: false, invoice: null })}
+                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    const inv = invoiceDetailModal.invoice!;
+                    setInvoiceDetailModal({ open: false, invoice: null });
+                    setPdfModal({ open: true, invoice: inv });
+                  }}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <Eye size={16} /> View PDF
+                </button>
+                <button
+                  onClick={() => {
+                    const inv = invoiceDetailModal.invoice!;
+                    setInvoiceDetailModal({ open: false, invoice: null });
+                    setDownloadTarget({
+                      document: <InvoicePDF invoice={inv} business={businessProfile} customer={selectedCustomer} />,
+                      fileName: `Invoice-${inv.invoiceNumber}.pdf`,
+                    });
+                  }}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
+                >
+                  <Download size={16} /> Download
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Invoice PDF Preview Modal (opened from detail modal "View PDF") */}
         {pdfModal.open && pdfModal.invoice && businessProfile && (
           <PDFPreviewModal
             open={pdfModal.open}
@@ -514,16 +600,44 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                   Close
                 </button>
                 {businessProfile && (
-                  <button
-                    onClick={() => {
-                      const entry = receiptModal.entry;
-                      setReceiptModal({ open: false, entry: null });
-                      setReceiptPdfData({ open: true, entry });
-                    }}
-                    className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
-                  >
-                    <Download size={16} /> Download PDF
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        const entry = receiptModal.entry;
+                        setReceiptModal({ open: false, entry: null });
+                        setReceiptPdfData({ open: true, entry });
+                      }}
+                      className="flex-1 py-4 rounded-2xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Eye size={16} /> View PDF
+                    </button>
+                    <button
+                      onClick={() => {
+                        const entry = receiptModal.entry!;
+                        setReceiptModal({ open: false, entry: null });
+                        setDownloadTarget({
+                          document: (
+                            <ReceiptPDF
+                              entry={entry}
+                              customer={selectedCustomer!}
+                              businessName={businessProfile.name}
+                              businessInfo={{
+                                gstin: businessProfile.gstin || '',
+                                address: [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode].filter(Boolean).join(', '),
+                                phone: businessProfile.phone || '',
+                                email: businessProfile.email || '',
+                              }}
+                              logoUrl={businessProfile.theme?.logoUrl}
+                            />
+                          ),
+                          fileName: `Receipt-${selectedCustomer!.name.replace(/\s+/g, '-')}-${entry.date}.pdf`,
+                        });
+                      }}
+                      className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
+                    >
+                      <Download size={16} /> Download PDF
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -577,7 +691,96 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
           />
         )}
 
-        {/* Credit / Debit Note PDF Modal */}
+        {/* ── Credit/Debit Note Detail Modal (row click → this → View PDF or Download) ── */}
+        {noteDetailModal.open && noteDetailModal.note && businessProfile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${noteDetailModal.noteType === 'credit' ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+                    {noteDetailModal.noteType === 'credit'
+                      ? <TrendingDown size={18} className="text-emerald-600" />
+                      : <TrendingUp size={18} className="text-amber-600" />}
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    {noteDetailModal.noteType === 'credit' ? 'Credit Note' : 'Debit Note'} Detail
+                  </h3>
+                </div>
+                <button onClick={() => setNoteDetailModal({ open: false, note: null, noteType: 'credit' })} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+              <div className="space-y-5">
+                <div className="bg-slate-50 rounded-2xl p-6 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Note #</span>
+                    <span className="text-sm font-bold text-slate-700">{noteDetailModal.note.noteNumber}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Date</span>
+                    <span className="text-sm font-bold text-slate-700">{noteDetailModal.note.date}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Customer</span>
+                    <span className="text-sm font-bold text-slate-700">{noteDetailModal.note.customerName}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Reason</span>
+                    <span className="text-sm font-medium text-slate-600 text-right max-w-[60%]">{noteDetailModal.note.reason}</span>
+                  </div>
+                </div>
+                <div className={`rounded-2xl p-6 flex justify-between items-center border ${noteDetailModal.noteType === 'credit' ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
+                  <span className={`text-xs font-bold uppercase tracking-widest ${noteDetailModal.noteType === 'credit' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {noteDetailModal.noteType === 'credit' ? 'Credit Amount' : 'Debit Amount'}
+                  </span>
+                  <span className={`text-2xl font-bold ${noteDetailModal.noteType === 'credit' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    ₹{noteDetailModal.note.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button
+                  onClick={() => setNoteDetailModal({ open: false, note: null, noteType: 'credit' })}
+                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    const { note, noteType } = noteDetailModal;
+                    setNoteDetailModal({ open: false, note: null, noteType: 'credit' });
+                    setNoteModal({ open: true, note: note!, noteType });
+                  }}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <Eye size={16} /> View PDF
+                </button>
+                <button
+                  onClick={() => {
+                    const { note, noteType } = noteDetailModal;
+                    setNoteDetailModal({ open: false, note: null, noteType: 'credit' });
+                    setDownloadTarget({
+                      document: (
+                        <CreditDebitNotePDF
+                          note={note!}
+                          noteType={noteType}
+                          business={businessProfile}
+                          customer={selectedCustomer}
+                        />
+                      ),
+                      fileName: `${noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${note!.noteNumber.replace(/\//g, '-')}.pdf`,
+                    });
+                  }}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
+                >
+                  <Download size={16} /> Download
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Credit / Debit Note PDF Preview Modal (opened from detail modal "View PDF") */}
         {noteModal.open && noteModal.note && businessProfile && (
           <PDFPreviewModal
             open={noteModal.open}
@@ -591,6 +794,15 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
               />
             }
             fileName={`${noteModal.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${noteModal.note.noteNumber.replace(/\//g, '-')}.pdf`}
+          />
+        )}
+
+        {/* Direct-download (headless, no modal) */}
+        {downloadTarget && (
+          <PDFDirectDownload
+            document={downloadTarget.document}
+            fileName={downloadTarget.fileName}
+            onDone={() => setDownloadTarget(null)}
           />
         )}
       </div>

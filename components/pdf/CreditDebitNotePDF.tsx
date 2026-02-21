@@ -17,6 +17,7 @@ import {
   View,
   StyleSheet,
   Font,
+  Image,
 } from '@react-pdf/renderer';
 import { CreditNote, DebitNote, BusinessProfile, Customer, GSTType } from '../../types';
 
@@ -108,6 +109,7 @@ const s = StyleSheet.create({
   footer: { marginTop: 'auto', paddingTop: 10, borderTop: `1pt solid ${BORDER}`, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   footerLeft: { fontSize: 7, color: LIGHT },
   signBox: { alignItems: 'flex-end' },
+  signImage: { width: 72, height: 28, objectFit: 'contain', marginBottom: 2 },
   signLine: { width: 80, height: 1, backgroundColor: BORDER, marginBottom: 3 },
   signLabel: { fontSize: 6, fontWeight: 700, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.8 },
   signName: { fontSize: 7, fontWeight: 700, color: DARK, marginTop: 1 },
@@ -306,7 +308,10 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
             <Text style={[s.footerLeft, { marginTop: 4, color: '#cbd5e1' }]}>Generated via BillHippo Smart OS</Text>
           </View>
           <View style={s.signBox}>
-            <View style={s.signLine} />
+            {business.signatureUrl
+              ? <Image src={business.signatureUrl} style={s.signImage} />
+              : <View style={s.signLine} />
+            }
             <Text style={s.signLabel}>Authorised Signatory</Text>
             <Text style={s.signName}>{business.name}</Text>
           </View>
