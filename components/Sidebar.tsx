@@ -44,11 +44,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
       ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       bg-white border-r border-slate-100 flex flex-col
     `}>
-      <div className="px-6 py-6 flex items-center justify-center">
-        <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-full h-auto object-contain" />
+      <div className="px-5 flex items-center justify-center overflow-hidden" style={{ height: '180px' }}>
+        <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-full object-contain scale-125" />
       </div>
 
-      <nav className="flex-1 px-4 mt-2 space-y-2">
+      <nav className="flex-1 px-4 space-y-2">
         {menuItems.map((item) => (
           <button
             key={item.id}
