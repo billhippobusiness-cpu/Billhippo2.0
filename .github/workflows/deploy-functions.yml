@@ -5,10 +5,11 @@ on:
     branches:
       - main
       - master
+      - 'claude/**'          # also deploy from any claude/* feature branch
     paths:
       - 'functions/**'
       - 'firebase.json'
-  workflow_dispatch:   # Allows manual trigger from GitHub Actions UI
+  workflow_dispatch:         # Manual trigger from GitHub Actions UI
 
 jobs:
   deploy:
