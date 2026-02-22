@@ -195,7 +195,12 @@ const App: React.FC = () => {
   }
 
   // role === 'professional' → Pro Dashboard
+  // If a professional somehow has a business-only hash (e.g. #/something),
+  // clear it — the pro portal manages its own view state internally.
   if (role === 'professional') {
+    if (hash && !hash.startsWith('#/pro/') && hash !== '') {
+      window.location.hash = '';
+    }
     return (
       <ProDashboard
         user={user}
@@ -207,6 +212,12 @@ const App: React.FC = () => {
 
   // role === 'business' or 'both' → existing business dashboard flow
   // (for 'both', go to business dashboard; role-switcher comes in P-12)
+
+  // Business user trying to access a /pro/* route — clear the hash and fall
+  // through to the business dashboard below.
+  if ((role === 'business' || role === 'both') && hash.startsWith('#/pro/')) {
+    window.location.hash = '';
+  }
 
   // New business user with no profile → onboarding
   if (!businessProfile || !businessProfile.name) {
