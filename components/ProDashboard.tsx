@@ -10,6 +10,7 @@ import type { ProfessionalProfile } from '../types';
 import ProLayout, { type ProView } from './pro/ProLayout';
 import ProDashboardHome from './pro/ProDashboard';
 import ProReports from './pro/ProReports';
+import FilingTracker from './pro/FilingTracker';
 
 interface ProDashboardProps {
   user: User;
@@ -60,7 +61,12 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) 
           />
         );
       case 'filings':
-        return <ComingSoon title="Filing Tracker" />;
+        return (
+          <FilingTracker
+            profile={profile}
+            onViewReports={handleOpenClient}
+          />
+        );
       case 'downloads':
         return <ComingSoon title="Bulk Downloads" />;
       case 'referrals':
