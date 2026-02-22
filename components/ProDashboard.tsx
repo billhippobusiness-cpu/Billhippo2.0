@@ -11,6 +11,7 @@ import ProLayout, { type ProView } from './pro/ProLayout';
 import ProDashboardHome from './pro/ProDashboard';
 import ProReports from './pro/ProReports';
 import FilingTracker from './pro/FilingTracker';
+import BulkDownloads from './pro/BulkDownloads';
 
 interface ProDashboardProps {
   user: User;
@@ -68,7 +69,7 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) 
           />
         );
       case 'downloads':
-        return <ComingSoon title="Bulk Downloads" />;
+        return <BulkDownloads user={user} profile={profile} />;
       case 'referrals':
         return <ComingSoon title="Referrals" />;
       case 'profile':
