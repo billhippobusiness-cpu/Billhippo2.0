@@ -1,11 +1,14 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
-import { defineString } from "firebase-functions/params";
+import { defineSecret, defineString } from "firebase-functions/params";
 import { initializeApp } from "firebase-admin/app";
 import { Resend } from "resend";
 
 initializeApp();
 
-const resendApiKey = defineString("RESEND_API_KEY");
+// Stored in Secret Manager via: firebase functions:secrets:set RESEND_API_KEY
+const resendApiKey = defineSecret("RESEND_API_KEY");
+
+// Plain env params (set via .env or firebase functions:params:set)
 const fromEmail = defineString("RESEND_FROM_EMAIL", {
   default: "invites@billhippo.in",
 });
@@ -14,7 +17,7 @@ const appUrl = defineString("APP_URL", {
 });
 
 export const sendInviteEmail = onDocumentCreated(
-  "invites/{token}",
+  { document: "invites/{token}", secrets: [resendApiKey] },
   async (event) => {
     const data = event.data?.data();
     if (!data) return;
