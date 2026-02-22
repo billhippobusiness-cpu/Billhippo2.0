@@ -9,6 +9,7 @@ import type { User } from 'firebase/auth';
 import type { ProfessionalProfile } from '../types';
 import ProLayout, { type ProView } from './pro/ProLayout';
 import ProDashboardHome from './pro/ProDashboard';
+import ProReports from './pro/ProReports';
 
 interface ProDashboardProps {
   user: User;
@@ -30,7 +31,14 @@ const ComingSoon: React.FC<{ title: string }> = ({ title }) => (
 );
 
 const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) => {
-  const [activeView, setActiveView] = useState<ProView>('dashboard');
+  const [activeView,        setActiveView]        = useState<ProView>('dashboard');
+  // Tracks which client was opened from the Dashboard "Open" button
+  const [selectedClientUid, setSelectedClientUid] = useState<string>('');
+
+  const handleOpenClient = (uid: string) => {
+    setSelectedClientUid(uid);
+    setActiveView('reports');
+  };
 
   const renderContent = () => {
     switch (activeView) {
@@ -38,13 +46,19 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) 
         return (
           <ProDashboardHome
             profile={profile}
-            onOpenClient={() => setActiveView('reports')}
+            onOpenClient={handleOpenClient}
           />
         );
       case 'clients':
         return <ComingSoon title="My Clients" />;
       case 'reports':
-        return <ComingSoon title="GST Reports" />;
+        return (
+          <ProReports
+            user={user}
+            profile={profile}
+            initialClientUid={selectedClientUid || undefined}
+          />
+        );
       case 'filings':
         return <ComingSoon title="Filing Tracker" />;
       case 'downloads':
