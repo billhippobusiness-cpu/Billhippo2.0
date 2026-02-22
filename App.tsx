@@ -194,30 +194,35 @@ const App: React.FC = () => {
     );
   }
 
-  // role === 'professional'  → Pro Dashboard (normal path)
-  // role === 'both'          → Pro Dashboard when a professionalProfile exists
-  //   This handles the case where a business user document was accidentally
-  //   created for a professional account (e.g. via Google Sign-In before the
-  //   guard was added). The professional identity takes priority.
-  if (role === 'professional' || (role === 'both' && professionalProfile)) {
-    if (hash && !hash.startsWith('#/pro/') && hash !== '') {
+  // role === 'professional'  → Pro Dashboard (always)
+  // role === 'both'          → Pro Dashboard by default; switches to Business
+  //   when the user explicitly navigates to a #/biz/* hash via the role-switcher
+  //   button in the sidebar. Using the hash as the signal means no page reload
+  //   is needed to toggle between portals.
+  const isOnBizHash = hash.startsWith('#/biz/');
+
+  if (role === 'professional' || (role === 'both' && !isOnBizHash)) {
+    // Pure professionals who somehow land on a non-pro hash: clear it.
+    // (role='both' users can have any hash; no cleanup needed for them.)
+    if (role === 'professional' && hash && !hash.startsWith('#/pro/') && hash !== '') {
       window.location.hash = '';
     }
     return (
       <ProDashboard
         user={user}
         profile={professionalProfile}
+        role={role}
+        businessProfile={businessProfile}
         onLogout={handleLogout}
       />
     );
   }
 
-  // role === 'business' → business dashboard
-  // role === 'both' without a professionalProfile (edge case) → business dashboard
+  // Business portal: role==='business' (always), or role==='both' explicitly on
+  // a #/biz/* hash (user clicked "Switch to Business" in the pro sidebar).
 
-  // Business user trying to access a /pro/* route — clear the hash and fall
-  // through to the business dashboard below.
-  if ((role === 'business' || role === 'both') && hash.startsWith('#/pro/')) {
+  // Guard: pure business users should never be on a /pro/* hash.
+  if (role === 'business' && hash.startsWith('#/pro/')) {
     window.location.hash = '';
   }
 
@@ -265,6 +270,7 @@ const App: React.FC = () => {
         user={user}
         onLogout={handleLogout}
         showInventory={businessProfile?.businessType === 'trading'}
+        role={role}
       />
 
       <main className="flex-1 flex flex-col min-w-0">
