@@ -10,8 +10,9 @@ import {
   LogOut,
   ChevronRight,
   Menu,
+  ArrowLeftRight,
 } from 'lucide-react';
-import type { ProfessionalProfile } from '../../types';
+import type { ProfessionalProfile, UserRole } from '../../types';
 import type { User as FirebaseUser } from 'firebase/auth';
 
 const BILLHIPPO_LOGO =
@@ -43,6 +44,8 @@ interface ProLayoutProps {
   profile: ProfessionalProfile | null;
   onLogout: () => void;
   children: React.ReactNode;
+  /** Passed from App.tsx; used to show the role-switcher for 'both' accounts */
+  role?: UserRole | null;
 }
 
 const ProLayout: React.FC<ProLayoutProps> = ({
@@ -52,6 +55,7 @@ const ProLayout: React.FC<ProLayoutProps> = ({
   profile,
   onLogout,
   children,
+  role,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -89,7 +93,7 @@ const ProLayout: React.FC<ProLayoutProps> = ({
             className="h-10 w-auto object-contain"
           />
           <span className="mt-2 inline-block px-2.5 py-0.5 bg-emerald-50 border border-emerald-100 rounded-full text-[9px] font-bold font-poppins text-emerald-600 uppercase tracking-widest">
-            Professional
+            PRO
           </span>
         </div>
 
@@ -139,8 +143,18 @@ const ProLayout: React.FC<ProLayoutProps> = ({
           })}
         </nav>
 
-        {/* Bottom: Sign Out + version */}
-        <div className="p-4 border-t border-slate-50">
+        {/* Bottom: role-switcher (if dual-account) + Sign Out + version */}
+        <div className="p-4 border-t border-slate-50 space-y-1">
+          {/* Switch to Business Portal — only for dual-account users */}
+          {role === 'both' && (
+            <button
+              onClick={() => { window.location.hash = '/biz/dashboard'; }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#4c2de0] hover:bg-indigo-50 transition-all duration-200 text-sm font-semibold font-poppins border border-indigo-100"
+            >
+              <ArrowLeftRight size={16} className="flex-shrink-0" />
+              Switch to Business Portal
+            </button>
+          )}
           <button
             onClick={onLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all duration-200 text-sm font-semibold font-poppins"

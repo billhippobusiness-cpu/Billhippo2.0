@@ -2,6 +2,7 @@
 import React from 'react';
 import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight } from 'lucide-react';
 import { type User } from 'firebase/auth';
+import type { UserRole } from '../types';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -14,9 +15,11 @@ interface SidebarProps {
   user?: User | null;
   onLogout?: () => void;
   showInventory?: boolean;
+  /** Passed from App.tsx; used to show the role-switcher for 'both' accounts */
+  role?: UserRole | null;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setIsOpen, user, onLogout, showInventory }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setIsOpen, user, onLogout, showInventory, role }) => {
   const baseItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
     { id: 'customers', icon: UserCircle, label: 'Customers' },
@@ -44,8 +47,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
       ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       bg-white border-r border-slate-100 flex flex-col
     `}>
-      <div className="px-5 flex items-center justify-center overflow-hidden" style={{ height: '180px' }}>
+      <div className="px-5 flex flex-col items-center justify-center overflow-hidden" style={{ height: '180px' }}>
         <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-full object-contain scale-125" />
+        {/* BIZ mode badge — only shown for dual-account users */}
+        {role === 'both' && (
+          <span className="mt-3 px-2.5 py-0.5 bg-[#4c2de0]/10 border border-[#4c2de0]/20 rounded-full text-[9px] font-bold font-poppins text-[#4c2de0] uppercase tracking-widest">
+            BIZ
+          </span>
+        )}
       </div>
 
       <nav className="flex-1 px-4 space-y-2">
@@ -72,7 +81,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
         ))}
       </nav>
 
-      <div className="p-6 border-t border-slate-50">
+      <div className="p-6 border-t border-slate-50 space-y-3">
+        {/* Switch to Professional Portal — only for dual-account users */}
+        {role === 'both' && (
+          <button
+            onClick={() => { window.location.hash = ''; }}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-emerald-600 hover:bg-emerald-50 transition-all duration-200 text-sm font-semibold font-poppins border border-emerald-100"
+          >
+            <ArrowLeftRight size={16} className="flex-shrink-0" />
+            Switch to Professional Portal
+          </button>
+        )}
+
         <div className="bg-slate-50 rounded-[2rem] p-6 flex items-center gap-3 border border-transparent group">
           <div className="w-12 h-12 rounded-2xl bg-profee-blue flex items-center justify-center text-white font-bold text-lg font-poppins">
             {initials}

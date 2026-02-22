@@ -5,8 +5,10 @@
  */
 import React, { useState } from 'react';
 import { Briefcase } from 'lucide-react';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import type { User } from 'firebase/auth';
-import type { ProfessionalProfile } from '../types';
+import type { ProfessionalProfile, BusinessProfile, UserRole } from '../types';
 import ProLayout, { type ProView } from './pro/ProLayout';
 import ProDashboardHome from './pro/ProDashboard';
 import ProReports from './pro/ProReports';
@@ -18,6 +20,10 @@ import ProProfile from './pro/ProProfile';
 interface ProDashboardProps {
   user: User;
   profile: ProfessionalProfile | null;
+  /** Passed from App.tsx — used to show role-switcher buttons */
+  role: UserRole | null;
+  /** Passed from App.tsx — used in ProProfile's "My Business Account" section */
+  businessProfile: BusinessProfile | null;
   onLogout: () => void;
 }
 
@@ -34,10 +40,42 @@ const ComingSoon: React.FC<{ title: string }> = ({ title }) => (
   </div>
 );
 
-const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) => {
+const ProDashboard: React.FC<ProDashboardProps> = ({
+  user,
+  profile,
+  role,
+  businessProfile,
+  onLogout,
+}) => {
   const [activeView,        setActiveView]        = useState<ProView>('dashboard');
   // Tracks which client was opened from the Dashboard "Open" button
   const [selectedClientUid, setSelectedClientUid] = useState<string>('');
+
+  // ── Role-switcher callback passed to ProProfile ──────────────────────────
+  // role === 'both'         → navigate to business portal via hash (no reload)
+  // role === 'professional' → create users/{uid} stub, then reload into
+  //                           OnboardingWizard to set up the business account
+  const handleSwitchToBusiness = async () => {
+    if (role === 'both') {
+      window.location.hash = '/biz/dashboard';
+      return;
+    }
+    try {
+      await setDoc(doc(db, 'users', user.uid), {
+        email:       user.email,
+        displayName: user.displayName,
+        createdAt:   serverTimestamp(),
+        plan:        'free',
+      });
+    } catch (err) {
+      console.error('[ProDashboard] Failed to create business account stub:', err);
+      return;
+    }
+    // Reload so onAuthStateChanged re-fires and detects the new users/{uid} doc.
+    // The #/biz/ hash ensures the business portal (and OnboardingWizard) loads.
+    window.location.hash = '/biz/dashboard';
+    window.location.reload();
+  };
 
   const handleOpenClient = (uid: string) => {
     setSelectedClientUid(uid);
@@ -80,7 +118,10 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) 
           <ProProfile
             user={user}
             profile={profile}
+            role={role}
+            businessProfile={businessProfile}
             onNavigate={setActiveView}
+            onSwitchToBusiness={handleSwitchToBusiness}
           />
         );
       default:
@@ -94,6 +135,7 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) 
       setActiveView={setActiveView}
       user={user}
       profile={profile}
+      role={role}
       onLogout={onLogout}
     >
       {renderContent()}

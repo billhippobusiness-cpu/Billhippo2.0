@@ -25,6 +25,7 @@ import {
   Users,
   ChevronRight,
   X,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import {
@@ -34,7 +35,7 @@ import {
 } from 'firebase/auth';
 import { db } from '../../lib/firebase';
 import type { User as FirebaseUser } from 'firebase/auth';
-import type { ProfessionalProfile, ProfessionalDesignation } from '../../types';
+import type { ProfessionalProfile, ProfessionalDesignation, BusinessProfile, UserRole } from '../../types';
 import type { ProView } from './ProLayout';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -55,6 +56,12 @@ export interface ProProfileProps {
   user: FirebaseUser;
   profile: ProfessionalProfile | null;
   onNavigate: (view: ProView) => void;
+  /** From App.tsx via wrapper — determines which Business Account section to show */
+  role?: UserRole | null;
+  /** Passed when role === 'both'; used to display the linked business name */
+  businessProfile?: BusinessProfile | null;
+  /** Navigate to business portal, or create business account (role==='professional') */
+  onSwitchToBusiness?: () => void;
 }
 
 interface Toast {
@@ -79,7 +86,14 @@ function formatMemberSince(iso: string): string {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-const ProProfile: React.FC<ProProfileProps> = ({ user, profile, onNavigate }) => {
+const ProProfile: React.FC<ProProfileProps> = ({
+  user,
+  profile,
+  onNavigate,
+  role,
+  businessProfile,
+  onSwitchToBusiness,
+}) => {
   // ── Profile edit state ───────────────────────────────────────────────────
   const [editMode,    setEditMode]    = useState(false);
   const [firstName,   setFirstName]   = useState(profile?.firstName   ?? '');
@@ -480,6 +494,52 @@ const ProProfile: React.FC<ProProfileProps> = ({ user, profile, onNavigate }) =>
             <ChevronRight size={13} />
           </button>
         </div>
+      </div>
+
+      {/* ── My Business Account ──────────────────────────────────────────── */}
+      <div className="bg-white rounded-3xl border border-slate-100 p-6">
+        <h3 className="text-xs font-bold text-slate-400 font-poppins uppercase tracking-wider mb-5">
+          My Business Account
+        </h3>
+
+        {role === 'both' ? (
+          /* Dual-account: show linked business + switch button */
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                <Building2 size={14} className="text-[#4c2de0]" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 font-poppins font-semibold">Active Business</p>
+                <p className="text-sm font-bold text-slate-700 font-poppins">
+                  {businessProfile?.name ?? 'BillHippo Business'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onSwitchToBusiness}
+              className="flex items-center gap-2 px-4 py-2.5 bg-[#4c2de0] hover:bg-[#3d23b5] text-white rounded-2xl text-sm font-semibold font-poppins transition-all shadow-sm"
+            >
+              <ArrowLeftRight size={14} />
+              Switch to Business
+            </button>
+          </div>
+        ) : (
+          /* Professional-only: offer to create a business account */
+          <div className="space-y-3">
+            <p className="text-sm text-slate-400 font-poppins leading-relaxed">
+              Want to create invoices for your own firm? Subscribe to BillHippo
+              Business and manage both accounts from one login.
+            </p>
+            <button
+              onClick={onSwitchToBusiness}
+              className="flex items-center gap-2 px-4 py-2.5 bg-[#4c2de0] hover:bg-[#3d23b5] text-white rounded-2xl text-sm font-semibold font-poppins transition-all shadow-sm"
+            >
+              <Building2 size={14} />
+              Subscribe to BillHippo Business
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Password Change ───────────────────────────────────────────────── */}
