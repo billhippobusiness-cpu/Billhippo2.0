@@ -1,10 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard } from 'lucide-react';
-import { type User } from 'firebase/auth';
-import { onAuthChange } from './lib/auth';
-import { signIn, signUp, signInWithGoogle, logOut } from './lib/auth';
-import { getBusinessProfile } from './lib/firestore';
+import { useAuth } from './contexts/AuthContext';
 import LandingPage from './components/LandingPage';
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
@@ -17,41 +14,37 @@ import CustomerManager from './components/CustomerManager';
 import OnboardingWizard from './components/OnboardingWizard';
 import InventoryManager from './components/InventoryManager';
 import CreditDebitNotes from './components/CreditDebitNotes';
+import ProDashboard from './components/ProDashboard';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'landing' | 'auth' | 'app' | 'onboarding'>('landing');
+  const {
+    user,
+    role,
+    loading,
+    businessProfile,
+    professionalProfile,
+    signIn,
+    signUp,
+    signInWithGoogle,
+    logOut,
+    resetPassword,
+  } = useAuth();
+
+  const [view, setView] = useState<'landing' | 'auth'>('landing');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [businessType, setBusinessType] = useState<'service' | 'trading' | undefined>(undefined);
 
   useEffect(() => {
-    document.body.className = "bg-[#f8fafc] text-slate-900 overflow-x-hidden antialiased";
+    document.body.className = 'bg-[#f8fafc] text-slate-900 overflow-x-hidden antialiased';
   }, []);
 
-  // Listen for Firebase auth state changes and check profile
+  // When a user signs in, reset any lingering auth error.
   useEffect(() => {
-    const unsubscribe = onAuthChange(async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        try {
-          const profile = await getBusinessProfile(firebaseUser.uid);
-          if (profile && profile.name) {
-            setBusinessType(profile.businessType);
-            setView('app');
-          } else {
-            setView('onboarding');
-          }
-        } catch {
-          setView('onboarding');
-        }
-      }
-      setAuthLoading(false);
-    });
-    return unsubscribe;
-  }, []);
+    if (user) setAuthError(null);
+  }, [user]);
+
+  // ── Auth handlers ────────────────────────────────────────────────────────
 
   const handleLogin = async (email: string, password: string) => {
     setAuthError(null);
@@ -79,7 +72,7 @@ const App: React.FC = () => {
       const code = err.code || '';
       if (code === 'auth/unauthorized-domain') {
         setAuthError(
-          'This domain is not authorized for Google sign-in. Please add it to Firebase Console → Authentication → Settings → Authorized domains.'
+          'This domain is not authorized for Google sign-in. Please add it to Firebase Console → Authentication → Settings → Authorized domains.',
         );
       } else {
         setAuthError(err.message?.replace('Firebase: ', '') || 'Google login failed.');
@@ -87,69 +80,126 @@ const App: React.FC = () => {
     }
   };
 
+  const handleResetPassword = async (email: string) => {
+    await resetPassword(email);
+  };
+
   const handleLogout = async () => {
     await logOut();
-    setUser(null);
     setView('landing');
   };
 
-  const renderContent = () => {
-    const userId = user!.uid;
-    switch (activeTab) {
-      case 'dashboard': return <Dashboard userId={userId} />;
-      case 'customers': return <CustomerManager userId={userId} />;
-      case 'invoices': return <InvoiceGenerator userId={userId} />;
-      case 'notes': return <CreditDebitNotes userId={userId} />;
-      case 'gst': return <GSTReports userId={userId} />;
-      case 'theme': return <InvoiceTheme userId={userId} />;
-      case 'settings': return <ProfileSettings userId={userId} onBusinessTypeChange={setBusinessType} />;
-      case 'inventory': return <InventoryManager userId={userId} />;
-      default: return <Dashboard userId={userId} />;
-    }
+  const handleCreateProAccount = () => {
+    // Navigate to /pro-register or open a registration modal (P-12).
+    // For now, show a simple alert directing the user.
+    window.location.href = '/pro-register';
   };
 
-  // Show loading spinner while checking auth state
-  if (authLoading) {
+  // ── Loading spinner ──────────────────────────────────────────────────────
+
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-[#4c2de0] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-sm font-bold text-slate-400 font-poppins uppercase tracking-widest">Loading BillHippo...</p>
+          <div className="w-12 h-12 border-4 border-[#4c2de0] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm font-bold text-slate-400 font-poppins uppercase tracking-widest">
+            Loading BillHippo…
+          </p>
         </div>
       </div>
     );
   }
 
-  // Landing page (marketing)
-  if (view === 'landing' && !user) {
-    return <LandingPage onEnterApp={() => setView('auth')} />;
-  }
+  // ── No user: landing / auth ──────────────────────────────────────────────
 
-  // Auth page (login/signup)
-  if (view === 'auth' && !user) {
+  if (!user) {
+    if (view === 'landing') {
+      return <LandingPage onEnterApp={() => setView('auth')} />;
+    }
     return (
       <AuthPage
         onLogin={handleLogin}
         onSignUp={handleSignUp}
         onGoogleLogin={handleGoogleLogin}
+        onResetPassword={handleResetPassword}
+        onCreateProAccount={handleCreateProAccount}
         error={authError}
       />
     );
   }
 
-  // Onboarding wizard (new user, no profile yet)
-  if (view === 'onboarding' && user) {
+  // ── User authenticated: role-based routing ───────────────────────────────
+
+  // role === null → account found in Firebase Auth but not in any Firestore collection
+  if (role === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] px-4">
+        <div className="bg-white rounded-2xl border border-rose-100 shadow-lg p-8 max-w-sm w-full text-center">
+          <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl">⚠️</span>
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 font-poppins mb-2">Account not found</h2>
+          <p className="text-sm text-slate-500 font-poppins mb-6">
+            Account not found. Please sign up.
+          </p>
+          <button
+            onClick={handleLogout}
+            className="w-full h-11 rounded-2xl bg-[#4c2de0] text-white text-sm font-bold font-poppins hover:bg-indigo-700 transition-colors"
+          >
+            Back to Sign Up
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // role === 'professional' → Pro Dashboard
+  if (role === 'professional') {
+    return (
+      <ProDashboard
+        user={user}
+        profile={professionalProfile}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // role === 'business' or 'both' → existing business dashboard flow
+  // (for 'both', go to business dashboard; role-switcher comes in P-12)
+
+  // New business user with no profile → onboarding
+  if (!businessProfile || !businessProfile.name) {
     return (
       <OnboardingWizard
         userId={user.uid}
         userName={user.displayName || ''}
         userEmail={user.email || ''}
-        onComplete={() => setView('app')}
+        onComplete={() => {
+          // AuthContext will re-fetch businessProfile automatically on next
+          // Firestore write; force a soft re-render by toggling nothing—
+          // the profile will appear in the next context update.
+        }}
       />
     );
   }
 
-  // Main app (authenticated)
+  // ── Main business app ────────────────────────────────────────────────────
+
+  const renderContent = () => {
+    const userId = user.uid;
+    switch (activeTab) {
+      case 'dashboard':  return <Dashboard userId={userId} />;
+      case 'customers':  return <CustomerManager userId={userId} />;
+      case 'invoices':   return <InvoiceGenerator userId={userId} />;
+      case 'notes':      return <CreditDebitNotes userId={userId} />;
+      case 'gst':        return <GSTReports userId={userId} />;
+      case 'theme':      return <InvoiceTheme userId={userId} />;
+      case 'settings':   return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
+      case 'inventory':  return <InventoryManager userId={userId} />;
+      default:           return <Dashboard userId={userId} />;
+    }
+  };
+
   return (
     <div className="min-h-screen flex selection:bg-indigo-100 selection:text-indigo-700">
       <Sidebar
@@ -160,14 +210,12 @@ const App: React.FC = () => {
         setIsOpen={setIsSidebarOpen}
         user={user}
         onLogout={handleLogout}
-        showInventory={businessType === 'trading'}
+        showInventory={businessProfile?.businessType === 'trading'}
       />
 
       <main className="flex-1 flex flex-col min-w-0">
         <div className="px-4 md:px-12 py-10 overflow-y-auto">
-          <div className="max-w-[1600px] mx-auto">
-            {renderContent()}
-          </div>
+          <div className="max-w-[1600px] mx-auto">{renderContent()}</div>
         </div>
       </main>
 
