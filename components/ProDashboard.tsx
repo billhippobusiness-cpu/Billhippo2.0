@@ -12,6 +12,8 @@ import ProDashboardHome from './pro/ProDashboard';
 import ProReports from './pro/ProReports';
 import FilingTracker from './pro/FilingTracker';
 import BulkDownloads from './pro/BulkDownloads';
+import ProReferrals from './pro/ProReferrals';
+import ProProfile from './pro/ProProfile';
 
 interface ProDashboardProps {
   user: User;
@@ -71,9 +73,15 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) 
       case 'downloads':
         return <BulkDownloads user={user} profile={profile} />;
       case 'referrals':
-        return <ComingSoon title="Referrals" />;
+        return <ProReferrals profile={profile} />;
       case 'profile':
-        return <ComingSoon title="Profile" />;
+        return (
+          <ProProfile
+            user={user}
+            profile={profile}
+            onNavigate={setActiveView}
+          />
+        );
       default:
         return null;
     }
