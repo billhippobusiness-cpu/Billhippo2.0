@@ -194,10 +194,12 @@ const App: React.FC = () => {
     );
   }
 
-  // role === 'professional' → Pro Dashboard
-  // If a professional somehow has a business-only hash (e.g. #/something),
-  // clear it — the pro portal manages its own view state internally.
-  if (role === 'professional') {
+  // role === 'professional'  → Pro Dashboard (normal path)
+  // role === 'both'          → Pro Dashboard when a professionalProfile exists
+  //   This handles the case where a business user document was accidentally
+  //   created for a professional account (e.g. via Google Sign-In before the
+  //   guard was added). The professional identity takes priority.
+  if (role === 'professional' || (role === 'both' && professionalProfile)) {
     if (hash && !hash.startsWith('#/pro/') && hash !== '') {
       window.location.hash = '';
     }
@@ -210,8 +212,8 @@ const App: React.FC = () => {
     );
   }
 
-  // role === 'business' or 'both' → existing business dashboard flow
-  // (for 'both', go to business dashboard; role-switcher comes in P-12)
+  // role === 'business' → business dashboard
+  // role === 'both' without a professionalProfile (edge case) → business dashboard
 
   // Business user trying to access a /pro/* route — clear the hash and fall
   // through to the business dashboard below.

@@ -43,9 +43,17 @@ export async function signInWithGoogle() {
   const result = await signInWithPopup(auth, googleProvider);
   const user = result.user;
 
-  // Create user doc if first time
-  const userDoc = await getDoc(doc(db, 'users', user.uid));
-  if (!userDoc.exists()) {
+  // Read both identity documents in parallel. We must NOT create users/{uid}
+  // if this UID already has a professionals/{uid} doc — doing so would set
+  // role = 'both' and silently redirect the professional to the business
+  // dashboard instead of the Professional Portal.
+  const [userDoc, proDoc] = await Promise.all([
+    getDoc(doc(db, 'users', user.uid)),
+    getDoc(doc(db, 'professionals', user.uid)),
+  ]);
+
+  if (!userDoc.exists() && !proDoc.exists()) {
+    // Genuinely new user — create the business profile document.
     await setDoc(doc(db, 'users', user.uid), {
       email: user.email,
       displayName: user.displayName,
