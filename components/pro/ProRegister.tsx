@@ -38,7 +38,7 @@ const DESIGNATIONS: ProfessionalDesignation[] = [
 ];
 
 interface ProRegisterProps {
-  onGoToSignIn: () => void;
+  onGoToSignIn: (redirectHash?: string) => void;
 }
 
 interface FormState {
@@ -56,6 +56,16 @@ interface FormState {
 type FormErrors = Partial<Record<keyof FormState, string>>;
 
 const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
+  // Read inviteToken from URL query string (e.g. #/pro-register?inviteToken=xxx)
+  // window.location.hash is like "#/pro-register?inviteToken=abc", so we parse
+  // the query string from the hash portion.
+  const inviteToken = (() => {
+    const hashStr = window.location.hash; // e.g. "#/pro-register?inviteToken=abc"
+    const qIndex = hashStr.indexOf('?');
+    if (qIndex === -1) return null;
+    return new URLSearchParams(hashStr.slice(qIndex + 1)).get('inviteToken');
+  })();
+
   const [form, setForm] = useState<FormState>({
     firstName: '',
     lastName: '',
@@ -153,7 +163,7 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
       // 6. Sign out — user must verify email before signing in
       await signOut(auth);
 
-      // 7. Show success screen
+      // 7. Show success screen (with optional invite redirect)
       setSuccessData({ professionalId, email: form.email.trim() });
     } catch (err: any) {
       const code = err.code ?? '';
@@ -233,12 +243,15 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
           <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 mb-6 text-xs text-amber-700 font-poppins text-left leading-relaxed">
             <strong>Please verify your email before signing in.</strong> A verification link has been
             sent to <strong>{successData.email}</strong>.
+            {inviteToken && (
+              <span> After verifying, sign in and you will be redirected to accept the invite.</span>
+            )}
           </div>
 
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={onGoToSignIn}
+            onClick={() => onGoToSignIn(inviteToken ? `#/invite/${inviteToken}` : undefined)}
             className="w-full h-12 rounded-2xl bg-emerald-600 text-white text-sm font-bold font-poppins flex items-center justify-center gap-2 shadow-lg shadow-emerald-100"
             style={{ transition: 'none' }}
           >
@@ -578,7 +591,7 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
             Already have an account?{' '}
             <button
               type="button"
-              onClick={onGoToSignIn}
+              onClick={() => onGoToSignIn(inviteToken ? `#/invite/${inviteToken}` : undefined)}
               className="text-emerald-600 font-bold hover:underline"
             >
               Sign in

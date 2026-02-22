@@ -16,6 +16,7 @@ import InventoryManager from './components/InventoryManager';
 import CreditDebitNotes from './components/CreditDebitNotes';
 import ProDashboard from './components/ProDashboard';
 import ProRegister from './components/pro/ProRegister';
+import InviteAccept from './components/pro/InviteAccept';
 
 const App: React.FC = () => {
   const {
@@ -104,7 +105,17 @@ const App: React.FC = () => {
     window.location.hash = '/pro-register';
   };
 
-  const handleGoToSignIn = () => {
+  const handleLoginSuccess = (redirectHash: string | null) => {
+    if (redirectHash) {
+      window.location.hash = redirectHash.replace(/^#/, '');
+    }
+  };
+
+  const handleGoToSignIn = (redirectHash?: string) => {
+    if (redirectHash) {
+      // Store redirect target in sessionStorage so AuthPage can read it
+      sessionStorage.setItem('authRedirectHash', redirectHash);
+    }
     window.location.hash = '';
     setView('auth');
   };
@@ -112,8 +123,17 @@ const App: React.FC = () => {
   // ── Hash-based route: /pro-register ─────────────────────────────────────
   // Rendered before auth checks so any visitor can reach the registration page.
 
-  if (hash === '#/pro-register') {
+  if (hash === '#/pro-register' || hash.startsWith('#/pro-register?')) {
     return <ProRegister onGoToSignIn={handleGoToSignIn} />;
+  }
+
+  // ── Hash-based route: /invite/:token ─────────────────────────────────────
+  // Anyone with the link can land here; InviteAccept handles auth internally.
+
+  const inviteMatch = hash.match(/^#\/invite\/([^?]+)/);
+  if (inviteMatch) {
+    const inviteToken = inviteMatch[1];
+    return <InviteAccept token={inviteToken} onGoToSignIn={handleGoToSignIn} />;
   }
 
   // ── Loading spinner ──────────────────────────────────────────────────────
@@ -144,6 +164,7 @@ const App: React.FC = () => {
         onGoogleLogin={handleGoogleLogin}
         onResetPassword={handleResetPassword}
         onCreateProAccount={handleCreateProAccount}
+        onLoginSuccess={handleLoginSuccess}
         error={authError}
       />
     );
@@ -174,7 +195,12 @@ const App: React.FC = () => {
   }
 
   // role === 'professional' → Pro Dashboard
+  // If a professional somehow has a business-only hash (e.g. #/something),
+  // clear it — the pro portal manages its own view state internally.
   if (role === 'professional') {
+    if (hash && !hash.startsWith('#/pro/') && hash !== '') {
+      window.location.hash = '';
+    }
     return (
       <ProDashboard
         user={user}
@@ -186,6 +212,12 @@ const App: React.FC = () => {
 
   // role === 'business' or 'both' → existing business dashboard flow
   // (for 'both', go to business dashboard; role-switcher comes in P-12)
+
+  // Business user trying to access a /pro/* route — clear the hash and fall
+  // through to the business dashboard below.
+  if ((role === 'business' || role === 'both') && hash.startsWith('#/pro/')) {
+    window.location.hash = '';
+  }
 
   // New business user with no profile → onboarding
   if (!businessProfile || !businessProfile.name) {
