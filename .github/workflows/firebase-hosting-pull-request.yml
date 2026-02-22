@@ -44,4 +44,3 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: billhippo-42f95
           expires: 7d
-          target: hosting
