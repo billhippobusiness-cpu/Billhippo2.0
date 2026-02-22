@@ -51,6 +51,7 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ user, profile, onLogout }) 
           <ProDashboardHome
             profile={profile}
             onOpenClient={handleOpenClient}
+            onNavigate={setActiveView}
           />
         );
       case 'clients':

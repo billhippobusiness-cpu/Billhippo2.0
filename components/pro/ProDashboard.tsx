@@ -15,6 +15,8 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import type { ProfessionalProfile, BusinessProfile } from '../../types';
+import type { ProView } from './ProLayout';
+import OnboardingChecklist from './OnboardingChecklist';
 
 interface ClientData {
   uid: string;
@@ -24,6 +26,7 @@ interface ClientData {
 interface ProDashboardProps {
   profile: ProfessionalProfile | null;
   onOpenClient: (uid: string) => void;
+  onNavigate: (view: ProView) => void;
 }
 
 // TODO: Replace with real-time alert data from Firestore or Cloud Functions
@@ -45,7 +48,7 @@ const MOCK_ALERTS = [
   },
 ];
 
-const ProDashboard: React.FC<ProDashboardProps> = ({ profile, onOpenClient }) => {
+const ProDashboard: React.FC<ProDashboardProps> = ({ profile, onOpenClient, onNavigate }) => {
   const [clients, setClients] = useState<ClientData[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -136,6 +139,9 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ profile, onOpenClient }) =>
           {profile?.firmName ? ` · ${profile.firmName}` : ''}
         </p>
       </div>
+
+      {/* ── Onboarding Checklist — hidden once complete or dismissed ── */}
+      <OnboardingChecklist profile={profile} onNavigate={onNavigate} />
 
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
