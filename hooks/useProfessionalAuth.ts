@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, type DocumentReference } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import type { UserRole, BusinessProfile, ProfessionalProfile } from '../types';
 
@@ -21,13 +21,25 @@ export interface UseProfessionalAuthReturn {
  *
  * Also fetches the full BusinessProfile from users/{uid}/profile/main and
  * the ProfessionalProfile document from professionals/{uid}.
+ *
+ * Resilience notes:
+ *   - Each Firestore read is wrapped in its own try/catch so a security-rule
+ *     denial on one collection (e.g. professionals/ for a pure business user)
+ *     never poisons the other read.
+ *   - Legacy users who were created before the top-level users/{uid} document
+ *     was introduced are detected via a fallback read of users/{uid}/profile/main.
+ *     If found, the missing top-level document is auto-created (self-heal).
  */
 export function useProfessionalAuth(): UseProfessionalAuthReturn {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   const [professionalProfile, setProfessionalProfile] = useState<ProfessionalProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Start as false so unauthenticated visitors see the landing page immediately
+  // without a full-screen spinner. Loading is set to true only when we detect
+  // an authenticated user and need to perform Firestore lookups.
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -41,17 +53,71 @@ export function useProfessionalAuth(): UseProfessionalAuthReturn {
         return;
       }
 
+      // Authenticated user found — show loading while we resolve their role.
+      setLoading(true);
+
+      // Helper: read a Firestore document without throwing on permission errors.
+      // A denied read is treated as "document does not exist" rather than a
+      // hard failure, which prevents one collection's security rules from
+      // blocking role resolution for the other collection.
+      const safeGet = async (ref: DocumentReference) => {
+        try {
+          return await getDoc(ref);
+        } catch {
+          return null;
+        }
+      };
+
       try {
-        // Parallel fetch of both top-level identity documents
+        // Read both top-level identity documents in parallel.
         const [userSnap, professionalSnap] = await Promise.all([
-          getDoc(doc(db, 'users', firebaseUser.uid)),
-          getDoc(doc(db, 'professionals', firebaseUser.uid)),
+          safeGet(doc(db, 'users', firebaseUser.uid)),
+          safeGet(doc(db, 'professionals', firebaseUser.uid)),
         ]);
 
-        const isBusinessUser = userSnap.exists();
-        const isProfessional = professionalSnap.exists();
+        let isBusinessUser = userSnap?.exists() ?? false;
+        const isProfessional = professionalSnap?.exists() ?? false;
 
-        // Determine composite role
+        // ── Legacy-user fallback ──────────────────────────────────────────
+        // Some users authenticated before the top-level users/{uid} document
+        // was introduced. Their business data lives only in the
+        // users/{uid}/profile/main subcollection. If neither top-level doc
+        // was found, check the subcollection and self-heal.
+        let cachedProfileSnap: Awaited<ReturnType<typeof getDoc>> | null = null;
+
+        if (!isBusinessUser && !isProfessional) {
+          try {
+            const legacySnap = await getDoc(
+              doc(db, 'users', firebaseUser.uid, 'profile', 'main'),
+            );
+            if (legacySnap.exists()) {
+              isBusinessUser = true;
+              cachedProfileSnap = legacySnap;
+
+              // Self-heal: create the missing top-level document so future
+              // logins resolve correctly without this fallback path.
+              await setDoc(
+                doc(db, 'users', firebaseUser.uid),
+                {
+                  email: firebaseUser.email,
+                  displayName: firebaseUser.displayName,
+                  photoURL: firebaseUser.photoURL ?? null,
+                  createdAt: serverTimestamp(),
+                  plan: 'free',
+                  migratedAt: serverTimestamp(),
+                },
+                { merge: true },
+              );
+            }
+          } catch (legacyErr) {
+            console.warn(
+              '[useProfessionalAuth] Legacy profile fallback failed:',
+              legacyErr,
+            );
+          }
+        }
+
+        // ── Determine composite role ──────────────────────────────────────
         if (isBusinessUser && isProfessional) {
           setRole('both');
         } else if (isProfessional) {
@@ -62,26 +128,27 @@ export function useProfessionalAuth(): UseProfessionalAuthReturn {
           setRole(null);
         }
 
-        // Fetch the detailed BusinessProfile subcollection document
+        // ── Fetch detailed BusinessProfile ────────────────────────────────
         if (isBusinessUser) {
-          const profileSnap = await getDoc(
-            doc(db, 'users', firebaseUser.uid, 'profile', 'main'),
-          );
+          // Re-use the snap we already fetched in the legacy fallback if available.
+          const profileSnap =
+            cachedProfileSnap ??
+            (await safeGet(doc(db, 'users', firebaseUser.uid, 'profile', 'main')));
           setBusinessProfile(
-            profileSnap.exists() ? (profileSnap.data() as BusinessProfile) : null,
+            profileSnap?.exists() ? (profileSnap.data() as BusinessProfile) : null,
           );
         } else {
           setBusinessProfile(null);
         }
 
-        // Set ProfessionalProfile from the top-level document
-        if (isProfessional) {
+        // ── Set ProfessionalProfile ───────────────────────────────────────
+        if (isProfessional && professionalSnap?.exists()) {
           setProfessionalProfile(professionalSnap.data() as ProfessionalProfile);
         } else {
           setProfessionalProfile(null);
         }
       } catch (error) {
-        console.error('[useProfessionalAuth] Error fetching user profiles:', error);
+        console.error('[useProfessionalAuth] Error resolving user role:', error);
         setRole(null);
         setBusinessProfile(null);
         setProfessionalProfile(null);

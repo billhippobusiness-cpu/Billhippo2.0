@@ -151,26 +151,25 @@ const App: React.FC = () => {
 
   // ── User authenticated: role-based routing ───────────────────────────────
 
-  // role === null → account found in Firebase Auth but not in any Firestore collection
+  // role === null means the user exists in Firebase Auth but has no matching
+  // Firestore document in either users/ or professionals/.
+  // This can happen for:
+  //   • Brand-new Google sign-ins before onboarding completes.
+  //   • Legacy accounts where the top-level users/{uid} doc is missing
+  //     (useProfessionalAuth's self-heal should have fixed it on this load,
+  //      but the role will still be null until the next auth state update).
+  // Safe fallback: send to onboarding so they can set up their profile.
   if (role === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] px-4">
-        <div className="bg-white rounded-2xl border border-rose-100 shadow-lg p-8 max-w-sm w-full text-center">
-          <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl">⚠️</span>
-          </div>
-          <h2 className="text-lg font-bold text-slate-900 font-poppins mb-2">Account not found</h2>
-          <p className="text-sm text-slate-500 font-poppins mb-6">
-            Account not found. Please sign up.
-          </p>
-          <button
-            onClick={handleLogout}
-            className="w-full h-11 rounded-2xl bg-[#4c2de0] text-white text-sm font-bold font-poppins hover:bg-indigo-700 transition-colors"
-          >
-            Back to Sign Up
-          </button>
-        </div>
-      </div>
+      <OnboardingWizard
+        userId={user.uid}
+        userName={user.displayName || ''}
+        userEmail={user.email || ''}
+        onComplete={() => {
+          // After the wizard writes profile/main, AuthContext's next
+          // onAuthStateChanged cycle will re-resolve the role correctly.
+        }}
+      />
     );
   }
 
