@@ -29,11 +29,12 @@ export interface ProfessionalProfile {
 }
 
 export interface AssignedProfessional {
-  id: string;                   // Firestore doc ID
+  id: string;                   // Firestore doc ID (= invite token)
   firstName: string;
   lastName: string;
   email: string;
   designation: ProfessionalDesignation;
+  accessLevel: string;          // 'Full GST Access' | 'Reports Only'
   status: 'pending' | 'active' | 'revoked';
   invitedAt: string;
   linkedAt?: string;
@@ -49,6 +50,7 @@ export interface ProfessionalInvite {
   professionalFirstName: string;
   professionalLastName: string;
   designation: ProfessionalDesignation;
+  accessLevel: string;          // 'Full GST Access' | 'Reports Only'
   status: 'pending' | 'accepted' | 'declined' | 'expired';
   createdAt: string;
   expiresAt: string;            // 7 days from creation

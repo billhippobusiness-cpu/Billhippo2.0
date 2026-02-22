@@ -22,11 +22,23 @@ import {
   query,
   where,
   orderBy,
+  onSnapshot,
+  arrayRemove,
   serverTimestamp,
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { BusinessProfile, Customer, Invoice, LedgerEntry, InventoryItem, CreditNote, DebitNote } from '../types';
+import type {
+  BusinessProfile,
+  Customer,
+  Invoice,
+  LedgerEntry,
+  InventoryItem,
+  CreditNote,
+  DebitNote,
+  AssignedProfessional,
+  ProfessionalDesignation,
+} from '../types';
 
 // ── Helper: get user-scoped collection reference ──
 function userCollection(userId: string, collectionName: string) {
@@ -251,4 +263,122 @@ export async function updateDebitNote(userId: string, noteId: string, data: Part
 
 export async function deleteDebitNote(userId: string, noteId: string) {
   await deleteDoc(userDoc(userId, 'debitNotes', noteId));
+}
+
+// ═══════════════════════════════════════════
+//  PROFESSIONAL ACCESS
+// ═══════════════════════════════════════════
+
+/**
+ * Real-time listener for users/{userId}/assignedProfessionals.
+ * Returns an unsubscribe function.
+ */
+export function subscribeAssignedProfessionals(
+  userId: string,
+  callback: (pros: AssignedProfessional[]) => void,
+): () => void {
+  const colRef = collection(db, 'users', userId, 'assignedProfessionals');
+  return onSnapshot(colRef, (snap) => {
+    const list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as AssignedProfessional));
+    // Newest invites first
+    list.sort((a, b) => (a.invitedAt > b.invitedAt ? -1 : 1));
+    callback(list);
+  });
+}
+
+/**
+ * Writes an invite to invites/{token} and users/{uid}/assignedProfessionals/{token}.
+ * Returns the generated token.
+ *
+ * TODO: Trigger invite email via Firebase Extension (trigger-email) or a
+ * Cloud Function that listens to invites/{token} onCreate.
+ */
+export async function createProfessionalInvite(
+  businessUserId: string,
+  data: {
+    businessUserEmail: string;
+    businessName: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    designation: ProfessionalDesignation;
+    accessLevel: string;
+  },
+): Promise<string> {
+  const token = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const inviteDoc = {
+    businessUserUid: businessUserId,
+    businessUserEmail: data.businessUserEmail,
+    businessName: data.businessName,
+    professionalEmail: data.email,
+    professionalFirstName: data.firstName,
+    professionalLastName: data.lastName,
+    designation: data.designation,
+    accessLevel: data.accessLevel,
+    status: 'pending',
+    createdAt: now,
+    expiresAt,
+    token,
+  };
+
+  const assignedDoc: AssignedProfessional = {
+    id: token,
+    firstName: data.firstName,
+    lastName: data.lastName,
+    email: data.email,
+    designation: data.designation,
+    accessLevel: data.accessLevel,
+    status: 'pending',
+    invitedAt: now,
+  };
+
+  await Promise.all([
+    setDoc(doc(db, 'invites', token), inviteDoc),
+    setDoc(doc(db, 'users', businessUserId, 'assignedProfessionals', token), assignedDoc),
+  ]);
+
+  return token;
+}
+
+/**
+ * Revokes a professional's access:
+ *  1. Sets status = 'revoked' in invites/{token}
+ *  2. Sets status = 'revoked' in users/{userId}/assignedProfessionals/{token}
+ *  3. If the professional has registered, removes the business uid from their linkedClients
+ */
+export async function revokeProfessionalAccess(
+  businessUserId: string,
+  token: string,
+  professionalId: string | undefined,
+): Promise<void> {
+  const updates: Promise<unknown>[] = [
+    updateDoc(doc(db, 'invites', token), { status: 'revoked' }),
+    updateDoc(doc(db, 'users', businessUserId, 'assignedProfessionals', token), { status: 'revoked' }),
+  ];
+
+  // Remove business uid from the professional's linkedClients array (best-effort)
+  if (professionalId) {
+    try {
+      const q = query(
+        collection(db, 'professionals'),
+        where('professionalId', '==', professionalId),
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const proUid = snap.docs[0].id;
+        updates.push(
+          updateDoc(doc(db, 'professionals', proUid), {
+            linkedClients: arrayRemove(businessUserId),
+          }),
+        );
+      }
+    } catch {
+      // Non-blocking: invite/assignedProfessionals updates still proceed
+    }
+  }
+
+  await Promise.all(updates);
 }

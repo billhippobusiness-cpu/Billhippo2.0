@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart, Plus, Pencil, Trash2, Check } from 'lucide-react';
 import { BusinessProfile, BankAccount } from '../types';
 import { getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
+import ProfessionalAccess from './ProfessionalAccess';
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -565,6 +566,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
               onChange={e => setProfile({...profile, defaultNotes: e.target.value})}
             />
           </div>
+
+          {/* ── Professional Access ── */}
+          <ProfessionalAccess userId={userId} businessProfile={loading ? null : profile} />
+
         </div>
 
         <div className="lg:col-span-4 space-y-8">
