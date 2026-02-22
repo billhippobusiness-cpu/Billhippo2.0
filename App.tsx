@@ -15,6 +15,7 @@ import OnboardingWizard from './components/OnboardingWizard';
 import InventoryManager from './components/InventoryManager';
 import CreditDebitNotes from './components/CreditDebitNotes';
 import ProDashboard from './components/ProDashboard';
+import ProRegister from './components/pro/ProRegister';
 
 const App: React.FC = () => {
   const {
@@ -35,8 +36,18 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // Hash-based routing — tracks window.location.hash so we can render
+  // /pro-register without a third-party router.
+  const [hash, setHash] = useState(() => window.location.hash);
+
   useEffect(() => {
     document.body.className = 'bg-[#f8fafc] text-slate-900 overflow-x-hidden antialiased';
+  }, []);
+
+  useEffect(() => {
+    const onHashChange = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   // When a user signs in, reset any lingering auth error.
@@ -90,10 +101,20 @@ const App: React.FC = () => {
   };
 
   const handleCreateProAccount = () => {
-    // Navigate to /pro-register or open a registration modal (P-12).
-    // For now, show a simple alert directing the user.
-    window.location.href = '/pro-register';
+    window.location.hash = '/pro-register';
   };
+
+  const handleGoToSignIn = () => {
+    window.location.hash = '';
+    setView('auth');
+  };
+
+  // ── Hash-based route: /pro-register ─────────────────────────────────────
+  // Rendered before auth checks so any visitor can reach the registration page.
+
+  if (hash === '#/pro-register') {
+    return <ProRegister onGoToSignIn={handleGoToSignIn} />;
+  }
 
   // ── Loading spinner ──────────────────────────────────────────────────────
 
