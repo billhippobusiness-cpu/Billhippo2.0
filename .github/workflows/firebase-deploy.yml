@@ -35,3 +35,19 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           channelId: live
           projectId: billhippo-42f95
+
+      - name: Install function dependencies
+        run: npm install
+        working-directory: functions
+
+      - name: Build functions TypeScript
+        run: npm run build
+        working-directory: functions
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy Firebase Functions
+        run: npx firebase-tools@latest deploy --only functions --project billhippo-42f95 --non-interactive
