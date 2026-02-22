@@ -1,4 +1,72 @@
 
+// ── Professional Portal Types ──────────────────────────────────────────────
+
+export type UserRole = 'business' | 'professional' | 'both';
+
+export type ProfessionalDesignation =
+  | 'Tax Consultant'
+  | 'Chartered Accountant'
+  | 'Accountant'
+  | 'GST Practitioner'
+  | 'Company Secretary'
+  | 'Staff'
+  | 'Other';
+
+export interface ProfessionalProfile {
+  uid: string;
+  professionalId: string;       // Auto-generated: BHPCA00042 format
+  firstName: string;
+  lastName: string;
+  email: string;
+  designation: ProfessionalDesignation;
+  firmName?: string;
+  mobile?: string;
+  linkedClients: string[];      // Array of business user UIDs
+  referralCode: string;         // Same as professionalId
+  totalReferrals: number;
+  createdAt: string;
+  roles: UserRole[];
+}
+
+export interface AssignedProfessional {
+  id: string;                   // Firestore doc ID
+  firstName: string;
+  lastName: string;
+  email: string;
+  designation: ProfessionalDesignation;
+  status: 'pending' | 'active' | 'revoked';
+  invitedAt: string;
+  linkedAt?: string;
+  professionalId?: string;      // Set once they register/accept
+}
+
+export interface ProfessionalInvite {
+  id: string;
+  businessUserUid: string;
+  businessUserEmail: string;
+  businessName: string;
+  professionalEmail: string;
+  professionalFirstName: string;
+  professionalLastName: string;
+  designation: ProfessionalDesignation;
+  status: 'pending' | 'accepted' | 'declined' | 'expired';
+  createdAt: string;
+  expiresAt: string;            // 7 days from creation
+  token: string;                // Unique invite token for URL
+}
+
+export interface ClientSummary {
+  uid: string;
+  businessName: string;
+  gstin: string;
+  ownerName: string;
+  email: string;
+  lastActivity: string;
+  linkedAt: string;
+}
+
+// ── Existing Types ─────────────────────────────────────────────────────────
+
 export enum GSTType {
   CGST_SGST = 'CGST_SGST',
   IGST = 'IGST'
