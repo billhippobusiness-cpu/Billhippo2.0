@@ -2,9 +2,88 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can only read/write their own data
+    // ── Helper ─────────────────────────────────────────────────────────────────
+    // Returns true when the requesting user is a professional whose linkedClients
+    // array contains the given businessUid (the Firestore UID of a business user).
+    function isActiveLinkedProfessional(businessUid) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/professionals/$(request.auth.uid))
+        && get(/databases/$(database)/documents/professionals/$(request.auth.uid))
+             .data.linkedClients.hasAny([businessUid]);
+    }
+
+    // ── Business portal ────────────────────────────────────────────────────────
+    // Business owner has full read/write over their entire user subtree.
+    // More-specific rules below ADD professional read access on top of this.
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Top-level users/{businessUid} doc: linked professionals can also read
+    // (needed to display business name in the professional portal client list).
+    match /users/{businessUid} {
+      allow read: if isActiveLinkedProfessional(businessUid);
+    }
+
+    // Invoices: linked professional can read for GST report generation.
+    match /users/{businessUid}/invoices/{invoiceId} {
+      allow read: if isActiveLinkedProfessional(businessUid);
+    }
+
+    // Customers: linked professional can read for client management.
+    match /users/{businessUid}/customers/{customerId} {
+      allow read: if isActiveLinkedProfessional(businessUid);
+    }
+
+    // AssignedProfessionals sub-collection:
+    //   – Business owner manages via the wildcard rule above.
+    //   – Professional can read their own entry (docId == their UID).
+    match /users/{businessUid}/assignedProfessionals/{docId} {
+      allow read: if request.auth != null && request.auth.uid == docId;
+    }
+
+    // ── Professional portal ────────────────────────────────────────────────────
+    match /professionals/{proUid} {
+      // Own profile: read + create.
+      allow read:   if request.auth != null && request.auth.uid == proUid;
+      allow create: if request.auth != null && request.auth.uid == proUid;
+
+      // Update: own profile only, cannot touch immutable system fields.
+      allow update: if request.auth != null && request.auth.uid == proUid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+             'professionalId', 'referralCode', 'linkedClients', 'uid'
+           ]);
+
+      // Activity log: professional creates and reads their own entries.
+      match /activityLog/{logId} {
+        allow read, create: if request.auth != null && request.auth.uid == proUid;
+      }
+    }
+
+    // ── Invites ────────────────────────────────────────────────────────────────
+    // Invite token is a secret/unguessable string; knowing it is the auth mechanism.
+    match /invites/{token} {
+      // Business user creates their own invite.
+      allow create: if request.auth != null
+        && request.resource.data.businessUid == request.auth.uid;
+
+      // Any authenticated user who possesses the token URL can read the invite.
+      allow read: if request.auth != null;
+
+      // Professional accepting the invite may only write status, acceptedAt, professionalUid.
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['status', 'acceptedAt', 'professionalUid']);
+    }
+
+    // ── Referrals ──────────────────────────────────────────────────────────────
+    // Any authenticated user can submit a referral; users read referrals they sent or received.
+    match /referrals/{refId} {
+      allow create: if request.auth != null;
+      allow read:   if request.auth != null
+        && (resource.data.referrerId  == request.auth.uid
+         || resource.data.referredUid == request.auth.uid);
+    }
+
   }
 }
