@@ -12,7 +12,9 @@ interface AuthPageProps {
   onGoogleLogin: () => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
   onCreateProAccount: () => void;
+  onLoginSuccess?: (redirectHash: string | null) => void;
   error: string | null;
+  initialTab?: AuthTab;
 }
 
 const AuthPage: React.FC<AuthPageProps> = ({
@@ -21,9 +23,16 @@ const AuthPage: React.FC<AuthPageProps> = ({
   onGoogleLogin,
   onResetPassword,
   onCreateProAccount,
+  onLoginSuccess,
   error,
+  initialTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<AuthTab>('business');
+  // Read pending redirect from sessionStorage (set by InviteAccept → onGoToSignIn)
+  const pendingRedirect = sessionStorage.getItem('authRedirectHash') ?? null;
+
+  const [activeTab, setActiveTab] = useState<AuthTab>(
+    initialTab ?? (pendingRedirect ? 'professional' : 'business'),
+  );
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -61,6 +70,14 @@ const AuthPage: React.FC<AuthPageProps> = ({
     setResetMessage(null);
   };
 
+  const finishLogin = () => {
+    if (onLoginSuccess) {
+      const redirect = sessionStorage.getItem('authRedirectHash');
+      sessionStorage.removeItem('authRedirectHash');
+      onLoginSuccess(redirect);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -70,6 +87,7 @@ const AuthPage: React.FC<AuthPageProps> = ({
         await onSignUp(email, password, name);
       } else {
         await onLogin(email, password);
+        finishLogin();
       }
     } finally {
       setLoading(false);
@@ -82,6 +100,7 @@ const AuthPage: React.FC<AuthPageProps> = ({
     setResetMessage(null);
     try {
       await onLogin(email, password);
+      finishLogin();
     } finally {
       setLoading(false);
     }

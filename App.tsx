@@ -16,6 +16,7 @@ import InventoryManager from './components/InventoryManager';
 import CreditDebitNotes from './components/CreditDebitNotes';
 import ProDashboard from './components/ProDashboard';
 import ProRegister from './components/pro/ProRegister';
+import InviteAccept from './components/pro/InviteAccept';
 
 const App: React.FC = () => {
   const {
@@ -104,7 +105,17 @@ const App: React.FC = () => {
     window.location.hash = '/pro-register';
   };
 
-  const handleGoToSignIn = () => {
+  const handleLoginSuccess = (redirectHash: string | null) => {
+    if (redirectHash) {
+      window.location.hash = redirectHash.replace(/^#/, '');
+    }
+  };
+
+  const handleGoToSignIn = (redirectHash?: string) => {
+    if (redirectHash) {
+      // Store redirect target in sessionStorage so AuthPage can read it
+      sessionStorage.setItem('authRedirectHash', redirectHash);
+    }
     window.location.hash = '';
     setView('auth');
   };
@@ -112,8 +123,17 @@ const App: React.FC = () => {
   // ── Hash-based route: /pro-register ─────────────────────────────────────
   // Rendered before auth checks so any visitor can reach the registration page.
 
-  if (hash === '#/pro-register') {
+  if (hash === '#/pro-register' || hash.startsWith('#/pro-register?')) {
     return <ProRegister onGoToSignIn={handleGoToSignIn} />;
+  }
+
+  // ── Hash-based route: /invite/:token ─────────────────────────────────────
+  // Anyone with the link can land here; InviteAccept handles auth internally.
+
+  const inviteMatch = hash.match(/^#\/invite\/([^?]+)/);
+  if (inviteMatch) {
+    const inviteToken = inviteMatch[1];
+    return <InviteAccept token={inviteToken} onGoToSignIn={handleGoToSignIn} />;
   }
 
   // ── Loading spinner ──────────────────────────────────────────────────────
@@ -144,6 +164,7 @@ const App: React.FC = () => {
         onGoogleLogin={handleGoogleLogin}
         onResetPassword={handleResetPassword}
         onCreateProAccount={handleCreateProAccount}
+        onLoginSuccess={handleLoginSuccess}
         error={authError}
       />
     );
