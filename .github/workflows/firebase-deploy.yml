@@ -30,12 +30,20 @@ jobs:
           VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
 
       - name: Deploy Firestore rules & indexes
+        # continue-on-error so a missing/invalid service-account secret never
+        # blocks the hosting deploy that follows.  Firestore rules can also be
+        # deployed manually from the Firebase Console when needed.
+        continue-on-error: true
         shell: bash
         env:
           # Pass as env var so printf handles the JSON safely regardless of
           # special characters — avoids the shell-quoting issues of inline echo.
           FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
+          if [ -z "$FIREBASE_SA_JSON" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT secret is empty – skipping Firestore deploy"
+            exit 0
+          fi
           printf '%s' "$FIREBASE_SA_JSON" > /tmp/firebase-sa.json
           GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json \
             npx firebase-tools@latest deploy --only firestore \
