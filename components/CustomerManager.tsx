@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit3, Trash2, X, Save, UserCircle, Phone, Mail,
   MapPin, Loader2, Users, ChevronLeft, FileText, IndianRupee, Receipt, Download,
@@ -45,6 +46,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isInlineEditing, setIsInlineEditing] = useState(false);
 
   // ── Ledger / detail state ──
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -157,6 +159,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
 
   const resetForm = () => {
     setShowForm(false);
+    setIsInlineEditing(false);
     setEditingId(null);
     setFormData(EMPTY_FORM);
     setError(null);
@@ -199,6 +202,25 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     setInvoiceDetailModal({ open: false, invoice: null });
     setNoteDetailModal({ open: false, note: null, noteType: 'credit' });
     setDownloadTarget(null);
+    setIsInlineEditing(false);
+  };
+
+  const handleInlineEdit = () => {
+    if (!selectedCustomer) return;
+    setEditingId(selectedCustomer.id);
+    setFormData({
+      name: selectedCustomer.name,
+      gstin: selectedCustomer.gstin || '',
+      phone: selectedCustomer.phone,
+      email: selectedCustomer.email,
+      address: selectedCustomer.address,
+      city: selectedCustomer.city,
+      state: selectedCustomer.state,
+      pincode: selectedCustomer.pincode,
+      balance: selectedCustomer.balance,
+    });
+    setIsInlineEditing(true);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
 
   // ── Running balance ──
@@ -256,17 +278,24 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
               </button>
             )}
             <button
-              onClick={e => handleEdit(selectedCustomer, e)}
-              className="flex items-center gap-2 bg-white border border-slate-100 px-5 py-2.5 rounded-2xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm font-poppins"
+              onClick={isInlineEditing ? resetForm : handleInlineEdit}
+              className={`flex items-center gap-2 border px-5 py-2.5 rounded-2xl text-sm font-bold transition-all shadow-sm font-poppins ${
+                isInlineEditing
+                  ? 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                  : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'
+              }`}
             >
-              <Edit3 size={15} className="text-profee-blue" /> Edit Profile
+              {isInlineEditing
+                ? <><X size={15} className="text-slate-400" /> Cancel Edit</>
+                : <><Edit3 size={15} className="text-profee-blue" /> Edit Profile</>
+              }
             </button>
           </div>
         </div>
 
-        {/* Customer card */}
-        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
-          <div className="flex items-center gap-6 mb-6">
+        {/* Customer card — expands in-place when editing */}
+        <motion.div layout className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 overflow-hidden">
+          <div className="flex items-center gap-6 mb-2">
             <div className="w-16 h-16 rounded-2xl bg-profee-blue/10 text-profee-blue flex items-center justify-center font-bold font-poppins text-2xl">
               {selectedCustomer.name.charAt(0).toUpperCase()}
             </div>
@@ -288,7 +317,86 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
               </p>
             </div>
           </div>
-        </div>
+
+          {/* Inline edit form — animates open inside the card */}
+          <AnimatePresence initial={false}>
+            {isInlineEditing && (
+              <motion.div
+                key="inline-edit"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div className="border-t border-slate-100 mt-6 pt-8 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-bold font-poppins text-slate-700 flex items-center gap-2">
+                      <UserCircle className="text-profee-blue" size={18} /> Edit Profile
+                    </h3>
+                    <button onClick={resetForm} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                      <X size={18} className="text-slate-400" />
+                    </button>
+                  </div>
+                  {error && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm font-bold text-rose-600 font-poppins">{error}</div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 font-poppins">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Customer Name *</label>
+                      <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                        value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Business or person name" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">GSTIN</label>
+                      <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                        value={formData.gstin} onChange={e => setFormData({...formData, gstin: e.target.value})} placeholder="Optional" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Phone</label>
+                      <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                        value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="+91 98765 43210" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Email</label>
+                      <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                        value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="customer@email.com" />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Address</label>
+                      <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                        value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="Street address" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">City</label>
+                      <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                        value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} placeholder="City" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Pincode</label>
+                      <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                        value={formData.pincode} onChange={e => setFormData({...formData, pincode: e.target.value})} placeholder="400001" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">State</label>
+                      <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 appearance-none focus:ring-2 ring-indigo-50"
+                        value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})}>
+                        {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-4">
+                    <button onClick={resetForm} className="px-8 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all font-poppins">Cancel</button>
+                    <button onClick={handleSave} disabled={saving}
+                      className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins disabled:opacity-50">
+                      {saving ? <><Loader2 size={18} className="animate-spin" /> Saving...</> : <><Save size={18} /> Update Customer</>}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
 
         {/* Ledger table */}
         <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 min-h-[400px]">
@@ -407,71 +515,6 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
             </div>
           )}
         </div>
-
-        {/* Edit form (reused modal, triggered from Edit Profile button) */}
-        {showForm && (
-          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 animate-in fade-in slide-in-from-top-4 duration-300">
-            <div className="flex justify-between items-center">
-              <h3 className="text-xl font-bold font-poppins flex items-center gap-3">
-                <UserCircle className="text-profee-blue" size={22} />
-                Edit Customer
-              </h3>
-              <button onClick={resetForm} className="p-2 hover:bg-slate-50 rounded-xl transition-all"><X size={20} className="text-slate-400" /></button>
-            </div>
-            {error && <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm font-bold text-rose-600 font-poppins">{error}</div>}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-poppins">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Customer Name *</label>
-                <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                  value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Business or person name" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">GSTIN</label>
-                <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                  value={formData.gstin} onChange={e => setFormData({...formData, gstin: e.target.value})} placeholder="Optional" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Phone</label>
-                <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                  value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="+91 98765 43210" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Email</label>
-                <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                  value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="customer@email.com" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Address</label>
-                <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                  value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="Street address" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">City</label>
-                <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                  value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} placeholder="City" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Pincode</label>
-                <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                  value={formData.pincode} onChange={e => setFormData({...formData, pincode: e.target.value})} placeholder="400001" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">State</label>
-                <select className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 appearance-none focus:ring-2 ring-indigo-50"
-                  value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})}>
-                  {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="flex justify-end gap-4">
-              <button onClick={resetForm} className="px-8 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all font-poppins">Cancel</button>
-              <button onClick={handleSave} disabled={saving}
-                className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins disabled:opacity-50">
-                {saving ? <><Loader2 size={18} className="animate-spin" /> Saving...</> : <><Save size={18} /> Update Customer</>}
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* ── Invoice Detail Modal (row click → this → View PDF or Download) ── */}
         {invoiceDetailModal.open && invoiceDetailModal.invoice && businessProfile && (
