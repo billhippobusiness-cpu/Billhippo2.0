@@ -165,6 +165,7 @@ const App: React.FC = () => {
         onResetPassword={handleResetPassword}
         onCreateProAccount={handleCreateProAccount}
         onLoginSuccess={handleLoginSuccess}
+        onBackToHome={() => setView('landing')}
         error={authError}
       />
     );

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
-import { Mail, Lock, User, Eye, EyeClosed, ArrowRight } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeClosed, ArrowRight, ChevronLeft } from 'lucide-react';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -13,6 +13,7 @@ interface AuthPageProps {
   onResetPassword: (email: string) => Promise<void>;
   onCreateProAccount: () => void;
   onLoginSuccess?: (redirectHash: string | null) => void;
+  onBackToHome?: () => void;
   error: string | null;
   initialTab?: AuthTab;
 }
@@ -24,6 +25,7 @@ const AuthPage: React.FC<AuthPageProps> = ({
   onResetPassword,
   onCreateProAccount,
   onLoginSuccess,
+  onBackToHome,
   error,
   initialTab,
 }) => {
@@ -174,45 +176,15 @@ const AuthPage: React.FC<AuthPageProps> = ({
           onMouseLeave={handleMouseLeave}
         >
           <div className="relative group">
-            {/* Card glow on hover */}
-            <motion.div
-              className={`absolute -inset-[1px] rounded-[2rem] opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-700`}
-              animate={{
+            {/* Card glow on hover — static, no flicker */}
+            <div
+              className="absolute -inset-[1px] rounded-[2rem] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-500"
+              style={{
                 boxShadow: isPro
-                  ? ['0 0 20px 4px rgba(5,150,105,0.06)', '0 0 30px 8px rgba(5,150,105,0.12)', '0 0 20px 4px rgba(5,150,105,0.06)']
-                  : ['0 0 20px 4px rgba(76,45,224,0.06)', '0 0 30px 8px rgba(76,45,224,0.12)', '0 0 20px 4px rgba(76,45,224,0.06)'],
+                  ? '0 0 48px 14px rgba(5,150,105,0.18)'
+                  : '0 0 48px 14px rgba(76,45,224,0.18)',
               }}
-              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', repeatType: 'mirror' }}
-              style={{ transition: 'opacity 0.7s' }}
             />
-
-            {/* Traveling light beams */}
-            <div className="absolute -inset-[1px] rounded-[2rem] overflow-hidden pointer-events-none">
-              <motion.div
-                className={`absolute top-0 left-0 h-[2px] w-[50%] bg-gradient-to-r from-transparent ${isPro ? 'via-emerald-500/60' : 'via-[#4c2de0]/60'} to-transparent`}
-                animate={{ left: ['-50%', '100%'] }}
-                transition={{ duration: 3, ease: 'easeInOut', repeat: Infinity, repeatDelay: 1.5 }}
-                style={{ transition: 'none' }}
-              />
-              <motion.div
-                className={`absolute top-0 right-0 h-[50%] w-[2px] bg-gradient-to-b from-transparent ${isPro ? 'via-emerald-500/60' : 'via-[#4c2de0]/60'} to-transparent`}
-                animate={{ top: ['-50%', '100%'] }}
-                transition={{ duration: 3, ease: 'easeInOut', repeat: Infinity, repeatDelay: 1.5, delay: 0.75 }}
-                style={{ transition: 'none' }}
-              />
-              <motion.div
-                className={`absolute bottom-0 right-0 h-[2px] w-[50%] bg-gradient-to-r from-transparent ${isPro ? 'via-emerald-500/60' : 'via-[#4c2de0]/60'} to-transparent`}
-                animate={{ right: ['-50%', '100%'] }}
-                transition={{ duration: 3, ease: 'easeInOut', repeat: Infinity, repeatDelay: 1.5, delay: 1.5 }}
-                style={{ transition: 'none' }}
-              />
-              <motion.div
-                className={`absolute bottom-0 left-0 h-[50%] w-[2px] bg-gradient-to-b from-transparent ${isPro ? 'via-emerald-500/60' : 'via-[#4c2de0]/60'} to-transparent`}
-                animate={{ bottom: ['-50%', '100%'] }}
-                transition={{ duration: 3, ease: 'easeInOut', repeat: Infinity, repeatDelay: 1.5, delay: 2.25 }}
-                style={{ transition: 'none' }}
-              />
-            </div>
 
             {/* ═══ Glass Card ═══ */}
             <div className="relative bg-white/70 backdrop-blur-2xl rounded-[2rem] border border-slate-200/60 shadow-2xl shadow-indigo-100/40 overflow-hidden">
@@ -604,6 +576,18 @@ const AuthPage: React.FC<AuthPageProps> = ({
           </div>
         </motion.div>
       </motion.div>
+
+      {/* Back to Home */}
+      {onBackToHome && (
+        <div className="relative z-10 mt-5 text-center">
+          <button
+            onClick={onBackToHome}
+            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 font-poppins font-medium transition-colors duration-200"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" /> Back to Home
+          </button>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
