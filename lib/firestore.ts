@@ -24,6 +24,7 @@ import {
   orderBy,
   onSnapshot,
   arrayRemove,
+  arrayUnion,
   serverTimestamp,
   type DocumentData,
 } from 'firebase/firestore';
@@ -38,6 +39,7 @@ import type {
   DebitNote,
   AssignedProfessional,
   ProfessionalDesignation,
+  ProfessionalInvite,
 } from '../types';
 
 // ── Helper: get user-scoped collection reference ──
@@ -381,4 +383,107 @@ export async function revokeProfessionalAccess(
   }
 
   await Promise.all(updates);
+}
+
+// ═══════════════════════════════════════════
+//  EMAIL-BASED INVITE MATCHING
+// ═══════════════════════════════════════════
+
+/**
+ * Real-time subscription to pending invites for a professional by email.
+ * Queries the top-level `invites` collection for documents where
+ * professionalEmail matches and status is 'pending'.
+ *
+ * This is the key checkpoint: when a professional signs up or logs in,
+ * their email is used to surface any pending assignments made by business
+ * users before the professional had a UID.
+ */
+export function subscribePendingInvitesByEmail(
+  email: string,
+  callback: (invites: ProfessionalInvite[]) => void,
+): () => void {
+  const q = query(
+    collection(db, 'invites'),
+    where('professionalEmail', '==', email.toLowerCase()),
+    where('status', '==', 'pending'),
+  );
+  return onSnapshot(q, (snap) => {
+    const now = new Date();
+    const list = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
+      // Filter out expired invites client-side so UI stays clean
+      .filter((inv) => new Date(inv.expiresAt) > now)
+      .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+    callback(list);
+  });
+}
+
+/**
+ * Accept a pending invite from within the professional dashboard.
+ * Mirrors the logic in InviteAccept.tsx but called with professional
+ * context already resolved (uid + professionalId).
+ */
+export async function acceptPendingInvite(
+  invite: ProfessionalInvite,
+  professionalUid: string,
+  professionalId: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await Promise.all([
+    updateDoc(doc(db, 'invites', invite.token), {
+      status: 'accepted',
+      acceptedAt: now,
+      professionalUid,
+      professionalId,
+    }),
+    updateDoc(
+      doc(db, 'users', invite.businessUserUid, 'assignedProfessionals', invite.token),
+      {
+        status: 'active',
+        linkedAt: now,
+        professionalId,
+      },
+    ),
+    updateDoc(doc(db, 'professionals', professionalUid), {
+      linkedClients: arrayUnion(invite.businessUserUid),
+    }),
+  ]);
+}
+
+/**
+ * Decline a pending invite from within the professional dashboard.
+ */
+export async function declinePendingInvite(
+  invite: ProfessionalInvite,
+): Promise<void> {
+  const now = new Date().toISOString();
+  await Promise.all([
+    updateDoc(doc(db, 'invites', invite.token), {
+      status: 'declined',
+      declinedAt: now,
+    }),
+    updateDoc(
+      doc(db, 'users', invite.businessUserUid, 'assignedProfessionals', invite.token),
+      { status: 'revoked' },
+    ),
+  ]);
+}
+
+/**
+ * One-shot query: fetch all pending invites for a professional email.
+ * Used during sign-up to check for pre-existing assignments.
+ */
+export async function getPendingInvitesByEmail(
+  email: string,
+): Promise<ProfessionalInvite[]> {
+  const q = query(
+    collection(db, 'invites'),
+    where('professionalEmail', '==', email.toLowerCase()),
+    where('status', '==', 'pending'),
+  );
+  const snap = await getDocs(q);
+  const now = new Date();
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
+    .filter((inv) => new Date(inv.expiresAt) > now);
 }
