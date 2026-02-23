@@ -31,11 +31,16 @@ jobs:
 
       - name: Deploy Firestore rules & indexes
         shell: bash
+        env:
+          # Pass as env var so printf handles the JSON safely regardless of
+          # special characters — avoids the shell-quoting issues of inline echo.
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/firebase-sa.json
+          printf '%s' "$FIREBASE_SA_JSON" > /tmp/firebase-sa.json
           GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json \
-            npx firebase-tools@latest deploy --only firestore --project billhippo-42f95
-          rm /tmp/firebase-sa.json
+            npx firebase-tools@latest deploy --only firestore \
+              --project billhippo-42f95 --non-interactive
+          rm -f /tmp/firebase-sa.json
 
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
