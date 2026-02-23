@@ -25,6 +25,7 @@ const App: React.FC = () => {
     loading,
     businessProfile,
     professionalProfile,
+    refreshRole,
     signIn,
     signUp,
     signInWithGoogle,
@@ -187,10 +188,7 @@ const App: React.FC = () => {
         userId={user.uid}
         userName={user.displayName || ''}
         userEmail={user.email || ''}
-        onComplete={() => {
-          // After the wizard writes profile/main, AuthContext's next
-          // onAuthStateChanged cycle will re-resolve the role correctly.
-        }}
+        onComplete={refreshRole}
       />
     );
   }
@@ -234,11 +232,7 @@ const App: React.FC = () => {
         userId={user.uid}
         userName={user.displayName || ''}
         userEmail={user.email || ''}
-        onComplete={() => {
-          // AuthContext will re-fetch businessProfile automatically on next
-          // Firestore write; force a soft re-render by toggling nothing—
-          // the profile will appear in the next context update.
-        }}
+        onComplete={refreshRole}
       />
     );
   }

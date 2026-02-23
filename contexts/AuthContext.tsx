@@ -34,6 +34,9 @@ interface AuthContextValue {
   /** True while the initial auth state and Firestore lookups are in flight. */
   loading: boolean;
 
+  /** Re-reads Firestore role/profile state without waiting for an auth event. */
+  refreshRole: () => Promise<void>;
+
   // ── Auth actions (preserve existing app behaviour) ─────────────────────
   signIn: (email: string, password: string) => Promise<User>;
   signUp: (email: string, password: string, displayName: string) => Promise<User>;
@@ -49,7 +52,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 // ── Provider ──────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { user, role, businessProfile, professionalProfile, loading } =
+  const { user, role, businessProfile, professionalProfile, loading, refreshRole } =
     useProfessionalAuth();
 
   const value: AuthContextValue = {
@@ -58,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     businessProfile,
     professionalProfile,
     loading,
+    refreshRole,
     signIn,
     signUp,
     signInWithGoogle,
