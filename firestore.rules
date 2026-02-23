@@ -49,9 +49,10 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == proUid;
 
       // Update: own profile only, cannot touch immutable system fields.
+      // linkedClients is allowed (needed for invite accept/decline).
       allow update: if request.auth != null && request.auth.uid == proUid
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-             'professionalId', 'referralCode', 'linkedClients', 'uid'
+             'professionalId', 'referralCode', 'uid'
            ]);
 
       // Activity log: professional creates and reads their own entries.
@@ -70,10 +71,11 @@ service cloud.firestore {
       // Any authenticated user who possesses the token URL can read the invite.
       allow read: if request.auth != null;
 
-      // Professional accepting the invite may only write status, acceptedAt, professionalUid.
+      // Professional accepting the invite may only write status, acceptedAt,
+      // professionalUid, and professionalId.
       allow update: if request.auth != null
         && request.resource.data.diff(resource.data)
-             .affectedKeys().hasOnly(['status', 'acceptedAt', 'professionalUid']);
+             .affectedKeys().hasOnly(['status', 'acceptedAt', 'professionalUid', 'professionalId', 'declinedAt']);
     }
 
     // ── Referrals ──────────────────────────────────────────────────────────────
