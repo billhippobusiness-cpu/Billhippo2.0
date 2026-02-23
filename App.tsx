@@ -17,6 +17,7 @@ import CreditDebitNotes from './components/CreditDebitNotes';
 import ProDashboard from './components/ProDashboard';
 import ProRegister from './components/pro/ProRegister';
 import InviteAccept from './components/pro/InviteAccept';
+import BusinessInviteNotice from './components/BusinessInviteNotice';
 
 const App: React.FC = () => {
   const {
@@ -270,7 +271,13 @@ const App: React.FC = () => {
 
       <main className="flex-1 flex flex-col min-w-0">
         <div className="px-4 md:px-12 py-10 overflow-y-auto">
-          <div className="max-w-[1600px] mx-auto">{renderContent()}</div>
+          <div className="max-w-[1600px] mx-auto">
+            {/* Pending professional-invite banner for business-only users */}
+            {role === 'business' && user.email && (
+              <BusinessInviteNotice userEmail={user.email} />
+            )}
+            {renderContent()}
+          </div>
         </div>
       </main>
 

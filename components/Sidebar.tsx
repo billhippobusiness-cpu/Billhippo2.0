@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight } from 'lucide-react';
+import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight, Briefcase } from 'lucide-react';
 import { type User } from 'firebase/auth';
 import type { UserRole } from '../types';
 
@@ -82,14 +82,25 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
       </nav>
 
       <div className="p-6 border-t border-slate-50 space-y-3">
-        {/* Switch to Professional Portal — only for dual-account users */}
+        {/* ── Portal Switcher: dual-account users ─────────────────────── */}
         {role === 'both' && (
           <button
             onClick={() => { window.location.hash = ''; }}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-emerald-600 hover:bg-emerald-50 transition-all duration-200 text-sm font-semibold font-poppins border border-emerald-100"
+            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition-all duration-200 text-sm font-bold font-poppins shadow-md shadow-emerald-100"
           >
             <ArrowLeftRight size={16} className="flex-shrink-0" />
             Switch to Professional Portal
+          </button>
+        )}
+
+        {/* ── Register as Professional: business-only users ────────────── */}
+        {role === 'business' && (
+          <button
+            onClick={() => { window.location.hash = '/pro-register'; }}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-emerald-600 hover:bg-emerald-50 active:scale-95 transition-all duration-200 text-sm font-semibold font-poppins border border-emerald-100"
+          >
+            <Briefcase size={16} className="flex-shrink-0" />
+            Register as Professional
           </button>
         )}
 
