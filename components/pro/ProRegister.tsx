@@ -16,10 +16,11 @@ import {
 } from 'lucide-react';
 import {
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   sendEmailVerification,
   signOut,
 } from 'firebase/auth';
-import { doc, setDoc, addDoc, collection } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { generateProfessionalId, getReferrerByCode } from '../../lib/professionalId';
 import { getPendingInvitesByEmail } from '../../lib/firestore';
@@ -91,6 +92,12 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
     pendingInviteCount: number;
   } | null>(null);
   const [copiedId, setCopiedId] = useState(false);
+  // Link-mode: triggered when email already exists in Firebase Auth (business user
+  // wants to add the Professional role to their existing account)
+  const [linkMode, setLinkMode] = useState(false);
+  const [linkPassword, setLinkPassword] = useState('');
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [showLinkPassword, setShowLinkPassword] = useState(false);
 
   const setField = (field: keyof FormState, value: string) => {
     setForm((f) => ({ ...f, [field]: value }));
@@ -186,7 +193,8 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
     } catch (err: any) {
       const code = err.code ?? '';
       if (code === 'auth/email-already-in-use') {
-        setGlobalError('This email is already registered. Sign in instead.');
+        setLinkMode(true);
+        setGlobalError(null);
       } else if (code === 'auth/weak-password') {
         setGlobalError(
           err.message?.replace('Firebase: ', '') || 'Password is too weak.',
@@ -198,6 +206,85 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLinkAccount = async () => {
+    if (!linkPassword) return;
+    setLinkLoading(true);
+    setGlobalError(null);
+    try {
+      // Sign in with their existing BillHippo password
+      const cred = await signInWithEmailAndPassword(auth, form.email.trim(), linkPassword);
+      const uid = cred.user.uid;
+
+      // Check if already a professional
+      const proSnap = await getDoc(doc(db, 'professionals', uid));
+      if (proSnap.exists()) {
+        await signOut(auth);
+        setLinkMode(false);
+        setGlobalError('This account is already registered as a Professional. Please sign in.');
+        return;
+      }
+
+      // Create professional profile on the existing UID (dual-role account)
+      const professionalId = await generateProfessionalId(
+        form.designation as ProfessionalDesignation,
+        db,
+      );
+      await setDoc(doc(db, 'professionals', uid), {
+        uid,
+        professionalId,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        email: form.email.trim().toLowerCase(),
+        designation: form.designation,
+        firmName: form.firmName.trim() || null,
+        mobile: form.mobile.trim() || null,
+        linkedClients: [],
+        referralCode: professionalId,
+        totalReferrals: 0,
+        createdAt: new Date().toISOString(),
+        roles: ['professional'],
+      });
+
+      // Handle referral code if provided
+      if (form.referralCode.trim()) {
+        const referrerProfessionalId = await getReferrerByCode(form.referralCode, db);
+        if (referrerProfessionalId) {
+          await addDoc(collection(db, 'referrals'), {
+            referrerProfessionalId,
+            newUserUid: uid,
+            newUserEmail: form.email.trim().toLowerCase(),
+            createdAt: new Date().toISOString(),
+            converted: false,
+          });
+        }
+      }
+
+      // Check pending invites
+      let pendingInviteCount = 0;
+      try {
+        const pending = await getPendingInvitesByEmail(form.email.trim());
+        pendingInviteCount = pending.length;
+      } catch {
+        // non-blocking
+      }
+
+      // Sign out — show success screen
+      await signOut(auth);
+      setSuccessData({ professionalId, email: form.email.trim(), pendingInviteCount });
+    } catch (err: any) {
+      const code = err.code ?? '';
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        setGlobalError('Incorrect password. Please try again.');
+      } else if (code === 'auth/too-many-requests') {
+        setGlobalError('Too many attempts. Please wait a moment and try again.');
+      } else {
+        setGlobalError('Something went wrong. Please check your connection and try again.');
+      }
+    } finally {
+      setLinkLoading(false);
     }
   };
 
@@ -573,12 +660,66 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
             </div>
           </div>
 
+          {/* Link existing account — shown when email already has a business account */}
+          {linkMode && (
+            <div className="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
+              <p className="text-sm font-bold font-poppins text-indigo-800 mb-1">
+                Email already has a BillHippo account
+              </p>
+              <p className="text-xs text-indigo-600 font-poppins mb-4">
+                Enter your existing BillHippo password to add the Professional role to your account.
+                You'll be able to use both the business and professional portals.
+              </p>
+              <div className="relative flex items-center mb-3">
+                <Lock className={`absolute left-4 w-4 h-4 pointer-events-none ${focusedInput === 'linkPassword' ? 'text-indigo-500' : 'text-slate-300'}`} style={{ transition: 'color 0.2s' }} />
+                <input
+                  type={showLinkPassword ? 'text' : 'password'}
+                  placeholder="Your existing BillHippo password"
+                  value={linkPassword}
+                  onChange={(e) => { setLinkPassword(e.target.value); setGlobalError(null); }}
+                  onFocus={() => setFocusedInput('linkPassword')}
+                  onBlur={() => setFocusedInput(null)}
+                  className="w-full bg-white border border-indigo-200 text-slate-800 placeholder:text-slate-300 h-12 rounded-2xl pl-11 pr-11 text-sm outline-none font-poppins font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLinkPassword(!showLinkPassword)}
+                  className="absolute right-4"
+                >
+                  {showLinkPassword
+                    ? <Eye className="w-4 h-4 text-slate-300 hover:text-slate-500" style={{ transition: 'color 0.2s' }} />
+                    : <EyeOff className="w-4 h-4 text-slate-300 hover:text-slate-500" style={{ transition: 'color 0.2s' }} />}
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setLinkMode(false); setLinkPassword(''); setGlobalError(null); }}
+                  className="flex-1 h-10 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold font-poppins hover:bg-slate-50"
+                  style={{ transition: 'background-color 0.2s' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLinkAccount}
+                  disabled={linkLoading || !linkPassword}
+                  className="flex-1 h-10 rounded-xl bg-indigo-600 text-white text-xs font-bold font-poppins flex items-center justify-center gap-1.5 disabled:opacity-60"
+                >
+                  {linkLoading
+                    ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    : <>Add Professional Role <ArrowRight className="w-3.5 h-3.5" /></>}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Submit button */}
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             type="submit"
-            disabled={loading}
+            disabled={loading || linkMode}
             className="w-full mt-8 relative group/button disabled:opacity-60"
             style={{ transition: 'none' }}
           >
