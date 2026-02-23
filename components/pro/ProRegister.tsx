@@ -22,7 +22,9 @@ import {
 import { doc, setDoc, addDoc, collection } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { generateProfessionalId, getReferrerByCode } from '../../lib/professionalId';
+import { getPendingInvitesByEmail } from '../../lib/firestore';
 import type { ProfessionalDesignation } from '../../types';
+import { Bell } from 'lucide-react';
 
 const BILLHIPPO_LOGO =
   'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
@@ -83,7 +85,11 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
-  const [successData, setSuccessData] = useState<{ professionalId: string; email: string } | null>(null);
+  const [successData, setSuccessData] = useState<{
+    professionalId: string;
+    email: string;
+    pendingInviteCount: number;
+  } | null>(null);
   const [copiedId, setCopiedId] = useState(false);
 
   const setField = (field: keyof FormState, value: string) => {
@@ -157,14 +163,26 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         // Invalid referral code → silently skip, do not block registration
       }
 
-      // 5. Send email verification
+      // 5. Check for any pending invites assigned to this email by business users
+      //    before the professional had an account. The count is shown on the
+      //    success screen so the professional knows to look for the banner on
+      //    sign-in. Failures here are non-blocking.
+      let pendingInviteCount = 0;
+      try {
+        const pending = await getPendingInvitesByEmail(form.email.trim());
+        pendingInviteCount = pending.length;
+      } catch {
+        // non-blocking
+      }
+
+      // 6. Send email verification
       await sendEmailVerification(cred.user);
 
-      // 6. Sign out — user must verify email before signing in
+      // 7. Sign out — user must verify email before signing in
       await signOut(auth);
 
-      // 7. Show success screen (with optional invite redirect)
-      setSuccessData({ professionalId, email: form.email.trim() });
+      // 8. Show success screen (with optional invite redirect and pending invite notice)
+      setSuccessData({ professionalId, email: form.email.trim(), pendingInviteCount });
     } catch (err: any) {
       const code = err.code ?? '';
       if (code === 'auth/email-already-in-use') {
@@ -238,6 +256,20 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
           <p className="text-xs text-slate-400 font-poppins mb-6">
             This is also your referral code. Share it with clients to link them to your account.
           </p>
+
+          {/* Pending invites notice — shown when business users had already assigned this email */}
+          {successData.pendingInviteCount > 0 && !inviteToken && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-3 mb-3 text-xs text-indigo-700 font-poppins text-left leading-relaxed flex items-start gap-2.5">
+              <Bell className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-indigo-500" />
+              <span>
+                <strong>
+                  {successData.pendingInviteCount} business client
+                  {successData.pendingInviteCount > 1 ? 's have' : ' has'} already assigned you.
+                </strong>{' '}
+                After signing in, you will see an Accept / Decline notification on your dashboard.
+              </span>
+            </div>
+          )}
 
           {/* Email verification notice */}
           <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 mb-6 text-xs text-amber-700 font-poppins text-left leading-relaxed">

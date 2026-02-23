@@ -17,6 +17,7 @@ import { db } from '../../lib/firebase';
 import type { ProfessionalProfile, BusinessProfile } from '../../types';
 import type { ProView } from './ProLayout';
 import OnboardingChecklist from './OnboardingChecklist';
+import PendingInvitesBanner from './PendingInvitesBanner';
 
 interface ClientData {
   uid: string;
@@ -142,6 +143,13 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ profile, onOpenClient, onNa
 
       {/* ── Onboarding Checklist — hidden once complete or dismissed ── */}
       <OnboardingChecklist profile={profile} onNavigate={onNavigate} />
+
+      {/* ── Pending Invites — email-matched assignments from business users ── */}
+      {profile && (
+        <div className="mb-6">
+          <PendingInvitesBanner profile={profile} />
+        </div>
+      )}
 
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
