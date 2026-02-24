@@ -218,20 +218,35 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
       const cred = await signInWithEmailAndPassword(auth, form.email.trim(), linkPassword);
       const uid = cred.user.uid;
 
-      // Check if already a professional
+      // Check if a professionals/{uid} doc already exists (e.g. created during
+      // development or a previous interrupted registration attempt).
+      // If it does, we reuse the existing professionalId and preserve any
+      // linkedClients that may have been set, but overwrite every other field
+      // with the values the user just entered.
       const proSnap = await getDoc(doc(db, 'professionals', uid));
+
+      let professionalId: string;
+      let existingLinkedClients: string[] = [];
+      let existingTotalReferrals = 0;
+      let existingCreatedAt: string | null = null;
+
       if (proSnap.exists()) {
-        await signOut(auth);
-        setLinkMode(false);
-        setGlobalError('This account is already registered as a Professional. Please sign in.');
-        return;
+        const existing = proSnap.data();
+        // Reuse the existing professionalId so referral links still work.
+        professionalId = (existing.professionalId as string) || await generateProfessionalId(
+          form.designation as ProfessionalDesignation,
+          db,
+        );
+        existingLinkedClients  = (existing.linkedClients  as string[]) ?? [];
+        existingTotalReferrals = (existing.totalReferrals as number)  ?? 0;
+        existingCreatedAt      = (existing.createdAt      as string)  ?? null;
+      } else {
+        professionalId = await generateProfessionalId(
+          form.designation as ProfessionalDesignation,
+          db,
+        );
       }
 
-      // Create professional profile on the existing UID (dual-role account)
-      const professionalId = await generateProfessionalId(
-        form.designation as ProfessionalDesignation,
-        db,
-      );
       await setDoc(doc(db, 'professionals', uid), {
         uid,
         professionalId,
@@ -241,10 +256,10 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         designation: form.designation,
         firmName: form.firmName.trim() || null,
         mobile: form.mobile.trim() || null,
-        linkedClients: [],
+        linkedClients: existingLinkedClients,
         referralCode: professionalId,
-        totalReferrals: 0,
-        createdAt: new Date().toISOString(),
+        totalReferrals: existingTotalReferrals,
+        createdAt: existingCreatedAt ?? new Date().toISOString(),
         roles: ['professional'],
       });
 

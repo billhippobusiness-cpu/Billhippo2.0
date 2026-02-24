@@ -85,6 +85,13 @@ service cloud.firestore {
              .affectedKeys().hasOnly(['status', 'acceptedAt', 'professionalUid', 'professionalId', 'declinedAt']);
     }
 
+    // ── Counters ───────────────────────────────────────────────────────────────
+    // Used by generateProfessionalId() to allocate sequential IDs atomically
+    // without needing collection-wide read access on /professionals/.
+    match /counters/{counterId} {
+      allow read, write: if request.auth != null;
+    }
+
     // ── Referrals ──────────────────────────────────────────────────────────────
     // Any authenticated user can submit a referral; users read referrals they sent or received.
     match /referrals/{refId} {
