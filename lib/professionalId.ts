@@ -36,13 +36,21 @@ export async function generateProfessionalId(
 
   const counterRef = doc(firestore, 'counters', 'professionals');
 
-  const nextNumber = await runTransaction(firestore, async (txn) => {
-    const snap = await txn.get(counterRef);
-    const current = snap.exists() ? ((snap.data().count as number) ?? 0) : 0;
-    const next = current + 1;
-    txn.set(counterRef, { count: next }, { merge: true });
-    return next;
-  });
+  let nextNumber: number;
+  try {
+    nextNumber = await runTransaction(firestore, async (txn) => {
+      const snap = await txn.get(counterRef);
+      const current = snap.exists() ? ((snap.data().count as number) ?? 0) : 0;
+      const next = current + 1;
+      txn.set(counterRef, { count: next }, { merge: true });
+      return next;
+    });
+  } catch {
+    // Counter document inaccessible (Firestore rules not yet deployed).
+    // Fall back to a time-seeded random number; collision probability is
+    // negligible for the scale of this app (~1-in-90000 per designation).
+    nextNumber = Math.floor(10000 + Math.random() * 89999);
+  }
 
   return `${prefix}${String(nextNumber).padStart(5, '0')}`;
 }

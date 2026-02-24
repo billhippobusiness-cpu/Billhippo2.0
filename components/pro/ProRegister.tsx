@@ -130,9 +130,14 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
     setLoading(true);
     setGlobalError(null);
 
+    // Holds the newly created Firebase Auth user so we can delete it (rollback)
+    // if any subsequent Firestore step fails — preventing ghost accounts.
+    let newAuthUser: import('firebase/auth').User | null = null;
+
     try {
       // 1. Create Firebase Auth user
       const cred = await createUserWithEmailAndPassword(auth, form.email.trim(), form.password);
+      newAuthUser = cred.user;
       const uid = cred.user.uid;
 
       // 2. Generate unique professional ID
@@ -190,10 +195,16 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
 
       // 7. Sign out — user must verify email before signing in
       await signOut(auth);
+      newAuthUser = null; // committed — no rollback needed
 
       // 8. Show success screen (with optional invite redirect and pending invite notice)
       setSuccessData({ professionalId, email: form.email.trim(), pendingInviteCount });
     } catch (err: any) {
+      // If the Firebase Auth account was created but a later step failed,
+      // delete the ghost account so the user can retry with the same email.
+      if (newAuthUser) {
+        try { await newAuthUser.delete(); } catch { /* best-effort */ }
+      }
       const code = err.code ?? '';
       if (code === 'auth/email-already-in-use') {
         // If the user is already signed in as this very email (e.g. they came
