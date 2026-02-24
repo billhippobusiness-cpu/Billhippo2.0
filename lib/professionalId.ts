@@ -1,4 +1,12 @@
-import { collection, query, orderBy, limit, where, getDocs, type Firestore } from 'firebase/firestore';
+import {
+  doc,
+  runTransaction,
+  query,
+  collection,
+  where,
+  getDocs,
+  type Firestore,
+} from 'firebase/firestore';
 import type { ProfessionalDesignation } from '../types';
 
 const DESIGNATION_CODES: Record<ProfessionalDesignation, string> = {
@@ -15,9 +23,9 @@ const DESIGNATION_CODES: Record<ProfessionalDesignation, string> = {
  * Generates a unique Professional ID in the format BHP<CODE><5-digit-number>.
  * Example: BHPCA00042
  *
- * Queries the top-level `professionals` collection, orders by professionalId
- * descending to find the highest existing number, then increments by 1.
- * If no professionals exist yet, starts at 00001.
+ * Uses an atomic transaction on counters/professionals to increment a shared
+ * counter.  This avoids needing collection-wide read access on /professionals/
+ * (which Firestore security rules would reject for non-admin users).
  */
 export async function generateProfessionalId(
   designation: ProfessionalDesignation,
@@ -26,27 +34,17 @@ export async function generateProfessionalId(
   const code = DESIGNATION_CODES[designation];
   const prefix = `BHP${code}`;
 
-  const q = query(
-    collection(firestore, 'professionals'),
-    orderBy('professionalId', 'desc'),
-    limit(1),
-  );
+  const counterRef = doc(firestore, 'counters', 'professionals');
 
-  const snap = await getDocs(q);
+  const nextNumber = await runTransaction(firestore, async (txn) => {
+    const snap = await txn.get(counterRef);
+    const current = snap.exists() ? ((snap.data().count as number) ?? 0) : 0;
+    const next = current + 1;
+    txn.set(counterRef, { count: next }, { merge: true });
+    return next;
+  });
 
-  let nextNumber = 1;
-  if (!snap.empty) {
-    const lastId = snap.docs[0].data().professionalId as string | undefined;
-    if (lastId && lastId.length >= 5) {
-      const numPart = parseInt(lastId.slice(-5), 10);
-      if (!isNaN(numPart)) {
-        nextNumber = numPart + 1;
-      }
-    }
-  }
-
-  const paddedNumber = String(nextNumber).padStart(5, '0');
-  return `${prefix}${paddedNumber}`;
+  return `${prefix}${String(nextNumber).padStart(5, '0')}`;
 }
 
 /**
