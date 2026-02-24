@@ -37,9 +37,16 @@ service cloud.firestore {
 
     // AssignedProfessionals sub-collection:
     //   – Business owner manages via the wildcard rule above.
-    //   – Professional can read their own entry (docId == their UID).
+    //   – Professional can read their own entry (email match in doc).
+    //   – Professional can update status/linkedAt/professionalId when
+    //     accepting or declining the invite.
     match /users/{businessUid}/assignedProfessionals/{docId} {
-      allow read: if request.auth != null && request.auth.uid == docId;
+      allow read: if request.auth != null
+        && resource.data.email == request.auth.token.email;
+      allow update: if request.auth != null
+        && resource.data.email == request.auth.token.email
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'linkedAt', 'professionalId']);
     }
 
     // ── Professional portal ────────────────────────────────────────────────────
@@ -66,7 +73,7 @@ service cloud.firestore {
     match /invites/{token} {
       // Business user creates their own invite.
       allow create: if request.auth != null
-        && request.resource.data.businessUid == request.auth.uid;
+        && request.resource.data.businessUserUid == request.auth.uid;
 
       // Any authenticated user who possesses the token URL can read the invite.
       allow read: if request.auth != null;
