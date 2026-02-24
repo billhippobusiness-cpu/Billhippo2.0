@@ -95,6 +95,9 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
   // Link-mode: triggered when email already exists in Firebase Auth (business user
   // wants to add the Professional role to their existing account)
   const [linkMode, setLinkMode] = useState(false);
+  // true when the user arrived from the business portal and is already signed in
+  // with the same email — no password re-entry is needed in that case.
+  const [linkAlreadySignedIn, setLinkAlreadySignedIn] = useState(false);
   const [linkPassword, setLinkPassword] = useState('');
   const [linkLoading, setLinkLoading] = useState(false);
   const [showLinkPassword, setShowLinkPassword] = useState(false);
@@ -193,6 +196,13 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
     } catch (err: any) {
       const code = err.code ?? '';
       if (code === 'auth/email-already-in-use') {
+        // If the user is already signed in as this very email (e.g. they came
+        // from the business portal via "Register as Professional" and their
+        // account is Google-only or they simply don't need to re-enter a
+        // password), skip password re-entry.
+        const currentEmail = auth.currentUser?.email?.toLowerCase() ?? '';
+        const formEmail = form.email.trim().toLowerCase();
+        setLinkAlreadySignedIn(currentEmail === formEmail);
         setLinkMode(true);
         setGlobalError(null);
       } else if (code === 'auth/weak-password') {
@@ -210,13 +220,22 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
   };
 
   const handleLinkAccount = async () => {
-    if (!linkPassword) return;
+    if (!linkAlreadySignedIn && !linkPassword) return;
     setLinkLoading(true);
     setGlobalError(null);
     try {
-      // Sign in with their existing BillHippo password
-      const cred = await signInWithEmailAndPassword(auth, form.email.trim(), linkPassword);
-      const uid = cred.user.uid;
+      let uid: string;
+
+      if (linkAlreadySignedIn && auth.currentUser?.email?.toLowerCase() === form.email.trim().toLowerCase()) {
+        // User is already authenticated (e.g. Google sign-in from business portal).
+        // No need to re-authenticate — just use the existing session.
+        uid = auth.currentUser.uid;
+      } else {
+        // User is not signed in or is signed in as a different account.
+        // Sign in with their existing BillHippo email/password.
+        const cred = await signInWithEmailAndPassword(auth, form.email.trim(), linkPassword);
+        uid = cred.user.uid;
+      }
 
       // Check if a professionals/{uid} doc already exists (e.g. created during
       // development or a previous interrupted registration attempt).
@@ -286,9 +305,17 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         // non-blocking
       }
 
-      // Sign out — show success screen
-      await signOut(auth);
-      setSuccessData({ professionalId, email: form.email.trim(), pendingInviteCount });
+      if (linkAlreadySignedIn) {
+        // User was already signed in — don't sign out.  Reload the page so the
+        // app re-reads Firestore, detects role='both', and lands on the
+        // Professional Portal directly (no extra sign-in step needed).
+        window.location.reload();
+      } else {
+        // User signed in with a password just now — sign out and show the
+        // success screen so they know to verify their email before logging in.
+        await signOut(auth);
+        setSuccessData({ professionalId, email: form.email.trim(), pendingInviteCount });
+      }
     } catch (err: any) {
       const code = err.code ?? '';
       if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
@@ -681,35 +708,45 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
               <p className="text-sm font-bold font-poppins text-indigo-800 mb-1">
                 Email already has a BillHippo account
               </p>
-              <p className="text-xs text-indigo-600 font-poppins mb-4">
-                Enter your existing BillHippo password to add the Professional role to your account.
-                You'll be able to use both the business and professional portals.
-              </p>
-              <div className="relative flex items-center mb-3">
-                <Lock className={`absolute left-4 w-4 h-4 pointer-events-none ${focusedInput === 'linkPassword' ? 'text-indigo-500' : 'text-slate-300'}`} style={{ transition: 'color 0.2s' }} />
-                <input
-                  type={showLinkPassword ? 'text' : 'password'}
-                  placeholder="Your existing BillHippo password"
-                  value={linkPassword}
-                  onChange={(e) => { setLinkPassword(e.target.value); setGlobalError(null); }}
-                  onFocus={() => setFocusedInput('linkPassword')}
-                  onBlur={() => setFocusedInput(null)}
-                  className="w-full bg-white border border-indigo-200 text-slate-800 placeholder:text-slate-300 h-12 rounded-2xl pl-11 pr-11 text-sm outline-none font-poppins font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowLinkPassword(!showLinkPassword)}
-                  className="absolute right-4"
-                >
-                  {showLinkPassword
-                    ? <Eye className="w-4 h-4 text-slate-300 hover:text-slate-500" style={{ transition: 'color 0.2s' }} />
-                    : <EyeOff className="w-4 h-4 text-slate-300 hover:text-slate-500" style={{ transition: 'color 0.2s' }} />}
-                </button>
-              </div>
+              {linkAlreadySignedIn ? (
+                <p className="text-xs text-indigo-600 font-poppins mb-4">
+                  You're already signed in as <strong>{form.email.trim()}</strong>. Click below to
+                  add the Professional role — no password needed. You'll be able to use both
+                  the business and professional portals.
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-indigo-600 font-poppins mb-4">
+                    Enter your existing BillHippo password to add the Professional role to your
+                    account. You'll be able to use both the business and professional portals.
+                  </p>
+                  <div className="relative flex items-center mb-3">
+                    <Lock className={`absolute left-4 w-4 h-4 pointer-events-none ${focusedInput === 'linkPassword' ? 'text-indigo-500' : 'text-slate-300'}`} style={{ transition: 'color 0.2s' }} />
+                    <input
+                      type={showLinkPassword ? 'text' : 'password'}
+                      placeholder="Your existing BillHippo password"
+                      value={linkPassword}
+                      onChange={(e) => { setLinkPassword(e.target.value); setGlobalError(null); }}
+                      onFocus={() => setFocusedInput('linkPassword')}
+                      onBlur={() => setFocusedInput(null)}
+                      className="w-full bg-white border border-indigo-200 text-slate-800 placeholder:text-slate-300 h-12 rounded-2xl pl-11 pr-11 text-sm outline-none font-poppins font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLinkPassword(!showLinkPassword)}
+                      className="absolute right-4"
+                    >
+                      {showLinkPassword
+                        ? <Eye className="w-4 h-4 text-slate-300 hover:text-slate-500" style={{ transition: 'color 0.2s' }} />
+                        : <EyeOff className="w-4 h-4 text-slate-300 hover:text-slate-500" style={{ transition: 'color 0.2s' }} />}
+                    </button>
+                  </div>
+                </>
+              )}
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => { setLinkMode(false); setLinkPassword(''); setGlobalError(null); }}
+                  onClick={() => { setLinkMode(false); setLinkPassword(''); setLinkAlreadySignedIn(false); setGlobalError(null); }}
                   className="flex-1 h-10 rounded-xl border border-slate-200 text-slate-500 text-xs font-bold font-poppins hover:bg-slate-50"
                   style={{ transition: 'background-color 0.2s' }}
                 >
@@ -718,7 +755,7 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
                 <button
                   type="button"
                   onClick={handleLinkAccount}
-                  disabled={linkLoading || !linkPassword}
+                  disabled={linkLoading || (!linkAlreadySignedIn && !linkPassword)}
                   className="flex-1 h-10 rounded-xl bg-indigo-600 text-white text-xs font-bold font-poppins flex items-center justify-center gap-1.5 disabled:opacity-60"
                 >
                   {linkLoading
