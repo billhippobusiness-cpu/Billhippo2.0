@@ -16,13 +16,13 @@ export interface UseProfessionalAuthReturn {
 
 /**
  * Reads the current Firebase Auth user and resolves their role(s) by checking:
- *   - users/{uid}         → exists  ⟹ 'business'
- *   - professionals/{uid} → exists  ⟹ 'professional'
- *   - both exist          ⟹ 'both'
- *   - neither exists      ⟹ null (new / unregistered user)
+ *   - users/{uid}                       → exists  ⟹ 'business'
+ *   - users/{uid}/professional/main     → exists  ⟹ 'professional'
+ *   - both exist                        ⟹ 'both'
+ *   - neither exists                    ⟹ null (new / unregistered user)
  *
  * Also fetches the full BusinessProfile from users/{uid}/profile/main and
- * the ProfessionalProfile document from professionals/{uid}.
+ * the ProfessionalProfile document from users/{uid}/professional/main.
  *
  * Resilience notes:
  *   - Each Firestore read is wrapped in its own try/catch so a security-rule
@@ -64,7 +64,7 @@ export function useProfessionalAuth(): UseProfessionalAuthReturn {
       // Read both top-level identity documents in parallel.
       const [userSnap, professionalSnap] = await Promise.all([
         safeGet(doc(db, 'users', firebaseUser.uid)),
-        safeGet(doc(db, 'professionals', firebaseUser.uid)),
+        safeGet(doc(db, 'users', firebaseUser.uid, 'professional', 'main')),
       ]);
 
       let isBusinessUser = userSnap?.exists() ?? false;

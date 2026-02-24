@@ -361,25 +361,22 @@ export async function revokeProfessionalAccess(
     updateDoc(doc(db, 'users', businessUserId, 'assignedProfessionals', token), { status: 'revoked' }),
   ];
 
-  // Remove business uid from the professional's linkedClients array (best-effort)
-  if (professionalId) {
-    try {
-      const q = query(
-        collection(db, 'professionals'),
-        where('professionalId', '==', professionalId),
+  // Remove business uid from the professional's linkedClients array (best-effort).
+  // Read the invite to get the professional's UID, then update their profile.
+  try {
+    const inviteSnap = await getDoc(doc(db, 'invites', token));
+    const proUid = inviteSnap.exists()
+      ? (inviteSnap.data().professionalUid as string | undefined)
+      : undefined;
+    if (proUid) {
+      updates.push(
+        updateDoc(doc(db, 'users', proUid, 'professional', 'main'), {
+          linkedClients: arrayRemove(businessUserId),
+        }),
       );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        const proUid = snap.docs[0].id;
-        updates.push(
-          updateDoc(doc(db, 'professionals', proUid), {
-            linkedClients: arrayRemove(businessUserId),
-          }),
-        );
-      }
-    } catch {
-      // Non-blocking: invite/assignedProfessionals updates still proceed
     }
+  } catch {
+    // Non-blocking: invite/assignedProfessionals updates still proceed
   }
 
   await Promise.all(updates);
@@ -444,7 +441,7 @@ export async function acceptPendingInvite(
         professionalId,
       },
     ),
-    updateDoc(doc(db, 'professionals', professionalUid), {
+    updateDoc(doc(db, 'users', professionalUid, 'professional', 'main'), {
       linkedClients: arrayUnion(invite.businessUserUid),
     }),
   ]);
