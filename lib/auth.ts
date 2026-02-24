@@ -49,7 +49,7 @@ export async function signInWithGoogle() {
   // dashboard instead of the Professional Portal.
   const [userDoc, proDoc] = await Promise.all([
     getDoc(doc(db, 'users', user.uid)),
-    getDoc(doc(db, 'professionals', user.uid)),
+    getDoc(doc(db, 'users', user.uid, 'professional', 'main')),
   ]);
 
   if (!userDoc.exists() && !proDoc.exists()) {

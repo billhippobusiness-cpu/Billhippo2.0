@@ -1,10 +1,7 @@
 import {
   doc,
+  getDoc,
   runTransaction,
-  query,
-  collection,
-  where,
-  getDocs,
   type Firestore,
 } from 'firebase/firestore';
 import type { ProfessionalDesignation } from '../types';
@@ -56,7 +53,8 @@ export async function generateProfessionalId(
 }
 
 /**
- * Looks up a referral code in the professionals collection.
+ * Looks up a referral code in the referralIndex collection.
+ * The referralIndex document ID is the referral code itself.
  * Returns the referrer's professionalId if found, null otherwise.
  */
 export async function getReferrerByCode(
@@ -64,11 +62,11 @@ export async function getReferrerByCode(
   firestore: Firestore,
 ): Promise<string | null> {
   const normalised = code.trim().toUpperCase();
-  const q = query(
-    collection(firestore, 'professionals'),
-    where('referralCode', '==', normalised),
-  );
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-  return (snap.docs[0].data() as { professionalId: string }).professionalId ?? null;
+  try {
+    const snap = await getDoc(doc(firestore, 'referralIndex', normalised));
+    if (!snap.exists()) return null;
+    return (snap.data() as { professionalId: string }).professionalId ?? null;
+  } catch {
+    return null;
+  }
 }

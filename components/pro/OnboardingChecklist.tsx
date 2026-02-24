@@ -69,7 +69,7 @@ const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
     if (!uid) return;
 
     const unsub = onSnapshot(
-      doc(db, 'professionals', uid),
+      doc(db, 'users', uid, 'professional', 'main'),
       (snap) => {
         if (!snap.exists()) return;
         const d = snap.data();
@@ -95,7 +95,7 @@ const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
 
     Promise.all([
       // Item 3 — any activity log entry
-      getDocs(collection(db, 'professionals', uid, 'activityLog'))
+      getDocs(collection(db, 'users', uid, 'professional', 'activityLog'))
         .then((snap) => snap.size > 0)
         .catch(() => false),
 
@@ -158,7 +158,7 @@ const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
   // ── Auto-complete when all items done ──────────────────────────────────
   useEffect(() => {
     if (!allDone || !uid || !liveState || liveState.onboardingComplete) return;
-    updateDoc(doc(db, 'professionals', uid), { onboardingComplete: true }).catch(
+    updateDoc(doc(db, 'users', uid, 'professional', 'main'), { onboardingComplete: true }).catch(
       (err) => console.error('[OnboardingChecklist] auto-complete write failed:', err),
     );
   }, [allDone, uid, liveState]);
@@ -168,7 +168,7 @@ const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
     if (!uid || dismissing) return;
     setDismissing(true);
     try {
-      await updateDoc(doc(db, 'professionals', uid), { onboardingDismissed: true });
+      await updateDoc(doc(db, 'users', uid, 'professional', 'main'), { onboardingDismissed: true });
     } catch (err) {
       console.error('[OnboardingChecklist] dismiss failed:', err);
       setDismissing(false);

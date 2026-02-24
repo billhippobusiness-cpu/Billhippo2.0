@@ -381,8 +381,8 @@ const BulkDownloads: React.FC<BulkDownloadsProps> = ({ user, profile }) => {
 
       saveAs(blob, zipName);
 
-      // Log to professionals/{proUid}/activityLog
-      await addDoc(collection(db, 'professionals', user.uid, 'activityLog'), {
+      // Log to users/{uid}/professional/activityLog
+      await addDoc(collection(db, 'users', user.uid, 'professional', 'activityLog'), {
         action:      'bulk_download',
         reportType,
         period:      monthStr,

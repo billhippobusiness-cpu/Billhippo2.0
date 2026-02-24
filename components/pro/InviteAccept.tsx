@@ -127,8 +127,8 @@ const InviteAccept: React.FC<InviteAcceptProps> = ({ token, onGoToSignIn }) => {
             professionalId: proId,
           },
         ),
-        // 3. Add businessUserUid to professionals/{proUid}/linkedClients
-        updateDoc(doc(db, 'professionals', proUid), {
+        // 3. Add businessUserUid to users/{proUid}/professional/main linkedClients
+        updateDoc(doc(db, 'users', proUid, 'professional', 'main'), {
           linkedClients: arrayUnion(invite.businessUserUid),
         }),
       ]);

@@ -142,7 +142,7 @@ const ProProfile: React.FC<ProProfileProps> = ({
     }
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'professionals', user.uid), {
+      await updateDoc(doc(db, 'users', user.uid, 'professional', 'main'), {
         firstName:   firstName.trim(),
         lastName:    lastName.trim(),
         designation,

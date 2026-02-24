@@ -146,8 +146,8 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         db,
       );
 
-      // 3. Write professionals/{uid}
-      await setDoc(doc(db, 'professionals', uid), {
+      // 3. Write users/{uid}/professional/main (covered by existing deployed rules)
+      await setDoc(doc(db, 'users', uid, 'professional', 'main'), {
         uid,
         professionalId,
         firstName: form.firstName.trim(),
@@ -162,6 +162,9 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         createdAt: new Date().toISOString(),
         roles: ['professional'],
       });
+
+      // 3b. Write referralIndex/{professionalId} for fast referral code lookups
+      await setDoc(doc(db, 'referralIndex', professionalId), { uid, professionalId });
 
       // 4. Handle referral code if provided
       if (form.referralCode.trim()) {
@@ -248,12 +251,12 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         uid = cred.user.uid;
       }
 
-      // Check if a professionals/{uid} doc already exists (e.g. created during
+      // Check if a users/{uid}/professional/main doc already exists (e.g. created during
       // development or a previous interrupted registration attempt).
       // If it does, we reuse the existing professionalId and preserve any
       // linkedClients that may have been set, but overwrite every other field
       // with the values the user just entered.
-      const proSnap = await getDoc(doc(db, 'professionals', uid));
+      const proSnap = await getDoc(doc(db, 'users', uid, 'professional', 'main'));
 
       let professionalId: string;
       let existingLinkedClients: string[] = [];
@@ -277,7 +280,7 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         );
       }
 
-      await setDoc(doc(db, 'professionals', uid), {
+      await setDoc(doc(db, 'users', uid, 'professional', 'main'), {
         uid,
         professionalId,
         firstName: form.firstName.trim(),
@@ -292,6 +295,9 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         createdAt: existingCreatedAt ?? new Date().toISOString(),
         roles: ['professional'],
       });
+
+      // Write referralIndex for fast lookups
+      await setDoc(doc(db, 'referralIndex', professionalId), { uid, professionalId });
 
       // Handle referral code if provided
       if (form.referralCode.trim()) {
