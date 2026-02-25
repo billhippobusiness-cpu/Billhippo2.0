@@ -399,20 +399,35 @@ export function subscribePendingInvitesByEmail(
   email: string,
   callback: (invites: ProfessionalInvite[]) => void,
 ): () => void {
+  const normalizedEmail = email.toLowerCase();
   const q = query(
     collection(db, 'invites'),
-    where('professionalEmail', '==', email.toLowerCase()),
+    where('professionalEmail', '==', normalizedEmail),
     where('status', '==', 'pending'),
   );
-  return onSnapshot(q, (snap) => {
-    const now = new Date();
-    const list = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
-      // Filter out expired invites client-side so UI stays clean
-      .filter((inv) => new Date(inv.expiresAt) > now)
-      .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
-    callback(list);
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      const now = new Date();
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
+        // Filter out expired invites client-side so UI stays clean
+        .filter((inv) => new Date(inv.expiresAt) > now)
+        .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+      callback(list);
+    },
+    (error) => {
+      console.error(
+        '[subscribePendingInvitesByEmail] Firestore query failed for',
+        normalizedEmail,
+        '—',
+        error.code,
+        error.message,
+      );
+      // Call back with empty list so the UI doesn't hang in a loading state.
+      callback([]);
+    },
+  );
 }
 
 /**

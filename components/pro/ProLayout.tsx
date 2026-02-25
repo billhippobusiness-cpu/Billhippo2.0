@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -12,8 +12,10 @@ import {
   Menu,
   ArrowLeftRight,
 } from 'lucide-react';
+import { subscribePendingInvitesByEmail } from '../../lib/firestore';
 import type { ProfessionalProfile, UserRole } from '../../types';
 import type { User as FirebaseUser } from 'firebase/auth';
+import PendingInvitesPopup from './PendingInvitesPopup';
 
 const BILLHIPPO_LOGO =
   'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
@@ -58,6 +60,14 @@ const ProLayout: React.FC<ProLayoutProps> = ({
   role,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [pendingInviteCount, setPendingInviteCount] = useState(0);
+
+  useEffect(() => {
+    if (!profile?.email) return;
+    return subscribePendingInvitesByEmail(profile.email, (invites) => {
+      setPendingInviteCount(invites.length);
+    });
+  }, [profile?.email]);
 
   const displayName = profile
     ? `${profile.firstName} ${profile.lastName}`
@@ -137,7 +147,15 @@ const ProLayout: React.FC<ProLayoutProps> = ({
                   />
                   <span className="text-sm font-semibold font-poppins">{item.label}</span>
                 </div>
-                {isActive && <ChevronRight size={15} />}
+                <div className="flex items-center gap-1.5">
+                  {/* Pending assignments badge — shown on Dashboard nav item */}
+                  {item.id === 'dashboard' && pendingInviteCount > 0 && (
+                    <span className="w-5 h-5 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
+                      {pendingInviteCount > 9 ? '9+' : pendingInviteCount}
+                    </span>
+                  )}
+                  {isActive && <ChevronRight size={15} />}
+                </div>
               </button>
             );
           })}
@@ -181,8 +199,16 @@ const ProLayout: React.FC<ProLayoutProps> = ({
           <span className="text-xs font-bold font-poppins text-emerald-600 uppercase tracking-widest">
             BillHippo Professional
           </span>
-          <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white font-bold text-sm font-poppins">
-            {initials}
+          <div className="relative">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white font-bold text-sm font-poppins">
+              {initials}
+            </div>
+            {/* Mobile pending invite badge */}
+            {pendingInviteCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
+                {pendingInviteCount > 9 ? '9+' : pendingInviteCount}
+              </span>
+            )}
           </div>
         </div>
 
@@ -191,6 +217,9 @@ const ProLayout: React.FC<ProLayoutProps> = ({
           <div className="max-w-[1400px] mx-auto">{children}</div>
         </div>
       </main>
+
+      {/* ── Floating pending-invites popup — visible from every view ── */}
+      <PendingInvitesPopup profile={profile} />
     </div>
   );
 };
