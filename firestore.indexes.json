@@ -1,4 +1,13 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "professionalEmail", "order": "ASCENDING" },
+        { "fieldPath": "status",            "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }
