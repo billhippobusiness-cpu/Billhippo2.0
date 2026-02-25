@@ -264,7 +264,7 @@ const ProReports: React.FC<ProReportsProps> = ({ user, profile, initialClientUid
       triggerCSVDownload(`BillHippo_${reportType}_${safeName}_${selectedMonth}.csv`, headers, rows);
 
       // Log download activity — business owner can see this under their assigned professional
-      await addDoc(collection(db, 'users', user.uid, 'professional', 'activityLog'), {
+      await addDoc(collection(db, 'users', user.uid, 'professional', 'main', 'activityLog'), {
         action:     'download',
         reportType,
         clientUid:  selectedClientUid,

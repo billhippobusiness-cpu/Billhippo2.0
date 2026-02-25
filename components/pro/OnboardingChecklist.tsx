@@ -95,7 +95,7 @@ const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
 
     Promise.all([
       // Item 3 — any activity log entry
-      getDocs(collection(db, 'users', uid, 'professional', 'activityLog'))
+      getDocs(collection(db, 'users', uid, 'professional', 'main', 'activityLog'))
         .then((snap) => snap.size > 0)
         .catch(() => false),
 
