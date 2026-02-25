@@ -44,9 +44,13 @@
             transform: translateY(-2px);
         }
 
-        /* Smooth transitions */
-        * {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        /* Smooth transitions — scoped to interactive elements only.
+           Applying transition:all to * interferes with framer-motion's
+           opacity/transform animations (elements start at opacity:0 and
+           the blanket CSS transition can prevent them from animating to
+           opacity:1, causing content to appear invisible). */
+        button, a, input, select, textarea {
+            transition: background-color 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s, opacity 0.2s;
         }
 
         .active-tab-glow {
