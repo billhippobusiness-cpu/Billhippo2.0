@@ -164,7 +164,13 @@ export function useProfessionalAuth(): UseProfessionalAuthReturn {
         return;
       }
 
-      // Authenticated user found — show loading while we resolve their role.
+      // Explicitly set loading=true here (before any await) so it is batched
+      // with setUser(firebaseUser) above into a single React render — prevents
+      // an intermediate frame where user≠null but loading=false, which would
+      // briefly flash OnboardingWizard before Firestore role resolution finishes.
+      // resolveForUser also calls setLoading(true) as its first line (covers
+      // the refreshRole() path); the double call is harmless.
+      setLoading(true);
       await resolveForUser(firebaseUser);
     });
 
