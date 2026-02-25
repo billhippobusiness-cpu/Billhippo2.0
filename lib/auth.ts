@@ -13,7 +13,7 @@ import {
   sendPasswordResetEmail,
   type User,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, type DocumentReference } from 'firebase/firestore';
 import { auth, googleProvider, db } from './firebase';
 
 // Sign up with email & password
@@ -44,15 +44,23 @@ export async function signInWithGoogle() {
   const user = result.user;
 
   // Read both identity documents in parallel. We must NOT create users/{uid}
-  // if this UID already has a professionals/{uid} doc — doing so would set
+  // if this UID already has a professional/main doc — doing so would set
   // role = 'both' and silently redirect the professional to the business
   // dashboard instead of the Professional Portal.
+  //
+  // safeGet: a professional user gets permission-denied on their own top-level
+  // users/{uid} document (no rule covers it for non-business accounts), so we
+  // swallow that error and treat it as "does not exist".
+  const tryGet = async (ref: DocumentReference) => {
+    try { return await getDoc(ref); } catch { return null; }
+  };
+
   const [userDoc, proDoc] = await Promise.all([
-    getDoc(doc(db, 'users', user.uid)),
-    getDoc(doc(db, 'users', user.uid, 'professional', 'main')),
+    tryGet(doc(db, 'users', user.uid)),
+    tryGet(doc(db, 'users', user.uid, 'professional', 'main')),
   ]);
 
-  if (!userDoc.exists() && !proDoc.exists()) {
+  if (!userDoc?.exists() && !proDoc?.exists()) {
     // Genuinely new user — create the business profile document.
     await setDoc(doc(db, 'users', user.uid), {
       email: user.email,

@@ -38,10 +38,13 @@ export function useProfessionalAuth(): UseProfessionalAuthReturn {
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   const [professionalProfile, setProfessionalProfile] = useState<ProfessionalProfile | null>(null);
 
-  // Start as false so unauthenticated visitors see the landing page immediately
-  // without a full-screen spinner. Loading is set to true only when we detect
-  // an authenticated user and need to perform Firestore lookups.
-  const [loading, setLoading] = useState(false);
+  // Start as true when Firebase already has a persisted session (auth.currentUser
+  // is synchronously available) so the app goes straight to the spinner rather
+  // than briefly flashing the LandingPage or OnboardingWizard before the
+  // onAuthStateChanged callback resolves the professional role.
+  // Start as false for unauthenticated visitors so they see the landing page
+  // immediately without a full-screen spinner.
+  const [loading, setLoading] = useState(() => auth.currentUser !== null);
 
   // Helper: read a Firestore document without throwing on permission errors.
   // A denied read is treated as "document does not exist" rather than a
