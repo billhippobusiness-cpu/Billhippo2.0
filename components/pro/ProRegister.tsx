@@ -163,8 +163,15 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         roles: ['professional'],
       });
 
-      // 3b. Write referralIndex/{professionalId} for fast referral code lookups
-      await setDoc(doc(db, 'referralIndex', professionalId), { uid, professionalId });
+      // 3b. Write referralIndex/{professionalId} for fast referral code lookups.
+      // Non-blocking — if Firestore rules not yet deployed this gracefully fails
+      // without aborting registration.
+      try {
+        await setDoc(doc(db, 'referralIndex', professionalId), { uid, professionalId });
+      } catch {
+        // Best-effort: referral lookups simply won't find this professional until
+        // the referralIndex rule is deployed.
+      }
 
       // 4. Handle referral code if provided
       if (form.referralCode.trim()) {
@@ -296,8 +303,12 @@ const ProRegister: React.FC<ProRegisterProps> = ({ onGoToSignIn }) => {
         roles: ['professional'],
       });
 
-      // Write referralIndex for fast lookups
-      await setDoc(doc(db, 'referralIndex', professionalId), { uid, professionalId });
+      // Write referralIndex for fast lookups (non-blocking)
+      try {
+        await setDoc(doc(db, 'referralIndex', professionalId), { uid, professionalId });
+      } catch {
+        // Best-effort
+      }
 
       // Handle referral code if provided
       if (form.referralCode.trim()) {
