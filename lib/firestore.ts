@@ -400,10 +400,12 @@ export function subscribePendingInvitesByEmail(
   callback: (invites: ProfessionalInvite[]) => void,
 ): () => void {
   const normalizedEmail = email.toLowerCase();
+  // Query by email only — a single-field equality query uses the automatic
+  // single-field index Firestore creates for every field, so no composite
+  // index deployment is needed.  Status and expiry are filtered client-side.
   const q = query(
     collection(db, 'invites'),
     where('professionalEmail', '==', normalizedEmail),
-    where('status', '==', 'pending'),
   );
   return onSnapshot(
     q,
@@ -411,8 +413,8 @@ export function subscribePendingInvitesByEmail(
       const now = new Date();
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
-        // Filter out expired invites client-side so UI stays clean
-        .filter((inv) => new Date(inv.expiresAt) > now)
+        // Filter pending + non-expired invites client-side so UI stays clean
+        .filter((inv) => inv.status === 'pending' && new Date(inv.expiresAt) > now)
         .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
       callback(list);
     },
@@ -488,14 +490,15 @@ export async function declinePendingInvite(
 export async function getPendingInvitesByEmail(
   email: string,
 ): Promise<ProfessionalInvite[]> {
+  // Single-field equality query — no composite index required.
+  // Status and expiry are filtered client-side.
   const q = query(
     collection(db, 'invites'),
     where('professionalEmail', '==', email.toLowerCase()),
-    where('status', '==', 'pending'),
   );
   const snap = await getDocs(q);
   const now = new Date();
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
-    .filter((inv) => new Date(inv.expiresAt) > now);
+    .filter((inv) => inv.status === 'pending' && new Date(inv.expiresAt) > now);
 }
