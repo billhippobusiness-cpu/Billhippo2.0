@@ -58,6 +58,19 @@ const App: React.FC = () => {
     if (user) setAuthError(null);
   }, [user]);
 
+  // Hash cleanup — runs AFTER render (not during) to avoid side effects in the
+  // render function that can cause React to schedule extra re-renders.
+  // • Professionals landing on a non-pro hash → clear it.
+  // • Pure business users landing on a /pro/* hash → clear it.
+  useEffect(() => {
+    if (role === 'professional' && hash && !hash.startsWith('#/pro/') && hash !== '') {
+      window.location.hash = '';
+    }
+    if (role === 'business' && hash.startsWith('#/pro/')) {
+      window.location.hash = '';
+    }
+  }, [role, hash]);
+
   // ── Auth handlers ────────────────────────────────────────────────────────
 
   const handleLogin = async (email: string, password: string) => {
@@ -202,11 +215,6 @@ const App: React.FC = () => {
   const isOnBizHash = hash.startsWith('#/biz/');
 
   if (role === 'professional' || (role === 'both' && !isOnBizHash)) {
-    // Pure professionals who somehow land on a non-pro hash: clear it.
-    // (role='both' users can have any hash; no cleanup needed for them.)
-    if (role === 'professional' && hash && !hash.startsWith('#/pro/') && hash !== '') {
-      window.location.hash = '';
-    }
     return (
       <ProDashboard
         user={user}
@@ -220,11 +228,7 @@ const App: React.FC = () => {
 
   // Business portal: role==='business' (always), or role==='both' explicitly on
   // a #/biz/* hash (user clicked "Switch to Business" in the pro sidebar).
-
-  // Guard: pure business users should never be on a /pro/* hash.
-  if (role === 'business' && hash.startsWith('#/pro/')) {
-    window.location.hash = '';
-  }
+  // (Hash cleanup for /pro/* on a business user is handled by the useEffect above.)
 
   // New business user with no profile → onboarding
   if (!businessProfile || !businessProfile.name) {
