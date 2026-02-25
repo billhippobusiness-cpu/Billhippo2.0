@@ -7,7 +7,7 @@
  * Password change: re-authenticates with current password via
  * EmailAuthProvider, then calls Firebase Auth updatePassword.
  *
- * All profile field updates are persisted to professionals/{uid}.
+ * All profile field updates are persisted to users/{uid}/professional/main.
  */
 import React, { useState } from 'react';
 import {
