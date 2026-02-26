@@ -309,7 +309,7 @@ export async function createProfessionalInvite(
 ): Promise<string> {
   const token = crypto.randomUUID();
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const inviteDoc = {
     businessUserUid: businessUserId,
@@ -410,11 +410,9 @@ export function subscribePendingInvitesByEmail(
   return onSnapshot(
     q,
     (snap) => {
-      const now = new Date();
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
-        // Filter pending + non-expired invites client-side so UI stays clean
-        .filter((inv) => inv.status === 'pending' && new Date(inv.expiresAt) > now)
+        .filter((inv) => inv.status === 'pending')
         .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
       callback(list);
     },
@@ -497,8 +495,7 @@ export async function getPendingInvitesByEmail(
     where('professionalEmail', '==', email.toLowerCase()),
   );
   const snap = await getDocs(q);
-  const now = new Date();
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
-    .filter((inv) => inv.status === 'pending' && new Date(inv.expiresAt) > now);
+    .filter((inv) => inv.status === 'pending');
 }
