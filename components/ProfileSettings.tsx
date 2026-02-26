@@ -266,6 +266,41 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
               <Input label="Contact Number" value={profile.phone} onChange={v => setProfile({...profile, phone: v})} placeholder="+91 98765 43210" />
               <Input label="Business Tagline" value={profile.tagline || ''} onChange={v => setProfile({...profile, tagline: v})} placeholder="Your tagline" />
             </div>
+            {/* ── Annual Turnover (GSTR-1 HSN digit compliance) ── */}
+            <div className="pt-2 border-t border-slate-50">
+              <p className="text-sm font-bold text-slate-700 font-poppins mb-1">Annual Turnover <span className="text-[10px] font-bold bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded-full ml-2">GSTR-1 / HSN</span></p>
+              <p className="text-xs text-slate-400 font-poppins mb-4">
+                Determines minimum HSN code digits required: 4 digits (&lt;₹5 Cr) or 6 digits (≥₹5 Cr).
+              </p>
+              <div className="flex gap-6">
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="radio"
+                    name="annualTurnover"
+                    value="below5cr"
+                    checked={profile.annualTurnover !== 'above5cr'}
+                    onChange={() => setProfile(p => ({ ...p, annualTurnover: 'below5cr' }))}
+                    className="accent-indigo-600 w-4 h-4"
+                  />
+                  <span className="text-sm font-bold text-slate-700 font-poppins group-hover:text-slate-900">
+                    Below ₹5 Crore <span className="text-xs font-normal text-slate-400">(4-digit HSN minimum)</span>
+                  </span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input
+                    type="radio"
+                    name="annualTurnover"
+                    value="above5cr"
+                    checked={profile.annualTurnover === 'above5cr'}
+                    onChange={() => setProfile(p => ({ ...p, annualTurnover: 'above5cr' }))}
+                    className="accent-indigo-600 w-4 h-4"
+                  />
+                  <span className="text-sm font-bold text-slate-700 font-poppins group-hover:text-slate-900">
+                    ₹5 Crore &amp; above <span className="text-xs font-normal text-slate-400">(6-digit HSN required)</span>
+                  </span>
+                </label>
+              </div>
+            </div>
           </div>
 
           {/* ── Business Branding: Logo & Signature ── */}
