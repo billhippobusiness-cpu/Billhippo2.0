@@ -48,15 +48,24 @@ service cloud.firestore {
     // AssignedProfessionals sub-collection:
     //   – Business owner manages via the wildcard rule above.
     //   – Professional can read their own entry (email match in doc).
-    //   – Professional can update status/linkedAt/professionalId when
-    //     accepting or declining the invite.
+    //   – Professional can update status/linkedAt/professionalId/professionalUid
+    //     when accepting or declining the assignment.
     match /users/{businessUid}/assignedProfessionals/{docId} {
       allow read: if request.auth != null
         && resource.data.email == request.auth.token.email.lower();
       allow update: if request.auth != null
         && resource.data.email == request.auth.token.email.lower()
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'linkedAt', 'professionalId']);
+             .hasOnly(['status', 'linkedAt', 'professionalId', 'professionalUid']);
+    }
+
+    // Collection-group read for `assignedProfessionals`:
+    // Required so that a professional can query across ALL business accounts
+    // using collectionGroup('assignedProfessionals') filtered by their email.
+    // The condition mirrors the single-document read rule above.
+    match /{path=**}/assignedProfessionals/{docId} {
+      allow read: if request.auth != null
+        && resource.data.email == request.auth.token.email.lower();
     }
 
     // ── Professional portal ────────────────────────────────────────────────────

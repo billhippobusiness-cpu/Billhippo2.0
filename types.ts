@@ -39,6 +39,32 @@ export interface AssignedProfessional {
   invitedAt: string;
   linkedAt?: string;
   professionalId?: string;      // Set once they register/accept
+  professionalUid?: string;     // Set once they accept
+  // Stored at invite time so the collection-group query has everything it needs
+  businessName?: string;
+  businessUserEmail?: string;
+}
+
+/**
+ * Shape returned by `subscribePendingInvitesByEmail` / `getPendingInvitesByEmail`.
+ * Sourced from the `assignedProfessionals` collection group — purely email-based,
+ * no invite-token ID matching required.
+ */
+export interface PendingAssignment {
+  id: string;               // Firestore doc ID (= invite token)
+  businessUserUid: string;  // Extracted from doc path (parent.parent.id)
+  businessName: string;     // Stored on the doc at invite time
+  businessUserEmail: string;
+  email: string;            // Professional's email (= the query key)
+  firstName: string;
+  lastName: string;
+  designation: ProfessionalDesignation;
+  accessLevel: string;
+  status: 'pending' | 'active' | 'revoked';
+  invitedAt: string;
+  linkedAt?: string;
+  professionalId?: string;
+  professionalUid?: string;
 }
 
 export interface ProfessionalInvite {

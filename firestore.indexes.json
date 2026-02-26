@@ -7,6 +7,14 @@
         { "fieldPath": "professionalEmail", "order": "ASCENDING" },
         { "fieldPath": "status",            "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "assignedProfessionals",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "email",  "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

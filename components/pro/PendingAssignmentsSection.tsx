@@ -27,7 +27,7 @@ import {
   acceptPendingInvite,
   declinePendingInvite,
 } from '../../lib/firestore';
-import type { ProfessionalInvite, ProfessionalProfile } from '../../types';
+import type { PendingAssignment, ProfessionalProfile } from '../../types';
 
 type CardAction = 'idle' | 'accepting' | 'declining' | 'accepted' | 'declined' | 'error';
 
@@ -41,8 +41,8 @@ interface Props {
 }
 
 const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
-  // Current pending invites from Firestore (status==='pending', not expired)
-  const [invites, setInvites] = useState<ProfessionalInvite[]>([]);
+  // Current pending assignments from Firestore (email-matched, status==='pending')
+  const [invites, setInvites] = useState<PendingAssignment[]>([]);
 
   // Per-card UI state: action in progress / result / error
   const [states, setStates] = useState<Record<string, CardState>>({});
@@ -50,9 +50,9 @@ const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
   // Invites removed from the visible list after the success timeout
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
-  // Snapshot of every invite we've ever received — so we can still render
+  // Snapshot of every assignment we've ever received — so we can still render
   // the success/decline card after Firestore removes it from the subscription.
-  const seenRef = useRef<Record<string, ProfessionalInvite>>({});
+  const seenRef = useRef<Record<string, PendingAssignment>>({});
 
   useEffect(() => {
     if (!profile?.email) return;
@@ -78,14 +78,14 @@ const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
   const visible = [...allIds]
     .filter((id) => !dismissed.has(id))
     .map((id) => seenRef.current[id])
-    .filter((inv): inv is ProfessionalInvite => Boolean(inv));
+    .filter((inv): inv is PendingAssignment => Boolean(inv));
 
   if (visible.length === 0) return null;
 
   const getAction = (id: string): CardAction => states[id]?.action ?? 'idle';
   const getError  = (id: string): string | undefined => states[id]?.error;
 
-  const handleAccept = async (invite: ProfessionalInvite) => {
+  const handleAccept = async (invite: PendingAssignment) => {
     setStates((prev) => ({ ...prev, [invite.id]: { action: 'accepting' } }));
     try {
       await acceptPendingInvite(invite, profile.uid, profile.professionalId);
@@ -103,7 +103,7 @@ const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
     }
   };
 
-  const handleDecline = async (invite: ProfessionalInvite) => {
+  const handleDecline = async (invite: PendingAssignment) => {
     setStates((prev) => ({ ...prev, [invite.id]: { action: 'declining' } }));
     try {
       await declinePendingInvite(invite);
@@ -185,12 +185,6 @@ const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
           }
 
           /* ── Active card ── */
-          const expiryDate = new Date(invite.expiresAt).toLocaleDateString('en-IN', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-          });
-
           return (
             <div
               key={invite.id}
@@ -206,7 +200,7 @@ const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
                     {invite.businessName}
                   </p>
                   <p className="text-xs text-slate-500 font-poppins mt-0.5">
-                    Assigned to: {invite.professionalFirstName} {invite.professionalLastName}
+                    Assigned to: {invite.firstName} {invite.lastName}
                   </p>
                   <div className="flex flex-wrap gap-2 mt-2">
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold font-poppins uppercase tracking-wide px-2 py-0.5 bg-amber-50 border border-amber-100 text-amber-700 rounded-full">
@@ -216,9 +210,6 @@ const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
                     <span className="inline-flex items-center gap-1 text-[10px] font-bold font-poppins uppercase tracking-wide px-2 py-0.5 bg-amber-50 border border-amber-100 text-amber-700 rounded-full">
                       <ShieldCheck size={9} />
                       {invite.accessLevel}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-poppins self-center">
-                      Expires {expiryDate}
                     </span>
                   </div>
                 </div>

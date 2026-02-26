@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, Building2, Briefcase, ShieldCheck, ArrowRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { subscribePendingInvitesByEmail } from '../lib/firestore';
-import type { ProfessionalInvite } from '../types';
+import type { PendingAssignment } from '../types';
 
 interface BusinessInviteNoticeProps {
   userEmail: string;
@@ -14,7 +14,7 @@ interface BusinessInviteNoticeProps {
  * professional so they can accept the assignment and access the Pro Portal.
  */
 const BusinessInviteNotice: React.FC<BusinessInviteNoticeProps> = ({ userEmail }) => {
-  const [invites, setInvites] = useState<ProfessionalInvite[]>([]);
+  const [invites, setInvites] = useState<PendingAssignment[]>([]);
   const [expanded, setExpanded] = useState(true);
 
   useEffect(() => {
@@ -86,7 +86,7 @@ const BusinessInviteNotice: React.FC<BusinessInviteNoticeProps> = ({ userEmail }
                       {invite.businessName}
                     </p>
                     <p className="text-[10px] text-slate-400 font-poppins mt-0.5">
-                      Invited: {invite.professionalFirstName} {invite.professionalLastName}
+                      Invited: {invite.firstName} {invite.lastName}
                     </p>
                   </div>
                 </div>
@@ -102,7 +102,7 @@ const BusinessInviteNotice: React.FC<BusinessInviteNoticeProps> = ({ userEmail }
                     {invite.accessLevel}
                   </span>
                   <span className="text-[10px] text-slate-400 font-poppins self-center ml-auto">
-                    Expires {new Date(invite.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    Invited {new Date(invite.invitedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </span>
                 </div>
               </div>
