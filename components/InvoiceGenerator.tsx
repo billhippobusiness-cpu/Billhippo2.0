@@ -292,6 +292,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
       const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
+      // Omit optional fields when empty — Firestore rejects undefined values
       const invoicePayload = {
         invoiceNumber, date: invoiceDate, customerId: selectedCustomerId,
         customerName: selectedCustomer?.name || '', items, gstType,
@@ -299,10 +300,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         status: (editingInvoice?.status || 'Unpaid') as 'Paid' | 'Unpaid' | 'Partial',
         supplyType: effectiveSupplyType,
         reverseCharge,
-        portCode: portCode || undefined,
-        shippingBillNo: shippingBillNo || undefined,
-        shippingBillDate: shippingBillDate || undefined,
-        exportCountry: exportCountry || undefined,
+        ...(portCode         ? { portCode }         : {}),
+        ...(shippingBillNo   ? { shippingBillNo }   : {}),
+        ...(shippingBillDate ? { shippingBillDate } : {}),
+        ...(exportCountry    ? { exportCountry }    : {}),
       };
 
       if (editingInvoice) {
