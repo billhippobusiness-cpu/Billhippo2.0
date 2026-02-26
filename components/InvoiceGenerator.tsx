@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX } from 'lucide-react';
-import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType } from '../types';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount } from '../lib/firestore';
+import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -42,10 +42,17 @@ const formatDate = (d: string) => {
 // INR formatter
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-interface InvoiceGeneratorProps { userId: string; }
+interface InvoiceGeneratorProps {
+  userId: string;
+  /** When set, pre-fills the invoice form with data from a quotation and enters editing mode. */
+  initialQuotation?: Quotation | null;
+  /** Called after initialQuotation has been consumed so App.tsx can clear it. */
+  onQuotationConsumed?: () => void;
+}
 
-const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
+const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuotation, onQuotationConsumed }) => {
   const [mode, setMode] = useState<'list' | 'editing' | 'preview'>('list');
+  const [sourceQuotationId, setSourceQuotationId] = useState<string | null>(null);
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
@@ -101,6 +108,27 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const [exportCountry, setExportCountry] = useState('');
 
   useEffect(() => { loadData(); }, [userId]);
+
+  // Pre-fill form from a quotation when "Convert to Invoice" is triggered
+  useEffect(() => {
+    if (!initialQuotation) return;
+    setEditingInvoice(null);
+    setSelectedCustomerId(initialQuotation.customerId);
+    setItems(initialQuotation.items);
+    setInvoiceDate(new Date().toISOString().split('T')[0]);
+    setSupplyTypeOverride('');
+    setReverseCharge(false);
+    setPortCode('');
+    setShippingBillNo('');
+    setShippingBillDate('');
+    setExportCountry('');
+    setError(null);
+    setSaveSuccess(false);
+    setMode('editing');
+    // Store quotation id so we can mark it Converted after save
+    setSourceQuotationId(initialQuotation.id);
+    onQuotationConsumed?.();
+  }, [initialQuotation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     try {
@@ -291,6 +319,14 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
         if (selectedCustomer) {
           await updateCustomer(userId, selectedCustomerId, { balance: (selectedCustomer.balance || 0) + grandTotal });
         }
+        // If this invoice was converted from a quotation, mark the quotation as Converted
+        if (sourceQuotationId) {
+          await updateQuotation(userId, sourceQuotationId, {
+            status: 'Converted',
+            convertedInvoiceId: invoiceId,
+          });
+          setSourceQuotationId(null);
+        }
       }
       setSaveSuccess(true); setMode('preview');
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -330,6 +366,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     setSupplyTypeOverride('');
     setReverseCharge(false);
     setPortCode(''); setShippingBillNo(''); setShippingBillDate(''); setExportCountry('');
+    setSourceQuotationId(null);
     setSaveSuccess(false); setError(null); setMode('editing'); loadData();
   };
 
