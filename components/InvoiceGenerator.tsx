@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX } from 'lucide-react';
-import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem } from '../types';
+import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType } from '../types';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
@@ -92,6 +92,14 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     { id: '1', description: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }
   ]);
 
+  // GSTR-1 classification fields
+  const [supplyTypeOverride, setSupplyTypeOverride] = useState<SupplyType | ''>('');
+  const [reverseCharge, setReverseCharge] = useState(false);
+  const [portCode, setPortCode] = useState('');
+  const [shippingBillNo, setShippingBillNo] = useState('');
+  const [shippingBillDate, setShippingBillDate] = useState('');
+  const [exportCountry, setExportCountry] = useState('');
+
   useEffect(() => { loadData(); }, [userId]);
 
   const loadData = async () => {
@@ -123,6 +131,27 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
   const taxAmount = items.reduce((sum, item) => sum + (item.quantity * item.rate * item.gstRate / 100), 0);
   const grandTotal = subTotal + taxAmount;
 
+  // Auto-detect supply type based on customer GSTIN + state + invoice value
+  const autoSupplyType = useMemo((): SupplyType => {
+    if (!selectedCustomer) return 'B2CS';
+    if (selectedCustomer.gstin) return 'B2B';
+    const isInterState = selectedCustomer.state !== profile.state;
+    if (isInterState && grandTotal > 250000) return 'B2CL';
+    return 'B2CS';
+  }, [selectedCustomer, profile.state, grandTotal]);
+
+  const effectiveSupplyType: SupplyType = (supplyTypeOverride || autoSupplyType) as SupplyType;
+  const isExportSupply = effectiveSupplyType === 'EXPWP' || effectiveSupplyType === 'EXPWOP';
+  const isSEZSupply = effectiveSupplyType === 'SEZWP' || effectiveSupplyType === 'SEZWOP';
+
+  // HSN validation warning (non-blocking)
+  const hsnWarning = useMemo(() => {
+    const minDigits = profile.annualTurnover === 'above5cr' ? 6 : 4;
+    const shortHsn = items.filter(i => i.description && (i.hsnCode || '').trim().length < minDigits);
+    if (shortHsn.length === 0) return null;
+    return `${shortHsn.length} item(s) have HSN codes shorter than ${minDigits} digits (required for your turnover bracket).`;
+  }, [items, profile.annualTurnover]);
+
   const handleAddItem = () => {
     setItems([...items, { id: Math.random().toString(36).substr(2, 9), description: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }]);
   };
@@ -137,6 +166,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     setInvoiceNumber(inv.invoiceNumber);
     setInvoiceDate(inv.date);
     setItems(inv.items);
+    setSupplyTypeOverride((inv.supplyType || '') as SupplyType | '');
+    setReverseCharge(inv.reverseCharge || false);
+    setPortCode(inv.portCode || '');
+    setShippingBillNo(inv.shippingBillNo || '');
+    setShippingBillDate(inv.shippingBillDate || '');
+    setExportCountry(inv.exportCountry || '');
     setError(null);
     setSaveSuccess(false);
     setMode('editing');
@@ -234,6 +269,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
         customerName: selectedCustomer?.name || '', items, gstType,
         totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: grandTotal,
         status: (editingInvoice?.status || 'Unpaid') as 'Paid' | 'Unpaid' | 'Partial',
+        supplyType: effectiveSupplyType,
+        reverseCharge,
+        portCode: portCode || undefined,
+        shippingBillNo: shippingBillNo || undefined,
+        shippingBillDate: shippingBillDate || undefined,
+        exportCountry: exportCountry || undefined,
       };
 
       if (editingInvoice) {
@@ -286,6 +327,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
     setEditingInvoice(null);
     setSelectedCustomerId(''); setItems([{ id: '1', description: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }]);
     setInvoiceDate(new Date().toISOString().split('T')[0]);
+    setSupplyTypeOverride('');
+    setReverseCharge(false);
+    setPortCode(''); setShippingBillNo(''); setShippingBillDate(''); setExportCountry('');
     setSaveSuccess(false); setError(null); setMode('editing'); loadData();
   };
 
@@ -1073,11 +1117,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
                 <div className="px-5 py-2 rounded-xl bg-indigo-50 text-profee-blue text-[10px] font-black uppercase">Tax Logic: {gstType}</div>
               </div>
             </div>
+            {hsnWarning && (
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-700 font-medium">
+                <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠</span>
+                <span>{hsnWarning}</span>
+              </div>
+            )}
             <div className="space-y-4">
               {items.map((item) => (
-                <div key={item.id} className="grid grid-cols-12 gap-4 items-end animate-in fade-in duration-300">
-                  <div className="col-span-5 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label><input placeholder="Product or service" className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium" value={item.description} onChange={e => handleItemChange(item.id, 'description', e.target.value)} /></div>
-                  <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
+                <div key={item.id} className="grid grid-cols-12 gap-3 items-end animate-in fade-in duration-300">
+                  <div className="col-span-4 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label><input placeholder="Product or service" className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium" value={item.description} onChange={e => handleItemChange(item.id, 'description', e.target.value)} /></div>
+                  <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-3">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium font-mono" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
+                  <div className="col-span-1 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-2 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
                   <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center text-profee-blue" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
                   <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label><select className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-center appearance-none" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
                   <div className="col-span-1 pb-2 flex justify-center"><button onClick={() => handleRemoveItem(item.id)} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button></div>
@@ -1086,6 +1137,94 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId }) => {
             </div>
             <button onClick={handleAddItem} className="flex items-center gap-2 font-bold text-sm px-6 py-3 rounded-2xl bg-slate-50 text-profee-blue hover:bg-indigo-50 transition-all border border-dashed border-indigo-200"><Plus size={18} /> Add Line Item</button>
           </div>
+
+          {/* ── GST Classification (GSTR-1 compliance) ── */}
+          {selectedCustomerId && (
+            <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-6 font-poppins">
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-3">
+                <span className="text-profee-blue">⬡</span> GST Classification
+                <span className="text-[9px] font-bold bg-indigo-50 text-indigo-500 px-2 py-1 rounded-full">GSTR-1</span>
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Supply Type</label>
+                  <select
+                    className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-bold"
+                    value={supplyTypeOverride}
+                    onChange={e => setSupplyTypeOverride(e.target.value as SupplyType | '')}
+                  >
+                    <option value="">Auto ({autoSupplyType})</option>
+                    <option value="B2B">B2B — Registered Buyer</option>
+                    <option value="B2CS">B2CS — Unregistered (Small / Intra-state)</option>
+                    <option value="B2CL">B2CL — Unregistered (Large &gt;₹2.5L / Inter-state)</option>
+                    <option value="SEZWP">SEZ — With Payment of Tax</option>
+                    <option value="SEZWOP">SEZ — Without Payment of Tax</option>
+                    <option value="EXPWP">Export — With Payment of Tax</option>
+                    <option value="EXPWOP">Export — Without Payment of Tax</option>
+                    <option value="DE">Deemed Export</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Reverse Charge</label>
+                  <div className="flex items-center gap-4 bg-slate-50 rounded-2xl px-5 py-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="reverseCharge" checked={!reverseCharge} onChange={() => setReverseCharge(false)} className="accent-indigo-600" />
+                      <span className="text-sm font-bold text-slate-700">No (N)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="reverseCharge" checked={reverseCharge} onChange={() => setReverseCharge(true)} className="accent-indigo-600" />
+                      <span className="text-sm font-bold text-slate-700">Yes (Y)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              {(isExportSupply || isSEZSupply) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-50">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Port Code</label>
+                    <input
+                      placeholder="e.g. INMAA1 (6 chars)"
+                      maxLength={6}
+                      className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium font-mono"
+                      value={portCode}
+                      onChange={e => setPortCode(e.target.value.toUpperCase())}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Shipping Bill No.</label>
+                    <input
+                      placeholder="e.g. 1234567"
+                      className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
+                      value={shippingBillNo}
+                      onChange={e => setShippingBillNo(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Shipping Bill Date</label>
+                    <input
+                      type="date"
+                      className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
+                      value={shippingBillDate}
+                      onChange={e => setShippingBillDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Export Country</label>
+                    <input
+                      placeholder="e.g. USA, UAE, WLD (for all)"
+                      className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
+                      value={exportCountry}
+                      onChange={e => setExportCountry(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+              <p className="text-[10px] text-slate-400 font-medium">
+                Supply type: <span className="font-bold text-slate-600">{effectiveSupplyType}</span>
+                {!supplyTypeOverride && ' (auto-detected from customer GSTIN & state)'}
+              </p>
+            </div>
+          )}
         </div>
         <div className="lg:col-span-4 space-y-8 font-poppins">
            <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">

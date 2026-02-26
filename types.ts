@@ -114,6 +114,8 @@ export interface BusinessProfile {
   businessType?: 'service' | 'trading';
   theme: BusinessTheme;
   signatureUrl?: string;
+  // GSTR-1: determines minimum HSN digit requirement (4 for <5cr, 6 for ≥5cr)
+  annualTurnover?: 'below5cr' | 'above5cr';
 }
 
 export interface InventoryItem {
@@ -150,6 +152,8 @@ export interface InvoiceItem {
   gstRate: number;
 }
 
+export type SupplyType = 'B2B' | 'B2CS' | 'B2CL' | 'SEZWP' | 'SEZWOP' | 'EXPWP' | 'EXPWOP' | 'DE';
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -166,6 +170,14 @@ export interface Invoice {
   status: 'Paid' | 'Unpaid' | 'Partial';
   deleted?: boolean;
   deletedAt?: string;
+  // GSTR-1 classification fields
+  supplyType?: SupplyType;
+  reverseCharge?: boolean;
+  // Export / SEZ specific fields (populated when supplyType is EXPWP/EXPWOP/SEZWP/SEZWOP)
+  portCode?: string;
+  shippingBillNo?: string;
+  shippingBillDate?: string;
+  exportCountry?: string;
 }
 
 export interface LedgerEntry {
