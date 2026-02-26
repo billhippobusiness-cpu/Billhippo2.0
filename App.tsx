@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import type { Quotation } from './types';
@@ -139,6 +139,14 @@ const App: React.FC = () => {
     setView('auth');
   };
 
+  // ── Quotation → Invoice handoff ───────────────────────────────────────────
+  // Defined here (before any early returns) to satisfy React's Rules of Hooks:
+  // all functions that use state setters must be defined unconditionally.
+  const handleConvertToInvoice = (q: Quotation) => {
+    setPendingQuotation(q);
+    setActiveTab('invoices');
+  };
+
   // ── Hash-based route: /pro-register ─────────────────────────────────────
   // Rendered before auth checks so any visitor can reach the registration page.
 
@@ -247,11 +255,6 @@ const App: React.FC = () => {
   }
 
   // ── Main business app ────────────────────────────────────────────────────
-
-  const handleConvertToInvoice = useCallback((q: Quotation) => {
-    setPendingQuotation(q);
-    setActiveTab('invoices');
-  }, []);
 
   const renderContent = () => {
     const userId = user.uid;
