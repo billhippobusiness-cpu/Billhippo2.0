@@ -16,7 +16,7 @@ import {
   acceptPendingInvite,
   declinePendingInvite,
 } from '../../lib/firestore';
-import type { ProfessionalInvite, ProfessionalProfile } from '../../types';
+import type { PendingAssignment, ProfessionalProfile } from '../../types';
 
 interface PendingInvitesBannerProps {
   profile: ProfessionalProfile;
@@ -25,7 +25,7 @@ interface PendingInvitesBannerProps {
 type ActionState = 'idle' | 'accepting' | 'declining';
 
 const InviteCard: React.FC<{
-  invite: ProfessionalInvite;
+  invite: PendingAssignment;
   profile: ProfessionalProfile;
   onDismiss: () => void;
 }> = ({ invite, profile, onDismiss }) => {
@@ -59,7 +59,7 @@ const InviteCard: React.FC<{
     }
   };
 
-  const expiryDate = new Date(invite.expiresAt).toLocaleDateString('en-IN', {
+  const invitedDate = new Date(invite.invitedAt).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -118,7 +118,7 @@ const InviteCard: React.FC<{
             {invite.businessName}
           </p>
           <p className="text-[10px] text-slate-500 font-poppins mt-0.5">
-            Assigned to: {invite.professionalFirstName} {invite.professionalLastName}
+            Assigned to: {invite.firstName} {invite.lastName}
           </p>
         </div>
       </div>
@@ -134,7 +134,7 @@ const InviteCard: React.FC<{
           {invite.accessLevel}
         </span>
         <span className="text-[10px] text-slate-400 font-poppins self-center ml-auto">
-          Expires {expiryDate}
+          Invited {invitedDate}
         </span>
       </div>
 
@@ -177,7 +177,7 @@ const InviteCard: React.FC<{
 // ── Main banner ───────────────────────────────────────────────────────────────
 
 const PendingInvitesBanner: React.FC<PendingInvitesBannerProps> = ({ profile }) => {
-  const [invites, setInvites] = useState<ProfessionalInvite[]>([]);
+  const [invites, setInvites] = useState<PendingAssignment[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(true);
 

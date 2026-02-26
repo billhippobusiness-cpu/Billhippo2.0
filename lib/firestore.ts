@@ -12,6 +12,7 @@
 
 import {
   collection,
+  collectionGroup,
   doc,
   addDoc,
   getDoc,
@@ -40,6 +41,7 @@ import type {
   AssignedProfessional,
   ProfessionalDesignation,
   ProfessionalInvite,
+  PendingAssignment,
 } from '../types';
 
 // ── Helper: get user-scoped collection reference ──
@@ -330,11 +332,15 @@ export async function createProfessionalInvite(
     id: token,
     firstName: data.firstName,
     lastName: data.lastName,
-    email: data.email,
+    email: data.email.toLowerCase(),   // normalised — this is the query key
     designation: data.designation,
     accessLevel: data.accessLevel,
     status: 'pending',
     invitedAt: now,
+    // Stored here so the collection-group query has all display info without
+    // needing a secondary read on the business profile or the invites doc.
+    businessName: data.businessName,
+    businessUserEmail: data.businessUserEmail,
   };
 
   await Promise.all([
@@ -357,16 +363,17 @@ export async function revokeProfessionalAccess(
   professionalId: string | undefined,
 ): Promise<void> {
   const updates: Promise<unknown>[] = [
-    updateDoc(doc(db, 'invites', token), { status: 'revoked' }),
     updateDoc(doc(db, 'users', businessUserId, 'assignedProfessionals', token), { status: 'revoked' }),
   ];
 
   // Remove business uid from the professional's linkedClients array (best-effort).
-  // Read the invite to get the professional's UID, then update their profile.
+  // Read professionalUid from assignedProfessionals (set there on accept).
   try {
-    const inviteSnap = await getDoc(doc(db, 'invites', token));
-    const proUid = inviteSnap.exists()
-      ? (inviteSnap.data().professionalUid as string | undefined)
+    const assignedSnap = await getDoc(
+      doc(db, 'users', businessUserId, 'assignedProfessionals', token),
+    );
+    const proUid = assignedSnap.exists()
+      ? (assignedSnap.data().professionalUid as string | undefined)
       : undefined;
     if (proUid) {
       updates.push(
@@ -376,7 +383,7 @@ export async function revokeProfessionalAccess(
       );
     }
   } catch {
-    // Non-blocking: invite/assignedProfessionals updates still proceed
+    // Non-blocking: assignedProfessionals update still proceeds
   }
 
   await Promise.all(updates);
@@ -387,115 +394,107 @@ export async function revokeProfessionalAccess(
 // ═══════════════════════════════════════════
 
 /**
- * Real-time subscription to pending invites for a professional by email.
- * Queries the top-level `invites` collection for documents where
- * professionalEmail matches and status is 'pending'.
+ * Real-time subscription to pending assignments for a professional by email.
  *
- * This is the key checkpoint: when a professional signs up or logs in,
- * their email is used to surface any pending assignments made by business
- * users before the professional had a UID.
+ * Email-centric: queries the `assignedProfessionals` collection GROUP across
+ * all business accounts where `email == professional's email`.  The business
+ * UID is extracted from each document's path rather than stored as a field,
+ * so no invite-token ID matching is required.
+ *
+ * Security rules allow this because the rule on
+ *   /users/{businessUid}/assignedProfessionals/{docId}
+ * grants reads where resource.data.email == auth token email, and a
+ * /{path=**}/assignedProfessionals/{docId} wildcard rule extends that to
+ * collection-group queries.
  */
 export function subscribePendingInvitesByEmail(
   email: string,
-  callback: (invites: ProfessionalInvite[]) => void,
+  callback: (assignments: PendingAssignment[]) => void,
 ): () => void {
   const normalizedEmail = email.toLowerCase();
-  // Query by email only — a single-field equality query uses the automatic
-  // single-field index Firestore creates for every field, so no composite
-  // index deployment is needed.  Status and expiry are filtered client-side.
   const q = query(
-    collection(db, 'invites'),
-    where('professionalEmail', '==', normalizedEmail),
+    collectionGroup(db, 'assignedProfessionals'),
+    where('email', '==', normalizedEmail),
   );
   return onSnapshot(
     q,
     (snap) => {
       const list = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
-        .filter((inv) => inv.status === 'pending')
-        .sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1));
+        .map((d) => ({
+          id: d.id,
+          businessUserUid: d.ref.parent.parent!.id,
+          ...(d.data() as Omit<PendingAssignment, 'id' | 'businessUserUid'>),
+        } as PendingAssignment))
+        .filter((a) => a.status === 'pending')
+        .sort((a, b) => (a.invitedAt > b.invitedAt ? -1 : 1));
       callback(list);
     },
     (error) => {
       console.error(
-        '[subscribePendingInvitesByEmail] Firestore query failed for',
+        '[subscribePendingInvitesByEmail] collection-group query failed for',
         normalizedEmail,
         '—',
         error.code,
         error.message,
       );
-      // Call back with empty list so the UI doesn't hang in a loading state.
       callback([]);
     },
   );
 }
 
 /**
- * Accept a pending invite from within the professional dashboard.
- * Mirrors the logic in InviteAccept.tsx but called with professional
- * context already resolved (uid + professionalId).
+ * Accept a pending assignment from within the professional dashboard.
+ * Email-centric: writes only to `assignedProfessionals` (the source of truth)
+ * and the professional's own `professional/main` doc.  No invite-token lookup.
  */
 export async function acceptPendingInvite(
-  invite: ProfessionalInvite,
+  assignment: PendingAssignment,
   professionalUid: string,
   professionalId: string,
 ): Promise<void> {
   const now = new Date().toISOString();
   await Promise.all([
-    updateDoc(doc(db, 'invites', invite.token), {
-      status: 'accepted',
-      acceptedAt: now,
-      professionalUid,
-      professionalId,
-    }),
     updateDoc(
-      doc(db, 'users', invite.businessUserUid, 'assignedProfessionals', invite.token),
-      {
-        status: 'active',
-        linkedAt: now,
-        professionalId,
-      },
+      doc(db, 'users', assignment.businessUserUid, 'assignedProfessionals', assignment.id),
+      { status: 'active', linkedAt: now, professionalId, professionalUid },
     ),
     updateDoc(doc(db, 'users', professionalUid, 'professional', 'main'), {
-      linkedClients: arrayUnion(invite.businessUserUid),
+      linkedClients: arrayUnion(assignment.businessUserUid),
     }),
   ]);
 }
 
 /**
- * Decline a pending invite from within the professional dashboard.
+ * Decline a pending assignment from within the professional dashboard.
+ * Email-centric: writes only to `assignedProfessionals`.
  */
 export async function declinePendingInvite(
-  invite: ProfessionalInvite,
+  assignment: PendingAssignment,
 ): Promise<void> {
-  const now = new Date().toISOString();
-  await Promise.all([
-    updateDoc(doc(db, 'invites', invite.token), {
-      status: 'declined',
-      declinedAt: now,
-    }),
-    updateDoc(
-      doc(db, 'users', invite.businessUserUid, 'assignedProfessionals', invite.token),
-      { status: 'revoked' },
-    ),
-  ]);
+  await updateDoc(
+    doc(db, 'users', assignment.businessUserUid, 'assignedProfessionals', assignment.id),
+    { status: 'revoked' },
+  );
 }
 
 /**
- * One-shot query: fetch all pending invites for a professional email.
+ * One-shot query: fetch all pending assignments for a professional email.
  * Used during sign-up to check for pre-existing assignments.
+ * Email-centric: queries the `assignedProfessionals` collection group.
  */
 export async function getPendingInvitesByEmail(
   email: string,
-): Promise<ProfessionalInvite[]> {
-  // Single-field equality query — no composite index required.
-  // Status and expiry are filtered client-side.
+): Promise<PendingAssignment[]> {
   const q = query(
-    collection(db, 'invites'),
-    where('professionalEmail', '==', email.toLowerCase()),
+    collectionGroup(db, 'assignedProfessionals'),
+    where('email', '==', email.toLowerCase()),
   );
   const snap = await getDocs(q);
   return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() } as ProfessionalInvite))
-    .filter((inv) => inv.status === 'pending');
+    .map((d) => ({
+      id: d.id,
+      businessUserUid: d.ref.parent.parent!.id,
+      ...(d.data() as Omit<PendingAssignment, 'id' | 'businessUserUid'>),
+    } as PendingAssignment))
+    .filter((a) => a.status === 'pending');
 }

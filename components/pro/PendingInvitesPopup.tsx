@@ -24,12 +24,12 @@ import {
   acceptPendingInvite,
   declinePendingInvite,
 } from '../../lib/firestore';
-import type { ProfessionalInvite, ProfessionalProfile } from '../../types';
+import type { PendingAssignment, ProfessionalProfile } from '../../types';
 
 // ── Invite Card ───────────────────────────────────────────────────────────────
 
 const InviteCard: React.FC<{
-  invite: ProfessionalInvite;
+  invite: PendingAssignment;
   profile: ProfessionalProfile;
   onDismiss: () => void;
 }> = ({ invite, profile, onDismiss }) => {
@@ -63,7 +63,7 @@ const InviteCard: React.FC<{
     }
   };
 
-  const expiryDate = new Date(invite.expiresAt).toLocaleDateString('en-IN', {
+  const invitedDate = new Date(invite.invitedAt).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -115,7 +115,7 @@ const InviteCard: React.FC<{
             {invite.businessName}
           </p>
           <p className="text-[9px] text-slate-500 font-poppins mt-0.5">
-            Assigned to: {invite.professionalFirstName} {invite.professionalLastName}
+            Assigned to: {invite.firstName} {invite.lastName}
           </p>
         </div>
       </div>
@@ -131,7 +131,7 @@ const InviteCard: React.FC<{
           {invite.accessLevel}
         </span>
         <span className="text-[9px] text-slate-400 font-poppins self-center ml-auto">
-          Expires {expiryDate}
+          Invited {invitedDate}
         </span>
       </div>
 
@@ -176,7 +176,7 @@ interface PendingInvitesPopupProps {
 }
 
 const PendingInvitesPopup: React.FC<PendingInvitesPopupProps> = ({ profile }) => {
-  const [invites, setInvites] = useState<ProfessionalInvite[]>([]);
+  const [invites, setInvites] = useState<PendingAssignment[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
   const [autoOpened, setAutoOpened] = useState(false);
