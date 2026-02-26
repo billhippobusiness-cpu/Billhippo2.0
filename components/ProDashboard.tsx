@@ -11,6 +11,7 @@ import type { User } from 'firebase/auth';
 import type { ProfessionalProfile, BusinessProfile, UserRole } from '../types';
 import ProLayout, { type ProView } from './pro/ProLayout';
 import ProDashboardHome from './pro/ProDashboard';
+import ProClients from './pro/ProClients';
 import ProReports from './pro/ProReports';
 import FilingTracker from './pro/FilingTracker';
 import BulkDownloads from './pro/BulkDownloads';
@@ -93,7 +94,12 @@ const ProDashboard: React.FC<ProDashboardProps> = ({
           />
         );
       case 'clients':
-        return <ComingSoon title="My Clients" />;
+        return (
+          <ProClients
+            profile={profile}
+            onOpenClient={handleOpenClient}
+          />
+        );
       case 'reports':
         return (
           <ProReports
