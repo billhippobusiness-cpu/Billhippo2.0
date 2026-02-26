@@ -249,10 +249,10 @@ const PendingInvitesPopup: React.FC<PendingInvitesPopupProps> = ({ profile }) =>
                 {visible.map((invite) => (
                   <motion.div
                     key={invite.id}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.18 }}
                   >
                     <InviteCard
                       invite={invite}

@@ -238,11 +238,11 @@ const PendingInvitesBanner: React.FC<PendingInvitesBannerProps> = ({ profile }) 
         {expanded && (
           <motion.div
             key="cards"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            className="space-y-3 mt-4 overflow-hidden"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
+            className="space-y-3 mt-4"
           >
             {visible.map((invite) => (
               <InviteCard
