@@ -1,7 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { LayoutDashboard } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
+import type { Quotation } from './types';
 import LandingPage from './components/LandingPage';
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
@@ -14,6 +15,7 @@ import CustomerManager from './components/CustomerManager';
 import OnboardingWizard from './components/OnboardingWizard';
 import InventoryManager from './components/InventoryManager';
 import CreditDebitNotes from './components/CreditDebitNotes';
+import QuotationManager from './components/QuotationManager';
 import ProDashboard from './components/ProDashboard';
 import ProRegister from './components/pro/ProRegister';
 import InviteAccept from './components/pro/InviteAccept';
@@ -38,6 +40,8 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  // Quotation → Invoice handoff: stores quotation data to pre-fill the invoice form
+  const [pendingQuotation, setPendingQuotation] = useState<Quotation | null>(null);
 
   // Hash-based routing — tracks window.location.hash so we can render
   // /pro-register without a third-party router.
@@ -244,18 +248,35 @@ const App: React.FC = () => {
 
   // ── Main business app ────────────────────────────────────────────────────
 
+  const handleConvertToInvoice = useCallback((q: Quotation) => {
+    setPendingQuotation(q);
+    setActiveTab('invoices');
+  }, []);
+
   const renderContent = () => {
     const userId = user.uid;
     switch (activeTab) {
-      case 'dashboard':  return <Dashboard userId={userId} />;
-      case 'customers':  return <CustomerManager userId={userId} />;
-      case 'invoices':   return <InvoiceGenerator userId={userId} />;
-      case 'notes':      return <CreditDebitNotes userId={userId} />;
-      case 'gst':        return <GSTReports userId={userId} />;
-      case 'theme':      return <InvoiceTheme userId={userId} />;
-      case 'settings':   return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
-      case 'inventory':  return <InventoryManager userId={userId} />;
-      default:           return <Dashboard userId={userId} />;
+      case 'dashboard':   return <Dashboard userId={userId} />;
+      case 'customers':   return <CustomerManager userId={userId} />;
+      case 'invoices':    return (
+        <InvoiceGenerator
+          userId={userId}
+          initialQuotation={pendingQuotation}
+          onQuotationConsumed={() => setPendingQuotation(null)}
+        />
+      );
+      case 'notes':       return <CreditDebitNotes userId={userId} />;
+      case 'quotations':  return (
+        <QuotationManager
+          userId={userId}
+          onConvertToInvoice={handleConvertToInvoice}
+        />
+      );
+      case 'gst':         return <GSTReports userId={userId} />;
+      case 'theme':       return <InvoiceTheme userId={userId} />;
+      case 'settings':    return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
+      case 'inventory':   return <InventoryManager userId={userId} />;
+      default:            return <Dashboard userId={userId} />;
     }
   };
 

@@ -38,6 +38,7 @@ import type {
   InventoryItem,
   CreditNote,
   DebitNote,
+  Quotation,
   AssignedProfessional,
   ProfessionalDesignation,
   ProfessionalInvite,
@@ -267,6 +268,43 @@ export async function updateDebitNote(userId: string, noteId: string, data: Part
 
 export async function deleteDebitNote(userId: string, noteId: string) {
   await deleteDoc(userDoc(userId, 'debitNotes', noteId));
+}
+
+// ═══════════════════════════════════════════
+//  QUOTATIONS
+//  Stored at users/{userId}/quotations/{id}.
+//  NOT included in GST reports, ledger entries,
+//  or customer balance calculations.
+// ═══════════════════════════════════════════
+
+export async function getQuotations(userId: string): Promise<Quotation[]> {
+  const snap = await getDocs(userCollection(userId, 'quotations'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Quotation));
+  return docs.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function getTotalQuotationCount(userId: string): Promise<number> {
+  const snap = await getDocs(userCollection(userId, 'quotations'));
+  return snap.docs.length;
+}
+
+export async function addQuotation(userId: string, quotation: Omit<Quotation, 'id'>): Promise<string> {
+  const ref = await addDoc(userCollection(userId, 'quotations'), {
+    ...quotation,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateQuotation(userId: string, quotationId: string, data: Partial<Quotation>): Promise<void> {
+  await updateDoc(userDoc(userId, 'quotations', quotationId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteQuotation(userId: string, quotationId: string): Promise<void> {
+  await deleteDoc(userDoc(userId, 'quotations', quotationId));
 }
 
 // ═══════════════════════════════════════════

@@ -262,3 +262,28 @@ export interface DebitNote {
   igst: number;
   totalAmount: number;
 }
+
+// ── Quotations ─────────────────────────────────────────────────────────────
+// Quotations are pre-invoice proposals. They are NOT recorded in GST reports,
+// ledger entries, or customer balance calculations.
+
+export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Converted';
+
+export interface Quotation {
+  id: string;
+  quotationNumber: string;
+  date: string;
+  validUntil?: string;           // Expiry date shown to customer
+  customerId: string;
+  customerName: string;
+  items: InvoiceItem[];          // Reuses InvoiceItem (description, hsnCode, qty, rate, gstRate)
+  gstType: GSTType;
+  totalBeforeTax: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  totalAmount: number;
+  status: QuotationStatus;
+  notes?: string;                // Free-text note for the customer
+  convertedInvoiceId?: string;   // Set once converted to an invoice
+}

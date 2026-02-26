@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight, Briefcase } from 'lucide-react';
+import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight, Briefcase, ScrollText } from 'lucide-react';
 import { type User } from 'firebase/auth';
 import type { UserRole } from '../types';
 
@@ -25,15 +25,16 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
     { id: 'customers', icon: UserCircle, label: 'Customers' },
     { id: 'invoices', icon: IndianRupee, label: 'Invoice Maker' },
     { id: 'notes', icon: ArrowLeftRight, label: 'Credit / Debit Notes' },
+    { id: 'quotations', icon: ScrollText, label: 'Quotations' },
     { id: 'gst', icon: FileText, label: 'Tax Reports' },
     { id: 'theme', icon: Palette, label: 'Invoice Theme' },
     { id: 'settings', icon: Settings, label: 'Settings' },
   ];
   const menuItems = showInventory
     ? [
-        ...baseItems.slice(0, 5),
+        ...baseItems.slice(0, 6),
         { id: 'inventory', icon: Package, label: 'Inventory' },
-        ...baseItems.slice(5),
+        ...baseItems.slice(6),
       ]
     : baseItems;
 
