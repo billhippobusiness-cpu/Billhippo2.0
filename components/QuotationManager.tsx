@@ -3,11 +3,11 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Plus, Trash2, ChevronDown, Save, Eye, Edit3, CheckCircle, Loader2,
   ArrowLeft, Search, UserPlus, X, ScrollText, Download, Send, FileCheck,
-  MessageCircle, Printer, RefreshCw, Lock, ClipboardCheck, XCircle,
+  MessageCircle, Printer, Lock, ClipboardCheck, XCircle, Package,
 } from 'lucide-react';
-import { GSTType, type InvoiceItem, type Customer, type BusinessProfile, type Quotation, type QuotationStatus } from '../types';
+import { GSTType, type InvoiceItem, type InventoryItem, type Customer, type BusinessProfile, type Quotation, type QuotationStatus } from '../types';
 import {
-  getCustomers, getBusinessProfile, addCustomer,
+  getCustomers, getBusinessProfile, addCustomer, getInventoryItems,
   getQuotations, addQuotation, updateQuotation, deleteQuotation, getTotalQuotationCount,
 } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
@@ -172,6 +172,12 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
   const [qcForm, setQcForm] = useState({ name: '', phone: '', gstin: '', state: 'Maharashtra' });
   const [qcSaving, setQcSaving] = useState(false);
 
+  // Inventory picker (trading businesses only)
+  const [showInventoryPicker, setShowInventoryPicker] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+
   // ── Load data ──────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -296,10 +302,10 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
       const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
       const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
+      // Build payload without undefined fields — Firestore rejects undefined values
       const payload: Omit<Quotation, 'id'> = {
         quotationNumber,
         date: quotationDate,
-        validUntil: validUntil || undefined,
         customerId: selectedCustomerId,
         customerName: selectedCustomer?.name || '',
         items,
@@ -307,9 +313,10 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
         totalBeforeTax: subTotal,
         cgst, sgst, igst,
         totalAmount: grandTotal,
-        status: editingQuotation ? editingQuotation.status : (asDraft ? 'Draft' : 'Draft'),
-        notes: notes.trim() || undefined,
-        convertedInvoiceId: editingQuotation?.convertedInvoiceId,
+        status: editingQuotation ? editingQuotation.status : 'Draft',
+        ...(validUntil ? { validUntil } : {}),
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
+        ...(editingQuotation?.convertedInvoiceId ? { convertedInvoiceId: editingQuotation.convertedInvoiceId } : {}),
       };
 
       if (editingQuotation) {
@@ -372,6 +379,35 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     } finally {
       setQcSaving(false);
     }
+  };
+
+  // Inventory picker handlers
+  const openInventoryPicker = async () => {
+    if (!inventoryLoaded) {
+      const data = await getInventoryItems(userId);
+      setInventoryItems(data);
+      setInventoryLoaded(true);
+    }
+    setInventorySearch('');
+    setShowInventoryPicker(true);
+  };
+
+  const handlePickInventoryItem = (item: InventoryItem) => {
+    const firstEmpty = items.find(i => !i.description.trim());
+    const newLineItem: InvoiceItem = {
+      id: firstEmpty?.id || Math.random().toString(36).substr(2, 9),
+      description: item.name,
+      hsnCode: item.hsnCode,
+      quantity: 1,
+      rate: item.sellingPrice,
+      gstRate: item.gstRate,
+    };
+    if (firstEmpty) {
+      setItems(prev => prev.map(i => i.id === firstEmpty.id ? newLineItem : i));
+    } else {
+      setItems(prev => [...prev, newLineItem]);
+    }
+    setShowInventoryPicker(false);
   };
 
   const handlePreviewQuotation = (q: Quotation) => {
@@ -825,7 +861,18 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
 
               {/* Items table */}
               <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Line Items</label>
+                <div className="flex items-center justify-between ml-4 mr-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Line Items</label>
+                  {profile.businessType === 'trading' && (
+                    <button
+                      type="button"
+                      onClick={openInventoryPicker}
+                      className="flex items-center gap-2 text-xs font-bold text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-xl transition-all font-poppins"
+                    >
+                      <Package size={14} /> Pick from Inventory
+                    </button>
+                  )}
+                </div>
                 <div className="rounded-2xl overflow-hidden border border-slate-100">
                   <table className="w-full text-sm font-poppins">
                     <thead>
@@ -984,6 +1031,87 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
             onClose={() => setShowQuickCreate(false)}
             saving={qcSaving}
           />
+        )}
+
+        {/* Inventory picker modal */}
+        {showInventoryPicker && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-lg mx-0 sm:mx-4 overflow-hidden">
+              <div className="h-1 bg-gradient-to-r from-amber-400 to-orange-500" />
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Package size={18} className="text-amber-500" />
+                    <h3 className="font-bold text-lg font-poppins text-slate-800">Pick from Inventory</h3>
+                  </div>
+                  <button
+                    onClick={() => setShowInventoryPicker(false)}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-xl hover:bg-slate-100 transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Search */}
+                <div className="relative mb-3">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Search inventory…"
+                    value={inventorySearch}
+                    onChange={e => setInventorySearch(e.target.value)}
+                    className="w-full bg-slate-50 rounded-2xl pl-9 pr-4 py-3 text-sm font-medium border-none focus:ring-2 ring-amber-200 font-poppins"
+                  />
+                </div>
+
+                {/* Items list */}
+                <div className="max-h-72 overflow-y-auto space-y-1 -mx-1 px-1">
+                  {inventoryItems
+                    .filter(i =>
+                      !inventorySearch.trim() ||
+                      i.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                      (i.hsnCode || '').toLowerCase().includes(inventorySearch.toLowerCase())
+                    )
+                    .map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handlePickInventoryItem(item)}
+                        className="w-full text-left px-4 py-3 rounded-2xl hover:bg-amber-50 transition-colors group"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold text-slate-800 text-sm font-poppins group-hover:text-amber-700">{item.name}</p>
+                            <p className="text-xs text-slate-400 font-poppins mt-0.5">
+                              HSN: {item.hsnCode || '—'} &bull; GST: {item.gstRate}% &bull; Unit: {item.unit}
+                            </p>
+                          </div>
+                          <div className="text-right ml-3 flex-shrink-0">
+                            <p className="font-bold text-sm text-amber-600 font-poppins">
+                              ₹{item.sellingPrice.toLocaleString('en-IN')}
+                            </p>
+                            {item.stock !== undefined && (
+                              <p className="text-[10px] text-slate-400 font-poppins">Stock: {item.stock}</p>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  }
+                  {inventoryItems.filter(i =>
+                    !inventorySearch.trim() ||
+                    i.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                    (i.hsnCode || '').toLowerCase().includes(inventorySearch.toLowerCase())
+                  ).length === 0 && (
+                    <p className="text-center text-sm text-slate-400 py-8 font-poppins">
+                      {inventoryItems.length === 0 ? 'No inventory items found' : 'No items match your search'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
