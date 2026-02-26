@@ -15,7 +15,6 @@ import {
 import { subscribePendingInvitesByEmail } from '../../lib/firestore';
 import type { ProfessionalProfile, UserRole } from '../../types';
 import type { User as FirebaseUser } from 'firebase/auth';
-import PendingInvitesPopup from './PendingInvitesPopup';
 
 const BILLHIPPO_LOGO =
   'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
@@ -218,8 +217,6 @@ const ProLayout: React.FC<ProLayoutProps> = ({
         </div>
       </main>
 
-      {/* ── Floating pending-invites popup — visible from every view ── */}
-      <PendingInvitesPopup profile={profile} />
     </div>
   );
 };
