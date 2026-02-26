@@ -122,12 +122,12 @@ const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
   };
 
   return (
-    <div className="mb-6">
-      {/* ── Section header ── */}
-      <div className="flex items-center gap-2.5 mb-4">
+    <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
+      {/* ── Panel header ── */}
+      <div className="px-5 py-4 border-b border-amber-100 flex items-center gap-2.5 bg-gradient-to-r from-amber-50/60 to-orange-50/30">
         <div className="relative">
-          <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-            <Bell size={14} className="text-amber-600" />
+          <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center">
+            <Bell size={13} className="text-amber-600" />
           </div>
           <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
             {visible.length}
@@ -137,15 +137,12 @@ const PendingAssignmentsSection: React.FC<Props> = ({ profile }) => {
           <p className="text-sm font-bold text-slate-800 font-poppins">
             Pending Assignment{visible.length > 1 ? 's' : ''}
           </p>
-          <p className="text-xs text-slate-400 font-poppins">
-            {visible.length} business client{visible.length > 1 ? 's have' : ' has'} assigned
-            you — review to accept or decline
-          </p>
+          <p className="text-[10px] text-slate-400 font-poppins">Tap Accept or Decline below</p>
         </div>
       </div>
 
       {/* ── Invite cards ── */}
-      <div className="space-y-4">
+      <div className="p-4 space-y-3">
         {visible.map((invite) => {
           const action = getAction(invite.id);
           const error  = getError(invite.id);

@@ -144,9 +144,6 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ profile, onOpenClient, onNa
       {/* ── Onboarding Checklist — hidden once complete or dismissed ── */}
       <OnboardingChecklist profile={profile} onNavigate={onNavigate} />
 
-      {/* ── Pending Assignments — email-matched invites from business users ── */}
-      {profile && <PendingAssignmentsSection profile={profile} />}
-
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {statCards.map((card, i) => (
@@ -230,8 +227,9 @@ const ProDashboard: React.FC<ProDashboardProps> = ({ profile, onOpenClient, onNa
           </div>
         </div>
 
-        {/* Right — Alerts (40%) */}
-        <div className="flex-[2] min-w-0">
+        {/* Right — Pending Assignments + Alerts (40%) */}
+        <div className="flex-[2] min-w-0 space-y-4">
+          {profile && <PendingAssignmentsSection profile={profile} />}
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
             <div className="px-6 py-5 border-b border-slate-50 flex items-center gap-3">
               <Bell size={16} className="text-amber-500" />
