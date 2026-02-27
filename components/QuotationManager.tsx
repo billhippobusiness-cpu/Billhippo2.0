@@ -235,7 +235,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
         i.customerName.toLowerCase().includes(sq),
       );
     }
-    return q;
+    return [...q].sort((a, b) => b.date.localeCompare(a.date));
   }, [allQuotations, statusFilter, searchQuery]);
 
   // Stats
@@ -610,8 +610,13 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
               </button>
             )}
             {isConverted && (
-              <div className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl bg-violet-50 border border-violet-100 text-violet-700 font-bold font-poppins text-sm">
-                <Lock size={16} /> Converted to Invoice
+              <div className="w-full px-6 py-4 rounded-2xl bg-violet-50 border border-violet-100 font-poppins">
+                <div className="flex items-center gap-2 text-violet-700 font-bold text-sm">
+                  <Lock size={16} /> Converted to Invoice
+                </div>
+                {q.convertedInvoiceNumber && (
+                  <p className="text-violet-500 font-black text-base mt-1">{q.convertedInvoiceNumber}</p>
+                )}
               </div>
             )}
 
@@ -1241,7 +1246,14 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                     <td className="px-6 py-4 text-sm text-slate-700">{q.customerName}</td>
                     <td className="px-6 py-4 text-sm font-bold text-slate-800 text-right">{inr(q.totalAmount)}</td>
                     <td className="px-6 py-4 text-sm text-slate-500">{q.validUntil ? formatDate(q.validUntil) : '—'}</td>
-                    <td className="px-6 py-4"><StatusBadge status={q.status} /></td>
+                    <td className="px-6 py-4">
+                      <StatusBadge status={q.status} />
+                      {q.status === 'Converted' && q.convertedInvoiceNumber && (
+                        <p className="text-[10px] text-violet-500 font-bold mt-1 font-poppins">
+                          {q.convertedInvoiceNumber}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
                         <button
