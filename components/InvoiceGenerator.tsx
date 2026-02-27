@@ -313,6 +313,11 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         );
       } else {
         const invoiceId = await addInvoice(userId, invoicePayload);
+        // Keep list in sync immediately — no page reload needed
+        setAllInvoices(prev =>
+          [{ id: invoiceId, ...invoicePayload } as Invoice, ...prev]
+            .sort((a, b) => b.date.localeCompare(a.date))
+        );
         await addLedgerEntry(userId, {
           date: invoiceDate, type: 'Debit', amount: grandTotal,
           description: `Sale - ${invoiceNumber}`, invoiceId, customerId: selectedCustomerId
@@ -722,12 +727,20 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               {q ? ` · ${filteredInvoices.length} matching` : ''}
             </p>
           </div>
-          <button
-            onClick={handleNewInvoice}
-            className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 active:scale-95 transition-all font-poppins"
-          >
-            <Plus size={20} /> Create Invoice
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={loadData}
+              className="bg-white border border-slate-200 px-6 py-4 rounded-2xl font-bold flex items-center gap-2 hover:bg-slate-50 active:scale-95 transition-all font-poppins text-sm text-slate-500 shadow-sm"
+            >
+              <RotateCcw size={16} /> Refresh
+            </button>
+            <button
+              onClick={handleNewInvoice}
+              className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 active:scale-95 transition-all font-poppins"
+            >
+              <Plus size={20} /> Create Invoice
+            </button>
+          </div>
         </div>
 
         {allInvoices.length === 0 ? (
