@@ -330,6 +330,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           await updateQuotation(userId, sourceQuotationId, {
             status: 'Converted',
             convertedInvoiceId: invoiceId,
+            convertedInvoiceNumber: invoiceNumber,
           });
           setSourceQuotationId(null);
         }

@@ -285,5 +285,6 @@ export interface Quotation {
   totalAmount: number;
   status: QuotationStatus;
   notes?: string;                // Free-text note for the customer
-  convertedInvoiceId?: string;   // Set once converted to an invoice
+  convertedInvoiceId?: string;     // Firestore doc ID of the created invoice
+  convertedInvoiceNumber?: string; // Human-readable number, e.g. "INV/2026/005"
 }
