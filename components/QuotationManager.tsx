@@ -425,10 +425,9 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     window.open(url, '_blank');
   };
 
-  const handleConvertToInvoice = async (q: Quotation) => {
-    // Mark quotation as converted, then hand off to App.tsx
-    await handleStatusChange(q, 'Converted');
-    onConvertToInvoice({ ...q, status: 'Converted' });
+  const handleConvertToInvoice = (q: Quotation) => {
+    // Status is NOT changed here — InvoiceGenerator marks it Converted only after Finalize Bill succeeds
+    onConvertToInvoice(q);
   };
 
   // ── Loading state ──────────────────────────────────────────────────────────
