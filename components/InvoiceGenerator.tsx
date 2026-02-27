@@ -205,6 +205,24 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     setMode('editing');
   };
 
+  // Navigate to the in-app preview card for an existing invoice (Eye icon in list)
+  const handlePreviewInvoice = (inv: Invoice) => {
+    setEditingInvoice(inv);
+    setSelectedCustomerId(inv.customerId);
+    setInvoiceNumber(inv.invoiceNumber);
+    setInvoiceDate(inv.date);
+    setItems(inv.items);
+    setSupplyTypeOverride((inv.supplyType || '') as SupplyType | '');
+    setReverseCharge(inv.reverseCharge || false);
+    setPortCode(inv.portCode || '');
+    setShippingBillNo(inv.shippingBillNo || '');
+    setShippingBillDate(inv.shippingBillDate || '');
+    setExportCountry(inv.exportCountry || '');
+    setError(null);
+    setSaveSuccess(false);
+    setMode('preview');
+  };
+
   const handleDeleteInvoice = (inv: Invoice, e: React.MouseEvent) => {
     e.stopPropagation();
     setDeleteConfirmInvoice(inv);
@@ -836,10 +854,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center justify-center gap-2">
-                              {/* Preview PDF */}
+                              {/* Preview — navigate to in-app preview card */}
                               <button
-                                onClick={() => openPDFModal(inv, custObj)}
-                                title="Preview Invoice PDF"
+                                onClick={() => handlePreviewInvoice(inv)}
+                                title="Preview Invoice"
                                 className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
                               >
                                 <Eye size={15} />
@@ -852,9 +870,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                               >
                                 <Pencil size={15} />
                               </button>
-                              {/* Download PDF directly */}
+                              {/* Download — open PDF preview modal */}
                               <button
-                                onClick={() => setDownloadTarget({ invoice: inv, customer: custObj })}
+                                onClick={() => openPDFModal(inv, custObj)}
                                 title="Download PDF"
                                 className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
                               >
