@@ -228,6 +228,21 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     setMode('editing');
   };
 
+  // Navigate to the in-app preview card (Eye icon in list)
+  const handlePreviewNote = (note: CreditNote | DebitNote, type: NoteTab) => {
+    setActiveTab(type);
+    setEditingNote(note);
+    setSelectedCustomerId(note.customerId);
+    setNoteNumber(note.noteNumber);
+    setNoteDate(note.date);
+    setOriginalInvoiceNumber(note.originalInvoiceNumber || '');
+    setReason(note.reason);
+    setItems(note.items);
+    setError(null);
+    setSaveSuccess(false);
+    setMode('preview');
+  };
+
   // ── New note ──
   const handleNewNote = (tab?: NoteTab) => {
     const t = tab || activeTab;
@@ -1070,10 +1085,10 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                         </td>
                         <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-2">
-                            {/* Preview PDF */}
+                            {/* Preview — navigate to in-app preview card */}
                             <button
-                              onClick={() => openPDFModal(note, activeTab, custObj)}
-                              title="Preview PDF"
+                              onClick={() => handlePreviewNote(note, activeTab)}
+                              title="Preview Note"
                               className={`p-2 rounded-xl transition-all ${activeTab === 'credit' ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white' : 'bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white'}`}
                             >
                               <Eye size={15} />
@@ -1086,9 +1101,9 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                             >
                               <Pencil size={15} />
                             </button>
-                            {/* Download PDF — direct, no modal */}
+                            {/* Download — open PDF preview modal */}
                             <button
-                              onClick={() => setDownloadTarget({ note, noteType: activeTab, customer: custObj })}
+                              onClick={() => openPDFModal(note, activeTab, custObj)}
                               title="Download PDF"
                               className="p-2 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all"
                             >

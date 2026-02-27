@@ -5,10 +5,11 @@ import {
   ArrowLeft, Search, UserPlus, X, ScrollText, Download, Send, FileCheck,
   MessageCircle, Printer, Lock, ClipboardCheck, XCircle, Package,
 } from 'lucide-react';
-import { GSTType, type InvoiceItem, type InventoryItem, type Customer, type BusinessProfile, type Quotation, type QuotationStatus } from '../types';
+import { GSTType, type InvoiceItem, type InventoryItem, type Customer, type BusinessProfile, type Quotation, type QuotationStatus, type Invoice } from '../types';
 import {
   getCustomers, getBusinessProfile, addCustomer, getInventoryItems,
   getQuotations, addQuotation, updateQuotation, deleteQuotation, getTotalQuotationCount,
+  getInvoices,
 } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import QuotationPDF from './pdf/QuotationPDF';
@@ -131,6 +132,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [allQuotations, setAllQuotations] = useState<Quotation[]>([]);
+  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
 
   // UI states
   const [loading, setLoading] = useState(true);
@@ -183,15 +185,17 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [profileData, customerData, quotationData, totalCount] = await Promise.all([
+      const [profileData, customerData, quotationData, invoiceData, totalCount] = await Promise.all([
         getBusinessProfile(userId),
         getCustomers(userId),
         getQuotations(userId),
+        getInvoices(userId),
         getTotalQuotationCount(userId),
       ]);
       if (profileData) setProfile(profileData);
       setCustomers(customerData);
       setAllQuotations(quotationData);
+      setAllInvoices(invoiceData);
       // Build auto-number for new quotation
       const year = new Date().getFullYear();
       setQuotationNumber(`QT/${year}/${String(totalCount + 1).padStart(3, '0')}`);
@@ -235,7 +239,11 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
         i.customerName.toLowerCase().includes(sq),
       );
     }
-    return [...q].sort((a, b) => b.date.localeCompare(a.date));
+    return [...q].sort((a, b) => {
+      const byDate = b.date.localeCompare(a.date);
+      if (byDate !== 0) return byDate;
+      return b.quotationNumber.localeCompare(a.quotationNumber); // newest number first within same date
+    });
   }, [allQuotations, statusFilter, searchQuery]);
 
   // Stats
@@ -244,6 +252,12 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     pending: allQuotations.filter(q => q.status === 'Sent' || q.status === 'Draft').length,
     totalValue: allQuotations.filter(q => q.status !== 'Rejected').reduce((s, q) => s + q.totalAmount, 0),
   }), [allQuotations]);
+
+  // Lookup: invoiceId → invoiceNumber (fallback for quotations converted before convertedInvoiceNumber was stored)
+  const invoiceMap = useMemo(
+    () => new Map(allInvoices.map(i => [i.id, i.invoiceNumber])),
+    [allInvoices],
+  );
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -614,9 +628,13 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                 <div className="flex items-center gap-2 text-violet-700 font-bold text-sm">
                   <Lock size={16} /> Converted to Invoice
                 </div>
-                {q.convertedInvoiceNumber && (
-                  <p className="text-violet-500 font-black text-base mt-1">{q.convertedInvoiceNumber}</p>
-                )}
+                {(() => {
+                  const num = q.convertedInvoiceNumber
+                    || (q.convertedInvoiceId ? invoiceMap.get(q.convertedInvoiceId) : undefined);
+                  return num
+                    ? <p className="text-violet-500 font-black text-base mt-1">{num}</p>
+                    : null;
+                })()}
               </div>
             )}
 
@@ -1248,11 +1266,13 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                     <td className="px-6 py-4 text-sm text-slate-500">{q.validUntil ? formatDate(q.validUntil) : '—'}</td>
                     <td className="px-6 py-4">
                       <StatusBadge status={q.status} />
-                      {q.status === 'Converted' && q.convertedInvoiceNumber && (
-                        <p className="text-[10px] text-violet-500 font-bold mt-1 font-poppins">
-                          {q.convertedInvoiceNumber}
-                        </p>
-                      )}
+                      {q.status === 'Converted' && (() => {
+                        const num = q.convertedInvoiceNumber
+                          || (q.convertedInvoiceId ? invoiceMap.get(q.convertedInvoiceId) : undefined);
+                        return num
+                          ? <p className="text-[10px] text-violet-500 font-bold mt-1 font-poppins">{num}</p>
+                          : null;
+                      })()}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
