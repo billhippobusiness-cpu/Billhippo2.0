@@ -28,19 +28,30 @@
         .text-profee-blue { color: #4c2de0; }
         .border-profee-blue { border-color: #4c2de0; }
 
-        /* Premium Shadow - Soft purple glow */
+        /* Premium Shadow - Strong layered shadow for card-on-background separation */
         .premium-shadow {
-            box-shadow: 0 25px 60px -15px rgba(76, 45, 224, 0.12), 0 10px 20px -5px rgba(76, 45, 224, 0.05);
+            box-shadow:
+                0 2px 4px -1px rgba(0, 0, 0, 0.06),
+                0 8px 16px -4px rgba(0, 0, 0, 0.08),
+                0 25px 60px -15px rgba(76, 45, 224, 0.22),
+                0 10px 20px -5px rgba(76, 45, 224, 0.12);
         }
-        
-        /* Card Shadow - Subtle purple glow */
+
+        /* Card Shadow - Visible shadow for smaller cards */
         .card-shadow {
-            box-shadow: 0 10px 25px -5px rgba(76, 45, 224, 0.08), 0 8px 10px -6px rgba(76, 45, 224, 0.04);
+            box-shadow:
+                0 2px 4px -1px rgba(0, 0, 0, 0.06),
+                0 8px 16px -4px rgba(0, 0, 0, 0.07),
+                0 10px 25px -5px rgba(76, 45, 224, 0.14),
+                0 8px 10px -6px rgba(76, 45, 224, 0.08);
         }
 
         /* Hover effect to intensify glow */
         .hover-glow:hover {
-            box-shadow: 0 20px 40px -10px rgba(76, 45, 224, 0.15), 0 10px 15px -8px rgba(76, 45, 224, 0.08);
+            box-shadow:
+                0 4px 8px -2px rgba(0, 0, 0, 0.08),
+                0 20px 40px -10px rgba(76, 45, 224, 0.28),
+                0 10px 15px -8px rgba(76, 45, 224, 0.16);
             transform: translateY(-2px);
         }
 

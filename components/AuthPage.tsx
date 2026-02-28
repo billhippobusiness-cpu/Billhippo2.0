@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, Eye, EyeClosed, ArrowRight, ChevronLeft } from 'lucide-react';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
@@ -44,23 +44,6 @@ const AuthPage: React.FC<AuthPageProps> = ({
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
-
-  // 3D card tilt effect
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
-  const rotateX = useTransform(mouseY, [-300, 300], [12, -12]);
-  const rotateY = useTransform(mouseX, [-300, 300], [-12, 12]);
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    mouseX.set(e.clientX - rect.left - rect.width / 2);
-    mouseY.set(e.clientY - rect.top - rect.height / 2);
-  };
-
-  const handleMouseLeave = () => {
-    mouseX.set(0);
-    mouseY.set(0);
-  };
 
   const switchTab = (tab: AuthTab) => {
     setActiveTab(tab);
@@ -167,22 +150,20 @@ const AuthPage: React.FC<AuthPageProps> = ({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
         className="w-full max-w-sm relative z-10"
-        style={{ perspective: 1200 }}
       >
         <motion.div
           className="relative"
-          style={{ rotateX, rotateY, transformStyle: 'preserve-3d', transition: 'none' }}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
+          whileHover={{ y: -6, scale: 1.01 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 25 }}
         >
           <div className="relative group">
-            {/* Card glow on hover — static, no flicker */}
+            {/* Card glow on hover */}
             <div
-              className="absolute -inset-[1px] rounded-[2rem] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-500"
+              className="absolute -inset-[2px] rounded-[2rem] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-400"
               style={{
                 boxShadow: isPro
-                  ? '0 0 48px 14px rgba(5,150,105,0.18)'
-                  : '0 0 48px 14px rgba(76,45,224,0.18)',
+                  ? '0 0 60px 18px rgba(5,150,105,0.28), 0 0 120px 40px rgba(5,150,105,0.10)'
+                  : '0 0 60px 18px rgba(76,45,224,0.28), 0 0 120px 40px rgba(76,45,224,0.10)',
               }}
             />
 
