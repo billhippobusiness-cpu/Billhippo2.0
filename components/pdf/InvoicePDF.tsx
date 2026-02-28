@@ -282,7 +282,10 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
   const tableRows = itemsWithTax.map((item, idx) => (
     <View key={item.id} style={[S.tableRow, idx % 2 === 1 ? S.tableRowAlt : {}]} wrap={false}>
       <Text style={[S.tableCell, S.m1cNo]}>{idx + 1}</Text>
-      <Text style={[S.tableCell, S.m1cDesc]}>{item.description}</Text>
+      <View style={[S.m1cDesc, { justifyContent: 'center' }]}>
+        <Text style={[S.tableCell]}>{item.description}</Text>
+        {item.notes ? <Text style={{ fontSize: 6.5, color: '#94a3b8', marginTop: 2, fontStyle: 'italic' }}>{item.notes}</Text> : null}
+      </View>
       <Text style={[S.tableCell, S.m1cHsn]}>{item.hsnCode || '—'}</Text>
       <Text style={[S.tableCell, S.m1cQty]}>{item.quantity}</Text>
       {hasGst && <Text style={[S.tableCell, S.m1cGst]}>{item.gstRate}%</Text>}

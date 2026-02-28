@@ -181,7 +181,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   }, [items, profile.annualTurnover]);
 
   const handleAddItem = () => {
-    setItems([...items, { id: Math.random().toString(36).substr(2, 9), description: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }]);
+    setItems([...items, { id: Math.random().toString(36).substr(2, 9), description: '', notes: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }]);
   };
   const handleRemoveItem = (id: string) => { setItems(items.filter(item => item.id !== id)); };
   const handleItemChange = (id: string, field: keyof InvoiceItem, value: any) => {
@@ -288,6 +288,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     const newLineItem: InvoiceItem = {
       id: firstEmpty?.id || Math.random().toString(36).substr(2, 9),
       description: item.name,
+      notes: item.description || '',
       hsnCode: item.hsnCode,
       quantity: 1,
       rate: item.sellingPrice,
@@ -450,7 +451,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           <tbody className="text-xs divide-y divide-slate-100 bg-slate-50/20">
             {items.map((item, idx) => (
               <tr key={item.id} className="font-medium text-slate-700 hover:bg-white transition-colors">
-                <td className="px-10 py-6">{idx + 1}. {item.description || 'No description'}</td>
+                <td className="px-10 py-6">
+                  <span className="font-medium">{idx + 1}. {item.description || 'No description'}</span>
+                  {item.notes && <p className="text-[10px] text-slate-400 mt-1 font-normal leading-snug">{item.notes}</p>}
+                </td>
                 <td className="px-4 py-6 text-center text-slate-400">{item.hsnCode || '---'}</td>
                 <td className="px-4 py-6 text-center font-black">{item.quantity}</td>
                 <td className="px-4 py-6 text-center text-slate-400">{item.gstRate}%</td>
@@ -1195,8 +1199,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             )}
             <div className="space-y-4">
               {items.map((item) => (
-                <div key={item.id} className="grid grid-cols-12 gap-3 items-end animate-in fade-in duration-300">
-                  <div className="col-span-4 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label><input placeholder="Product or service" className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium" value={item.description} onChange={e => handleItemChange(item.id, 'description', e.target.value)} /></div>
+                <div key={item.id} className="grid grid-cols-12 gap-3 items-start animate-in fade-in duration-300">
+                  <div className="col-span-4 space-y-1.5">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
+                    <input placeholder="Product or service" className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium" value={item.description} onChange={e => handleItemChange(item.id, 'description', e.target.value)} />
+                    <input placeholder="Add a note or specification… (optional)" className="w-full bg-transparent border border-dashed border-slate-200 rounded-xl px-4 py-2 text-xs text-slate-500 placeholder-slate-300 focus:outline-none focus:border-indigo-200 transition-colors" value={item.notes || ''} onChange={e => handleItemChange(item.id, 'notes', e.target.value)} />
+                  </div>
                   <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-3">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium font-mono" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
                   <div className="col-span-1 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-2 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
                   <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center text-profee-blue" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
