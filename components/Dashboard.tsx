@@ -3,7 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
-import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, Loader2, ChevronDown, Calendar, RefreshCw, X, ExternalLink } from 'lucide-react';
+import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, BarChart3, Loader2, ChevronDown, Calendar, RefreshCw, X, ExternalLink } from 'lucide-react';
 import { Invoice, Customer, LedgerEntry, BusinessProfile } from '../types';
 import { getInvoices, getCustomers, getLedgerEntries, getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
@@ -181,6 +181,28 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
     }));
   }, [invoices, ledgerEntries]);
 
+  // Active parties — distinct customers who appear in at least one invoice this period
+  const activePartyCount = useMemo(
+    () => new Set(invoices.map(i => i.customerId)).size,
+    [invoices]
+  );
+
+  // Collection rate — % of sales collected this period
+  const collectionRate = totalSales > 0
+    ? Math.round((totalCollections / totalSales) * 100)
+    : null;
+
+  // Top 5 customers by invoiced amount this period
+  const topCustomers = useMemo(() => {
+    const map: Record<string, { name: string; total: number; count: number }> = {};
+    invoices.forEach(inv => {
+      if (!map[inv.customerId]) map[inv.customerId] = { name: inv.customerName || 'Unknown', total: 0, count: 0 };
+      map[inv.customerId].total += inv.totalAmount;
+      map[inv.customerId].count += 1;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 5);
+  }, [invoices]);
+
   // Smart alerts
   const overdueInvoices = invoices.filter(i => {
     if (i.status === 'Paid') return false;
@@ -327,12 +349,14 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {[
           { label: 'Total Sales', value: formatAmount(totalSales), icon: IndianRupee, color: 'bg-profee-blue', shadow: 'shadow-indigo-100', textColor: 'text-profee-blue', hoverShadow: '0 0 0 1px rgba(76,45,224,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(76,45,224,0.28), 0 20px 50px -10px rgba(76,45,224,0.22)' },
           { label: 'Collections', value: formatAmount(totalCollections), icon: TrendingUp, color: 'bg-emerald-500', shadow: 'shadow-emerald-100', textColor: 'text-emerald-500', hoverShadow: '0 0 0 1px rgba(16,185,129,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(16,185,129,0.28), 0 20px 50px -10px rgba(16,185,129,0.22)' },
           { label: 'Outstanding', value: formatAmount(outstanding), icon: AlertTriangle, color: 'bg-rose-500', shadow: 'shadow-rose-100', textColor: 'text-rose-500', hoverShadow: '0 0 0 1px rgba(244,63,94,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(244,63,94,0.28), 0 20px 50px -10px rgba(244,63,94,0.22)' },
-          { label: 'Active Parties', value: String(customers.length), icon: Users, color: 'bg-amber-500', shadow: 'shadow-amber-100', textColor: 'text-amber-500', hoverShadow: '0 0 0 1px rgba(245,158,11,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(245,158,11,0.28), 0 20px 50px -10px rgba(245,158,11,0.22)' },
+          { label: 'Active Parties', value: String(activePartyCount), icon: Users, color: 'bg-amber-500', shadow: 'shadow-amber-100', textColor: 'text-amber-500', hoverShadow: '0 0 0 1px rgba(245,158,11,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(245,158,11,0.28), 0 20px 50px -10px rgba(245,158,11,0.22)' },
+          { label: 'Invoices Raised', value: String(invoices.length), icon: FileText, color: 'bg-violet-500', shadow: 'shadow-violet-100', textColor: 'text-violet-600', hoverShadow: '0 0 0 1px rgba(124,58,237,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(124,58,237,0.28), 0 20px 50px -10px rgba(124,58,237,0.22)' },
+          { label: 'Collection Rate', value: collectionRate !== null ? `${collectionRate}%` : '—', icon: BarChart3, color: 'bg-cyan-500', shadow: 'shadow-cyan-100', textColor: 'text-cyan-600', hoverShadow: '0 0 0 1px rgba(6,182,212,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(6,182,212,0.28), 0 20px 50px -10px rgba(6,182,212,0.22)' },
         ].map((metric) => (
           <div
             key={metric.label}
@@ -410,8 +434,44 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
         </div>
       </div>
 
-      {/* Smart Alerts */}
-      <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
+      {/* Top Customers + Smart Alerts row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+        {/* Top Customers */}
+        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
+          <h3 className="text-xl font-bold font-poppins text-slate-900 mb-2">Top Customers</h3>
+          <p className="text-xs text-slate-400 font-medium mb-6 uppercase tracking-widest">By invoiced amount · this period</p>
+          {topCustomers.length > 0 ? (
+            <div className="space-y-3">
+              {topCustomers.map((c, idx) => {
+                const pct = totalSales > 0 ? Math.round((c.total / totalSales) * 100) : 0;
+                const barColors = ['bg-profee-blue', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-violet-500'];
+                return (
+                  <div key={c.name} className="flex items-center gap-4">
+                    <span className="text-[10px] font-black text-slate-300 font-poppins w-4">{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm font-bold text-slate-700 font-poppins truncate">{c.name}</p>
+                        <span className="text-sm font-bold text-slate-500 font-poppins ml-2 flex-shrink-0">{formatAmount(c.total)}</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${barColors[idx % barColors.length]}`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400 font-poppins w-8 text-right">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="h-[180px] flex items-center justify-center">
+              <p className="text-sm font-bold font-poppins text-slate-200">No invoices in this period</p>
+            </div>
+          )}
+        </div>
+
+        {/* Smart Alerts */}
+        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
         <h3 className="text-xl font-bold font-poppins text-slate-900 mb-6">Smart Alerts</h3>
         {overdueInvoices.length > 0 ? (
           <div className="space-y-4">
@@ -433,7 +493,9 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
             <p className="text-sm font-bold text-emerald-600 font-poppins">{hasData ? 'All payments are on track! No overdue invoices.' : 'No invoices yet. Create your first invoice to get started.'}</p>
           </div>
         )}
-      </div>
+        </div>
+
+      </div>{/* end Top Customers + Smart Alerts grid */}
 
       {/* Recent Invoices */}
       {invoices.length > 0 && (
