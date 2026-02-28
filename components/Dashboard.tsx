@@ -63,6 +63,9 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
   // ── PDF preview modal ──
   const [pdfModal, setPdfModal] = useState<{ open: boolean; invoice: Invoice | null; customer: Customer | null }>({ open: false, invoice: null, customer: null });
 
+  // ── Stat card hover state for colored glow ──
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+
   const fyOptions = useMemo(() => generateFYOptions(), []);
 
   useEffect(() => { loadData(); }, [userId]);
@@ -326,12 +329,23 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
       {/* Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Total Sales', value: formatAmount(totalSales), icon: IndianRupee, color: 'bg-profee-blue', shadow: 'shadow-indigo-100', textColor: 'text-profee-blue' },
-          { label: 'Collections', value: formatAmount(totalCollections), icon: TrendingUp, color: 'bg-emerald-500', shadow: 'shadow-emerald-100', textColor: 'text-emerald-500' },
-          { label: 'Outstanding', value: formatAmount(outstanding), icon: AlertTriangle, color: 'bg-rose-500', shadow: 'shadow-rose-100', textColor: 'text-rose-500' },
-          { label: 'Active Parties', value: String(customers.length), icon: Users, color: 'bg-amber-500', shadow: 'shadow-amber-100', textColor: 'text-amber-500' },
+          { label: 'Total Sales', value: formatAmount(totalSales), icon: IndianRupee, color: 'bg-profee-blue', shadow: 'shadow-indigo-100', textColor: 'text-profee-blue', hoverShadow: '0 0 0 1px rgba(76,45,224,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(76,45,224,0.28), 0 20px 50px -10px rgba(76,45,224,0.22)' },
+          { label: 'Collections', value: formatAmount(totalCollections), icon: TrendingUp, color: 'bg-emerald-500', shadow: 'shadow-emerald-100', textColor: 'text-emerald-500', hoverShadow: '0 0 0 1px rgba(16,185,129,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(16,185,129,0.28), 0 20px 50px -10px rgba(16,185,129,0.22)' },
+          { label: 'Outstanding', value: formatAmount(outstanding), icon: AlertTriangle, color: 'bg-rose-500', shadow: 'shadow-rose-100', textColor: 'text-rose-500', hoverShadow: '0 0 0 1px rgba(244,63,94,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(244,63,94,0.28), 0 20px 50px -10px rgba(244,63,94,0.22)' },
+          { label: 'Active Parties', value: String(customers.length), icon: Users, color: 'bg-amber-500', shadow: 'shadow-amber-100', textColor: 'text-amber-500', hoverShadow: '0 0 0 1px rgba(245,158,11,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(245,158,11,0.28), 0 20px 50px -10px rgba(245,158,11,0.22)' },
         ].map((metric) => (
-          <div key={metric.label} className={`bg-white rounded-[2.5rem] p-8 premium-shadow border border-slate-50 hover:scale-[1.02] transition-all duration-300`}>
+          <div
+            key={metric.label}
+            onMouseEnter={() => setHoveredCard(metric.label)}
+            onMouseLeave={() => setHoveredCard(null)}
+            className="bg-white rounded-[2.5rem] p-8 border border-slate-100 transition-all duration-300 cursor-default"
+            style={{
+              boxShadow: hoveredCard === metric.label
+                ? metric.hoverShadow
+                : '0 2px 4px -1px rgba(0,0,0,0.06), 0 8px 16px -4px rgba(0,0,0,0.08), 0 25px 60px -15px rgba(76,45,224,0.22), 0 10px 20px -5px rgba(76,45,224,0.12)',
+              transform: hoveredCard === metric.label ? 'translateY(-5px) scale(1.02)' : 'none',
+            }}
+          >
             <div className="flex justify-between items-start mb-6">
               <div className={`p-4 rounded-2xl text-white ${metric.color} shadow-lg ${metric.shadow}`}><metric.icon size={24} /></div>
             </div>
