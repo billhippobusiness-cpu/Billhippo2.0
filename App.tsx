@@ -275,7 +275,7 @@ const App: React.FC = () => {
           onConvertToInvoice={handleConvertToInvoice}
         />
       );
-      case 'gst':         return <GSTReports userId={userId} />;
+      case 'gst':         return <GSTReports userId={userId} onNavigate={setActiveTab} />;
       case 'theme':       return <InvoiceTheme userId={userId} />;
       case 'settings':    return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
       case 'inventory':   return <InventoryManager userId={userId} />;
