@@ -172,6 +172,7 @@ export interface Customer {
 export interface InvoiceItem {
   id: string;
   description: string;
+  notes?: string;
   hsnCode: string;
   quantity: number;
   rate: number;
