@@ -32,9 +32,15 @@ jobs:
         working-directory: functions
 
       - name: Setup Firebase credentials
+        env:
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/sa.json
+          if [ -z "$FIREBASE_SA_JSON" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT secret is missing or empty"
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SA_JSON" > /tmp/sa.json
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json" >> $GITHUB_ENV
 
       - name: Deploy Firebase Functions
-        run: npx firebase-tools@latest deploy --only functions --project billhippo-42f95 --non-interactive
+        run: npx firebase-tools@13 deploy --only functions --project billhippo-42f95 --non-interactive
