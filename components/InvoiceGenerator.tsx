@@ -1,11 +1,12 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX, IndianRupee, Receipt } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
+import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -72,6 +73,17 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
   // Direct download state (mounts PDFDirectDownload invisibly then auto-downloads)
   const [downloadTarget, setDownloadTarget] = useState<{ invoice: Invoice; customer: Customer | null } | null>(null);
+
+  // Collect-payment modal state
+  const [collectModal, setCollectModal] = useState<{ open: boolean; invoice: Invoice | null }>({ open: false, invoice: null });
+  const [collectAmount, setCollectAmount] = useState('');
+  const [collectDesc, setCollectDesc]     = useState('');
+  const [collectSaving, setCollectSaving] = useState(false);
+
+  // Receipt modal state
+  const [receiptModal, setReceiptModal] = useState<{ open: boolean; entry: ReceiptEntry | null; customer: Customer | null }>({ open: false, entry: null, customer: null });
+  const [receiptPdfData, setReceiptPdfData] = useState<{ open: boolean; entry: ReceiptEntry | null; customer: Customer | null }>({ open: false, entry: null, customer: null });
+  const [receiptDownloadTarget, setReceiptDownloadTarget] = useState<{ document: React.ReactElement; fileName: string } | null>(null);
 
   // Edit & search state
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -359,6 +371,58 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     } catch (err: any) {
       setError('Failed to save invoice. Please try again.');
     } finally { setSaving(false); }
+  };
+
+  // ── Collect Payment: record a Credit ledger entry, update invoice status + customer balance, show receipt ──
+  const handleCollectPayment = async () => {
+    const inv = collectModal.invoice;
+    if (!inv || !collectAmount) return;
+    setCollectSaving(true);
+    try {
+      const amount        = parseFloat(collectAmount);
+      const date          = new Date().toISOString().split('T')[0];
+      const description   = collectDesc || `Payment for Invoice ${inv.invoiceNumber}`;
+      const custObj       = customers.find(c => c.id === inv.customerId);
+      const newStatus: 'Paid' | 'Partial' = amount >= inv.totalAmount ? 'Paid' : 'Partial';
+      const currentBalance    = custObj?.balance ?? inv.totalAmount;
+      const newRunningBalance = currentBalance - amount;
+
+      const entryId = await addLedgerEntry(userId, {
+        date, type: 'Credit', amount, description,
+        customerId: inv.customerId, invoiceId: inv.id,
+      });
+      await updateInvoice(userId, inv.id, { status: newStatus });
+      if (custObj) {
+        await updateCustomer(userId, custObj.id, { balance: newRunningBalance });
+        setCustomers(prev => prev.map(c => c.id === custObj.id ? { ...c, balance: newRunningBalance } : c));
+      }
+      setAllInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, status: newStatus } : i));
+
+      const customer: Customer = custObj || { id: inv.customerId, name: inv.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: newRunningBalance };
+      const receiptEntry: ReceiptEntry = {
+        id: entryId, date, type: 'Credit', amount, description,
+        customerId: inv.customerId, invoiceId: inv.id, runningBalance: newRunningBalance,
+      };
+      setCollectModal({ open: false, invoice: null });
+      setCollectAmount('');
+      setCollectDesc('');
+      setReceiptModal({ open: true, entry: receiptEntry, customer });
+    } catch (err) { console.error(err); }
+    finally { setCollectSaving(false); }
+  };
+
+  // ── Show receipt for an already-paid invoice (no new ledger entry created) ──
+  const handleShowReceiptFromPaidInvoice = (inv: Invoice) => {
+    const custObj = customers.find(c => c.id === inv.customerId);
+    const customer: Customer = custObj || { id: inv.customerId, name: inv.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 };
+    const receiptEntry: ReceiptEntry = {
+      id: inv.id, date: inv.date, type: 'Credit',
+      amount: inv.totalAmount,
+      description: `Payment for Invoice ${inv.invoiceNumber}`,
+      customerId: inv.customerId, invoiceId: inv.id,
+      runningBalance: custObj?.balance ?? 0,
+    };
+    setReceiptModal({ open: true, entry: receiptEntry, customer });
   };
 
   // Build a temporary Invoice object from current form state (used for PDF before or after save)
@@ -882,6 +946,26 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                               >
                                 <Download size={15} />
                               </button>
+                              {/* Collect Payment — for unpaid / partially-paid invoices */}
+                              {(inv.status === 'Unpaid' || inv.status === 'Partial') && (
+                                <button
+                                  onClick={() => setCollectModal({ open: true, invoice: inv })}
+                                  title="Collect Payment"
+                                  className="p-2 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all"
+                                >
+                                  <IndianRupee size={15} />
+                                </button>
+                              )}
+                              {/* Receipt — for fully paid invoices */}
+                              {inv.status === 'Paid' && (
+                                <button
+                                  onClick={() => handleShowReceiptFromPaidInvoice(inv)}
+                                  title="Download Receipt"
+                                  className="p-2 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all"
+                                >
+                                  <Receipt size={15} />
+                                </button>
+                              )}
                               {/* Delete (soft) */}
                               <button
                                 onClick={e => handleDeleteInvoice(inv, e)}
@@ -1025,6 +1109,195 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           onCancel={() => setDeleteConfirmInvoice(null)}
           onConfirm={handleDeleteInvoiceConfirmed}
         />
+
+        {/* ── Collect Payment modal ── */}
+        {collectModal.open && collectModal.invoice && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                    <IndianRupee size={18} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Collect Payment</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">{collectModal.invoice.invoiceNumber} · {collectModal.invoice.customerName}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setCollectModal({ open: false, invoice: null }); setCollectAmount(''); setCollectDesc(''); }}
+                  className="p-2 hover:bg-slate-50 rounded-xl transition-all"
+                >
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+              <div className="bg-indigo-50 rounded-2xl p-4 flex justify-between items-center mb-6 border border-indigo-100">
+                <span className="text-xs font-bold text-profee-blue uppercase tracking-widest">Invoice Total</span>
+                <span className="text-xl font-bold text-profee-blue">{inr(collectModal.invoice.totalAmount)}</span>
+              </div>
+              <div className="space-y-4 font-poppins">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Amount Received (₹) *</label>
+                  <input
+                    type="number"
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700"
+                    value={collectAmount}
+                    onChange={e => setCollectAmount(e.target.value)}
+                    placeholder={collectModal.invoice.totalAmount.toString()}
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
+                  <input
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700"
+                    value={collectDesc}
+                    onChange={e => setCollectDesc(e.target.value)}
+                    placeholder="e.g. NEFT, UPI, Cash..."
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button
+                  onClick={() => { setCollectModal({ open: false, invoice: null }); setCollectAmount(''); setCollectDesc(''); }}
+                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCollectPayment}
+                  disabled={collectSaving || !collectAmount}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-emerald-500 text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-emerald-100 disabled:opacity-50"
+                >
+                  {collectSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                  {collectSaving ? 'Saving...' : 'Record & Get Receipt'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Receipt detail modal ── */}
+        {receiptModal.open && receiptModal.entry && receiptModal.customer && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                    <Receipt size={18} className="text-emerald-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">Payment Receipt</h3>
+                </div>
+                <button onClick={() => setReceiptModal({ open: false, entry: null, customer: null })} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+              <div className="space-y-5">
+                <div className="bg-slate-50 rounded-2xl p-6 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Date</span>
+                    <span className="text-sm font-bold text-slate-700">{receiptModal.entry.date}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Customer</span>
+                    <span className="text-sm font-bold text-slate-700">{receiptModal.customer.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Description</span>
+                    <span className="text-sm font-bold text-slate-700">{receiptModal.entry.description}</span>
+                  </div>
+                </div>
+                <div className="bg-emerald-50 rounded-2xl p-6 flex justify-between items-center border border-emerald-100">
+                  <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Amount Received</span>
+                  <span className="text-2xl font-bold text-emerald-600">{inr(receiptModal.entry.amount)}</span>
+                </div>
+                <div className="bg-slate-900 rounded-2xl p-6 flex justify-between items-center text-white">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Balance After</span>
+                  <span className="text-lg font-bold">
+                    ₹{Math.abs(receiptModal.entry.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    <span className="text-[10px] opacity-50 ml-1">{receiptModal.entry.runningBalance >= 0 ? 'Dr' : 'Cr'}</span>
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button
+                  onClick={() => setReceiptModal({ open: false, entry: null, customer: null })}
+                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    const { entry, customer } = receiptModal;
+                    setReceiptModal({ open: false, entry: null, customer: null });
+                    setReceiptPdfData({ open: true, entry, customer });
+                  }}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <Eye size={16} /> View PDF
+                </button>
+                <button
+                  onClick={() => {
+                    const { entry, customer } = receiptModal;
+                    setReceiptModal({ open: false, entry: null, customer: null });
+                    setReceiptDownloadTarget({
+                      document: (
+                        <ReceiptPDF
+                          entry={entry!}
+                          customer={customer!}
+                          businessName={profile.name}
+                          businessInfo={{
+                            gstin: profile.gstin || '',
+                            address: [profile.address, profile.city, profile.state, profile.pincode].filter(Boolean).join(', '),
+                            phone: profile.phone || '',
+                            email: profile.email || '',
+                          }}
+                          logoUrl={profile.theme?.logoUrl}
+                        />
+                      ),
+                      fileName: `Receipt-${customer!.name.replace(/\s+/g, '-')}-${entry!.date}.pdf`,
+                    });
+                  }}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
+                >
+                  <Download size={16} /> Download
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Receipt PDF preview modal ── */}
+        {receiptPdfData.open && receiptPdfData.entry && receiptPdfData.customer && (
+          <PDFPreviewModal
+            open={receiptPdfData.open}
+            onClose={() => setReceiptPdfData({ open: false, entry: null, customer: null })}
+            document={
+              <ReceiptPDF
+                entry={receiptPdfData.entry}
+                customer={receiptPdfData.customer}
+                businessName={profile.name}
+                businessInfo={{
+                  gstin: profile.gstin || '',
+                  address: [profile.address, profile.city, profile.state, profile.pincode].filter(Boolean).join(', '),
+                  phone: profile.phone || '',
+                  email: profile.email || '',
+                }}
+                logoUrl={profile.theme?.logoUrl}
+              />
+            }
+            fileName={`Receipt-${receiptPdfData.customer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
+          />
+        )}
+
+        {/* ── Headless receipt direct-download ── */}
+        {receiptDownloadTarget && (
+          <PDFDirectDownload
+            document={receiptDownloadTarget.document}
+            fileName={receiptDownloadTarget.fileName}
+            onDone={() => setReceiptDownloadTarget(null)}
+          />
+        )}
       </div>
     );
   }
@@ -1044,6 +1317,14 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           <div className="flex gap-4">
              {saveSuccess && <div className="flex items-center gap-2 text-emerald-500 px-4"><CheckCircle size={18} /><span className="text-sm font-bold">Invoice Saved!</span></div>}
              <button onClick={handleNewInvoice} className="bg-white border border-slate-200 px-8 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Plus size={18} /> New Invoice</button>
+             {editingInvoice && (editingInvoice.status === 'Unpaid' || editingInvoice.status === 'Partial') && (
+               <button
+                 onClick={() => setCollectModal({ open: true, invoice: editingInvoice })}
+                 className="bg-emerald-500 text-white px-8 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-100"
+               >
+                 <IndianRupee size={18} /> Collect Payment
+               </button>
+             )}
              <button onClick={() => window.print()} className="bg-white border border-slate-200 px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Printer size={18} /> Print A4</button>
              <button
                onClick={() => openPDFModal(buildCurrentInvoice(), selectedCustomer || null)}
