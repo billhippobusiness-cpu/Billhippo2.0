@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, Download, Search, Plus, Eye, Printer, Edit3, Loader2, Save, X } from 'lucide-react';
+import { ChevronLeft, Download, Search, Plus, Eye, Printer, Edit3, Loader2, Save, X, Receipt } from 'lucide-react';
 import { Customer, LedgerEntry } from '../types';
 import { getCustomers, getLedgerEntries, addLedgerEntry, getBusinessProfile } from '../lib/firestore';
-import PDFPreviewModal from './pdf/PDFPreviewModal';
+import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import LedgerPDF from './pdf/LedgerPDF';
+import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -24,6 +25,10 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
   const [businessName, setBusinessName] = useState('BillHippo');
   const [businessInfo, setBusinessInfo] = useState({ gstin: '', address: '', email: '', phone: '' });
   const [showPDFModal, setShowPDFModal] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
+  const [receiptModal, setReceiptModal] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
+  const [receiptPdfData, setReceiptPdfData] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
+  const [downloadTarget, setDownloadTarget] = useState<{ document: React.ReactElement; fileName: string } | null>(null);
 
   useEffect(() => { loadCustomers(); }, [userId]);
 
@@ -35,6 +40,7 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
       if (profile) {
         setBusinessName(profile.name);
         setBusinessInfo({ gstin: profile.gstin, address: `${profile.address}, ${profile.city}, ${profile.state} - ${profile.pincode}`, email: profile.email, phone: profile.phone });
+        setLogoUrl(profile.theme?.logoUrl);
       }
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
@@ -70,13 +76,25 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
     if (!paymentAmount || !selectedCustomerId) return;
     setSaving(true);
     try {
-      await addLedgerEntry(userId, {
-        date: new Date().toISOString().split('T')[0], type: 'Credit',
-        amount: parseFloat(paymentAmount), description: paymentDesc || 'Payment received',
-        customerId: selectedCustomerId
+      const amount = parseFloat(paymentAmount);
+      const date = new Date().toISOString().split('T')[0];
+      const description = paymentDesc || 'Payment received';
+      const newRunningBalance = closingBalance - amount;
+
+      const entryId = await addLedgerEntry(userId, {
+        date, type: 'Credit', amount, description, customerId: selectedCustomerId,
       });
+
+      const receiptEntry: ReceiptEntry = {
+        id: entryId, date, type: 'Credit', amount, description,
+        customerId: selectedCustomerId, runningBalance: newRunningBalance,
+      };
+
       await loadEntries(selectedCustomerId);
-      setShowPaymentForm(false); setPaymentAmount(''); setPaymentDesc('');
+      setShowPaymentForm(false);
+      setPaymentAmount('');
+      setPaymentDesc('');
+      setReceiptModal({ open: true, entry: receiptEntry });
     } catch (err) { console.error(err); }
     finally { setSaving(false); }
   };
@@ -212,14 +230,31 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
         ) : (
           <div className="flex-1 overflow-x-auto">
             <table className="w-full text-left font-poppins"><thead><tr className="bg-slate-50 text-slate-400 text-[10px] font-bold uppercase tracking-widest"><th className="px-6 py-4 rounded-tl-xl">Date</th><th className="px-6 py-4">Description</th><th className="px-6 py-4 text-center">Debit (₹)</th><th className="px-6 py-4 text-center">Credit (₹)</th><th className="px-6 py-4 text-right rounded-tr-xl">Balance (₹)</th></tr></thead>
-            <tbody className="text-xs font-medium divide-y divide-slate-50">{runningEntries.map((item, idx) => (
-              <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-6 text-slate-400">{item.date}</td><td className="px-6 py-6 text-slate-500">{item.description}</td>
-                <td className="px-6 py-6 text-center font-bold text-rose-500">{item.type === 'Debit' ? `₹${item.amount.toLocaleString('en-IN')}` : '-'}</td>
-                <td className="px-6 py-6 text-center font-bold text-emerald-500">{item.type === 'Credit' ? `₹${item.amount.toLocaleString('en-IN')}` : '-'}</td>
-                <td className="px-6 py-6 text-right font-bold text-rose-500">₹{Math.abs(item.runningBalance).toLocaleString('en-IN')} {item.runningBalance >= 0 ? 'Dr' : 'Cr'}</td>
-              </tr>
-            ))}</tbody></table>
+            <tbody className="text-xs font-medium divide-y divide-slate-50">{runningEntries.map((item, idx) => {
+              const isPayment = item.type === 'Credit' && !item.creditNoteId;
+              return (
+                <tr
+                  key={idx}
+                  onClick={() => { if (isPayment) setReceiptModal({ open: true, entry: item }); }}
+                  className={`transition-colors ${isPayment ? 'cursor-pointer hover:bg-emerald-50/50' : 'hover:bg-slate-50'}`}
+                >
+                  <td className="px-6 py-6 text-slate-400">{item.date}</td>
+                  <td className="px-6 py-6 text-slate-500">
+                    <div className="flex items-center gap-2">
+                      {isPayment && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[10px] font-bold rounded-full whitespace-nowrap">
+                          <Receipt size={10} /> Receipt
+                        </span>
+                      )}
+                      {item.description}
+                    </div>
+                  </td>
+                  <td className="px-6 py-6 text-center font-bold text-rose-500">{item.type === 'Debit' ? `₹${item.amount.toLocaleString('en-IN')}` : '-'}</td>
+                  <td className="px-6 py-6 text-center font-bold text-emerald-500">{item.type === 'Credit' ? `₹${item.amount.toLocaleString('en-IN')}` : '-'}</td>
+                  <td className="px-6 py-6 text-right font-bold text-rose-500">₹{Math.abs(item.runningBalance).toLocaleString('en-IN')} {item.runningBalance >= 0 ? 'Dr' : 'Cr'}</td>
+                </tr>
+              );
+            })}</tbody></table>
           </div>
         )}
 
@@ -245,6 +280,118 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
             />
           }
           fileName={`Ledger-Statement-${selectedCustomer.name.replace(/\s+/g, '-')}.pdf`}
+        />
+      )}
+
+      {/* Receipt detail modal */}
+      {receiptModal.open && receiptModal.entry && selectedCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-8">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                  <Receipt size={18} className="text-emerald-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Payment Receipt</h3>
+              </div>
+              <button onClick={() => setReceiptModal({ open: false, entry: null })} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                <X size={20} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-5">
+              <div className="bg-slate-50 rounded-2xl p-6 space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Date</span>
+                  <span className="text-sm font-bold text-slate-700">{receiptModal.entry.date}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Customer</span>
+                  <span className="text-sm font-bold text-slate-700">{selectedCustomer.name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Description</span>
+                  <span className="text-sm font-bold text-slate-700">{receiptModal.entry.description}</span>
+                </div>
+              </div>
+              <div className="bg-emerald-50 rounded-2xl p-6 flex justify-between items-center border border-emerald-100">
+                <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Amount Received</span>
+                <span className="text-2xl font-bold text-emerald-600">₹{receiptModal.entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="bg-slate-900 rounded-2xl p-6 flex justify-between items-center text-white">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Balance After</span>
+                <span className="text-lg font-bold">
+                  ₹{Math.abs(receiptModal.entry.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  <span className="text-[10px] opacity-50 ml-1">{receiptModal.entry.runningBalance >= 0 ? 'Dr' : 'Cr'}</span>
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => setReceiptModal({ open: false, entry: null })}
+                className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  const entry = receiptModal.entry;
+                  setReceiptModal({ open: false, entry: null });
+                  setReceiptPdfData({ open: true, entry });
+                }}
+                className="flex-1 py-4 rounded-2xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+              >
+                <Eye size={16} /> View PDF
+              </button>
+              <button
+                onClick={() => {
+                  const entry = receiptModal.entry!;
+                  setReceiptModal({ open: false, entry: null });
+                  setDownloadTarget({
+                    document: (
+                      <ReceiptPDF
+                        entry={entry}
+                        customer={selectedCustomer}
+                        businessName={businessName}
+                        businessInfo={businessInfo}
+                        logoUrl={logoUrl}
+                      />
+                    ),
+                    fileName: `Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${entry.date}.pdf`,
+                  });
+                }}
+                className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
+              >
+                <Download size={16} /> Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt PDF preview modal */}
+      {receiptPdfData.open && receiptPdfData.entry && selectedCustomer && (
+        <PDFPreviewModal
+          open={receiptPdfData.open}
+          onClose={() => setReceiptPdfData({ open: false, entry: null })}
+          document={
+            <ReceiptPDF
+              entry={receiptPdfData.entry}
+              customer={selectedCustomer}
+              businessName={businessName}
+              businessInfo={businessInfo}
+              logoUrl={logoUrl}
+            />
+          }
+          fileName={`Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
+        />
+      )}
+
+      {/* Headless PDF direct-download (no modal shown) */}
+      {downloadTarget && (
+        <PDFDirectDownload
+          document={downloadTarget.document}
+          fileName={downloadTarget.fileName}
+          onDone={() => setDownloadTarget(null)}
         />
       )}
     </div>
