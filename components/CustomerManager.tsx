@@ -11,6 +11,7 @@ import {
   getCustomers, addCustomer, updateCustomer, deleteCustomer,
   getLedgerEntries, getInvoices, getBusinessProfile,
   getCreditNotes, getDebitNotes, addLedgerEntry,
+  deleteLedgerEntry, updateLedgerEntry,
 } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
@@ -84,7 +85,17 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDesc, setPaymentDesc] = useState('');
+  const [paymentDate, setPaymentDate] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
+
+  // ── Edit/Delete payment entry ──
+  const [editPaymentModal, setEditPaymentModal] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
+  const [editAmount, setEditAmount] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
+  const [deletingPayment, setDeletingPayment] = useState(false);
 
   useEffect(() => {
     loadCustomers();
@@ -221,6 +232,9 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     setShowPaymentForm(false);
     setPaymentAmount('');
     setPaymentDesc('');
+    setPaymentDate('');
+    setEditPaymentModal({ open: false, entry: null });
+    setDeletePaymentId(null);
     setSortField('date');
     setSortDir('desc');
   };
@@ -249,7 +263,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     setPaymentSaving(true);
     try {
       const amount      = parseFloat(paymentAmount);
-      const date        = new Date().toISOString().split('T')[0];
+      const date        = paymentDate || new Date().toISOString().split('T')[0];
       const description = paymentDesc || 'Payment received';
       const newRunningBalance = closingBalance - amount;
 
@@ -268,9 +282,57 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
       setShowPaymentForm(false);
       setPaymentAmount('');
       setPaymentDesc('');
+      setPaymentDate('');
       setReceiptModal({ open: true, entry: receiptEntry });
     } catch (err) { console.error(err); }
     finally { setPaymentSaving(false); }
+  };
+
+  // ── Edit existing payment entry ──
+  const handleEditPayment = async () => {
+    if (!editPaymentModal.entry || !editAmount || !selectedCustomer) return;
+    setEditSaving(true);
+    try {
+      const oldAmount = editPaymentModal.entry.amount;
+      const newAmount = parseFloat(editAmount);
+      const date      = editDate || editPaymentModal.entry.date;
+      const description = editDesc.trim() || 'Payment received';
+
+      await updateLedgerEntry(userId, editPaymentModal.entry.id!, {
+        amount: newAmount, description, date,
+      });
+      // Adjust customer balance: reverse old credit, apply new credit
+      const balanceDelta = oldAmount - newAmount;
+      await updateCustomer(userId, selectedCustomer.id, {
+        balance: (selectedCustomer.balance || 0) + balanceDelta,
+      });
+
+      const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
+      setLedgerEntries(updatedEntries);
+      setEditPaymentModal({ open: false, entry: null });
+      setEditAmount(''); setEditDesc(''); setEditDate('');
+    } catch (err) { console.error(err); }
+    finally { setEditSaving(false); }
+  };
+
+  // ── Delete payment entry ──
+  const handleDeletePayment = async () => {
+    if (!deletePaymentId || !selectedCustomer) return;
+    const entry = runningEntries.find(e => e.id === deletePaymentId);
+    if (!entry) return;
+    setDeletingPayment(true);
+    try {
+      await deleteLedgerEntry(userId, deletePaymentId);
+      // Reverse the credit — balance goes back up
+      await updateCustomer(userId, selectedCustomer.id, {
+        balance: (selectedCustomer.balance || 0) + entry.amount,
+      });
+      const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
+      setLedgerEntries(updatedEntries);
+      setDeletePaymentId(null);
+      setReceiptModal({ open: false, entry: null });
+    } catch (err) { console.error(err); }
+    finally { setDeletingPayment(false); }
   };
 
   // ── Running balance + sort ──
@@ -473,7 +535,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
               <h3 className="text-lg font-bold font-poppins text-emerald-600 flex items-center gap-2">
                 <IndianRupee size={18} /> Record Payment
               </h3>
-              <button onClick={() => { setShowPaymentForm(false); setPaymentAmount(''); setPaymentDesc(''); }} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+              <button onClick={() => { setShowPaymentForm(false); setPaymentAmount(''); setPaymentDesc(''); setPaymentDate(''); }} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
                 <X size={20} className="text-slate-400" />
               </button>
             </div>
@@ -483,7 +545,13 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                 <input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
                   value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="0" autoFocus />
               </div>
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Date</label>
+                <input type="date" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                  value={paymentDate} onChange={e => setPaymentDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]} />
+              </div>
+              <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
                 <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
                   value={paymentDesc} onChange={e => setPaymentDesc(e.target.value)} placeholder="e.g. NEFT, UPI, Cash..." />
@@ -742,9 +810,34 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                   </div>
                   <h3 className="text-lg font-bold text-slate-900">Payment Receipt</h3>
                 </div>
-                <button onClick={() => setReceiptModal({ open: false, entry: null })} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
-                  <X size={20} className="text-slate-400" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {/* Edit button */}
+                  <button
+                    title="Edit"
+                    onClick={() => {
+                      const e = receiptModal.entry!;
+                      setEditPaymentModal({ open: true, entry: e });
+                      setEditAmount(String(e.amount));
+                      setEditDesc(e.description);
+                      setEditDate(e.date);
+                      setReceiptModal({ open: false, entry: null });
+                    }}
+                    className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-indigo-100 transition-all"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                  {/* Delete button */}
+                  <button
+                    title="Delete"
+                    onClick={() => setDeletePaymentId(receiptModal.entry!.id!)}
+                    className="p-2 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 transition-all"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  <button onClick={() => setReceiptModal({ open: false, entry: null })} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                    <X size={20} className="text-slate-400" />
+                  </button>
+                </div>
               </div>
               <div className="space-y-5">
                 <div className="bg-slate-50 rounded-2xl p-6 space-y-4">
@@ -821,6 +914,80 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                     </button>
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Payment Modal */}
+        {editPaymentModal.open && editPaymentModal.entry && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                    <Edit3 size={18} className="text-profee-blue" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">Edit Payment</h3>
+                </div>
+                <button onClick={() => setEditPaymentModal({ open: false, entry: null })} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Amount (₹) *</label>
+                  <input type="number" autoFocus
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                    value={editAmount} onChange={e => setEditAmount(e.target.value)} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Date</label>
+                  <input type="date"
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                    value={editDate} onChange={e => setEditDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Description</label>
+                  <input
+                    className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                    value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="e.g. NEFT, UPI, Cash..." />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button onClick={() => setEditPaymentModal({ open: false, entry: null })}
+                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100">
+                  Cancel
+                </button>
+                <button onClick={handleEditPayment} disabled={editSaving || !editAmount}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100 disabled:opacity-50">
+                  {editSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {editSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Payment Confirmation */}
+        {deletePaymentId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-rose-50 flex items-center justify-center mx-auto mb-6">
+                <Trash2 size={24} className="text-rose-500" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Delete Receipt?</h3>
+              <p className="text-sm text-slate-400 mb-8">This payment entry will be permanently deleted and the customer balance will be adjusted.</p>
+              <div className="flex gap-3">
+                <button onClick={() => setDeletePaymentId(null)}
+                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100">
+                  Cancel
+                </button>
+                <button onClick={handleDeletePayment} disabled={deletingPayment}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-rose-500 text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                  {deletingPayment ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  {deletingPayment ? 'Deleting...' : 'Delete'}
+                </button>
               </div>
             </div>
           </div>

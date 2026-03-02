@@ -186,6 +186,13 @@ export async function deleteLedgerEntry(userId: string, entryId: string) {
   await deleteDoc(userDoc(userId, 'ledger', entryId));
 }
 
+export async function updateLedgerEntry(userId: string, entryId: string, data: Partial<Omit<LedgerEntry, 'id'>>) {
+  await updateDoc(userDoc(userId, 'ledger', entryId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 // ═══════════════════════════════════════════
 //  INVENTORY
 // ═══════════════════════════════════════════
