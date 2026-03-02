@@ -49,9 +49,13 @@ interface InvoiceGeneratorProps {
   initialQuotation?: Quotation | null;
   /** Called after initialQuotation has been consumed so App.tsx can clear it. */
   onQuotationConsumed?: () => void;
+  /** When set, directly opens this invoice ID in preview mode. */
+  initialInvoiceId?: string | null;
+  /** Called after initialInvoiceId has been consumed so App.tsx can clear it. */
+  onInvoiceConsumed?: () => void;
 }
 
-const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuotation, onQuotationConsumed }) => {
+const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuotation, onQuotationConsumed, initialInvoiceId, onInvoiceConsumed }) => {
   const [mode, setMode] = useState<'list' | 'editing' | 'preview'>('list');
   const [sourceQuotationId, setSourceQuotationId] = useState<string | null>(null);
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
@@ -141,6 +145,16 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     setSourceQuotationId(initialQuotation.id);
     onQuotationConsumed?.();
   }, [initialQuotation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-open an invoice in preview mode when navigated from Customers page
+  useEffect(() => {
+    if (!initialInvoiceId || allInvoices.length === 0) return;
+    const inv = allInvoices.find(i => i.id === initialInvoiceId);
+    if (inv) {
+      handlePreviewInvoice(inv);
+      onInvoiceConsumed?.();
+    }
+  }, [initialInvoiceId, allInvoices]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     try {

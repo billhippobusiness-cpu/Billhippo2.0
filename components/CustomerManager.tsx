@@ -27,14 +27,18 @@ const INDIAN_STATES = [
   "Uttarakhand", "West Bengal", "Delhi", "Jammu and Kashmir", "Ladakh", "Puducherry"
 ];
 
-interface CustomerManagerProps { userId: string; }
+interface CustomerManagerProps {
+  userId: string;
+  /** Called when user wants to navigate to the invoice preview in InvoiceGenerator */
+  onNavigateToInvoice?: (invoiceId: string) => void;
+}
 
 const EMPTY_FORM = {
   name: '', gstin: '', phone: '', email: '',
   address: '', city: '', state: 'Maharashtra', pincode: '', balance: 0
 };
 
-const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
+const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToInvoice }) => {
   // ── Customer list state ──
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -662,11 +666,11 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                   onClick={() => {
                     const inv = invoiceDetailModal.invoice!;
                     setInvoiceDetailModal({ open: false, invoice: null });
-                    setPdfModal({ open: true, invoice: inv });
+                    onNavigateToInvoice?.(inv.id);
                   }}
                   className="flex-1 py-4 rounded-2xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
                 >
-                  <Eye size={16} /> View PDF
+                  <Eye size={16} /> View Invoice
                 </button>
                 <button
                   onClick={() => {

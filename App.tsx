@@ -42,6 +42,8 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState<string | null>(null);
   // Quotation → Invoice handoff: stores quotation data to pre-fill the invoice form
   const [pendingQuotation, setPendingQuotation] = useState<Quotation | null>(null);
+  // Customer → Invoice navigation: stores invoice ID to open in preview from CustomerManager
+  const [pendingInvoiceId, setPendingInvoiceId] = useState<string | null>(null);
 
   // Hash-based routing — tracks window.location.hash so we can render
   // /pro-register without a third-party router.
@@ -260,12 +262,19 @@ const App: React.FC = () => {
     const userId = user.uid;
     switch (activeTab) {
       case 'dashboard':   return <Dashboard userId={userId} />;
-      case 'customers':   return <CustomerManager userId={userId} />;
+      case 'customers':   return (
+        <CustomerManager
+          userId={userId}
+          onNavigateToInvoice={(invoiceId) => { setPendingInvoiceId(invoiceId); setActiveTab('invoices'); }}
+        />
+      );
       case 'invoices':    return (
         <InvoiceGenerator
           userId={userId}
           initialQuotation={pendingQuotation}
           onQuotationConsumed={() => setPendingQuotation(null)}
+          initialInvoiceId={pendingInvoiceId}
+          onInvoiceConsumed={() => setPendingInvoiceId(null)}
         />
       );
       case 'notes':       return <CreditDebitNotes userId={userId} />;
