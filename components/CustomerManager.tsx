@@ -10,7 +10,7 @@ import { Customer, LedgerEntry, Invoice, BusinessProfile, CreditNote, DebitNote 
 import {
   getCustomers, addCustomer, updateCustomer, deleteCustomer,
   getLedgerEntries, getInvoices, getBusinessProfile,
-  getCreditNotes, getDebitNotes,
+  getCreditNotes, getDebitNotes, addLedgerEntry,
 } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
@@ -70,6 +70,12 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
 
   // Direct-download target (headless PDF render, no modal shown)
   const [downloadTarget, setDownloadTarget] = useState<{ document: React.ReactElement; fileName: string } | null>(null);
+
+  // ── Record-payment form ──
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentDesc, setPaymentDesc] = useState('');
+  const [paymentSaving, setPaymentSaving] = useState(false);
 
   useEffect(() => {
     loadCustomers();
@@ -203,6 +209,9 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     setNoteDetailModal({ open: false, note: null, noteType: 'credit' });
     setDownloadTarget(null);
     setIsInlineEditing(false);
+    setShowPaymentForm(false);
+    setPaymentAmount('');
+    setPaymentDesc('');
   };
 
   const handleInlineEdit = () => {
@@ -221,6 +230,36 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     });
     setIsInlineEditing(true);
     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+  };
+
+  // ── Record payment: Credit ledger entry + receipt auto-open ──
+  const handleAddPayment = async () => {
+    if (!paymentAmount || !selectedCustomer) return;
+    setPaymentSaving(true);
+    try {
+      const amount      = parseFloat(paymentAmount);
+      const date        = new Date().toISOString().split('T')[0];
+      const description = paymentDesc || 'Payment received';
+      const newRunningBalance = closingBalance - amount;
+
+      const entryId = await addLedgerEntry(userId, {
+        date, type: 'Credit', amount, description, customerId: selectedCustomer.id,
+      });
+      await updateCustomer(userId, selectedCustomer.id, { balance: (selectedCustomer.balance || 0) - amount });
+
+      const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
+      setLedgerEntries(updatedEntries);
+
+      const receiptEntry: ReceiptEntry = {
+        id: entryId, date, type: 'Credit', amount, description,
+        customerId: selectedCustomer.id, runningBalance: newRunningBalance,
+      };
+      setShowPaymentForm(false);
+      setPaymentAmount('');
+      setPaymentDesc('');
+      setReceiptModal({ open: true, entry: receiptEntry });
+    } catch (err) { console.error(err); }
+    finally { setPaymentSaving(false); }
   };
 
   // ── Running balance ──
@@ -269,6 +308,12 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
             <ChevronLeft size={16} /> All Customers
           </button>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setShowPaymentForm(prev => !prev); setPaymentAmount(''); setPaymentDesc(''); }}
+              className="flex items-center gap-2 bg-emerald-500 text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:scale-105 active:scale-95 transition-all shadow-xl shadow-emerald-100 font-poppins"
+            >
+              <Plus size={15} /> Record Payment
+            </button>
             {ledgerEntries.length > 0 && businessProfile && (
               <button
                 onClick={() => setLedgerPdfOpen(true)}
@@ -397,6 +442,39 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
             )}
           </AnimatePresence>
         </motion.div>
+
+        {/* ── Record Payment form ── */}
+        {showPaymentForm && (
+          <div className="bg-white rounded-[2rem] p-8 premium-shadow border border-emerald-100 space-y-6 animate-in fade-in slide-in-from-top-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold font-poppins text-emerald-600 flex items-center gap-2">
+                <IndianRupee size={18} /> Record Payment
+              </h3>
+              <button onClick={() => { setShowPaymentForm(false); setPaymentAmount(''); setPaymentDesc(''); }} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                <X size={20} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-poppins">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Amount (₹) *</label>
+                <input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                  value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="0" autoFocus />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
+                <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+                  value={paymentDesc} onChange={e => setPaymentDesc(e.target.value)} placeholder="e.g. NEFT, UPI, Cash..." />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={handleAddPayment} disabled={paymentSaving || !paymentAmount}
+                className="bg-emerald-500 text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 hover:scale-105 transition-all font-poppins disabled:opacity-50 shadow-xl shadow-emerald-100">
+                {paymentSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                {paymentSaving ? 'Saving...' : 'Save Payment & Get Receipt'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Ledger table */}
         <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 min-h-[400px]">
