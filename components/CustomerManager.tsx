@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit3, Trash2, X, Save, UserCircle, Phone, Mail,
   MapPin, Loader2, Users, ChevronLeft, FileText, IndianRupee, Receipt, Download,
-  TrendingDown, TrendingUp, Eye,
+  TrendingDown, TrendingUp, Eye, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { Customer, LedgerEntry, Invoice, BusinessProfile, CreditNote, DebitNote } from '../types';
 import {
@@ -33,6 +33,8 @@ interface CustomerManagerProps {
   onNavigateToInvoice?: (invoiceId: string) => void;
 }
 
+type SortField = 'date' | 'type' | 'description' | 'debit' | 'credit' | 'balance';
+
 const EMPTY_FORM = {
   name: '', gstin: '', phone: '', email: '',
   address: '', city: '', state: 'Maharashtra', pincode: '', balance: 0
@@ -57,6 +59,9 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [invoicesMap, setInvoicesMap] = useState<Record<string, Invoice>>({});
+  // Ledger sort: default Latest First (date desc)
+  const [sortField, setSortField] = useState<SortField>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
 
   // ── PDF / receipt modal state ──
@@ -81,13 +86,9 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
   const [paymentDesc, setPaymentDesc] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
 
-  // ── All-customer aggregate (for list-view summary cards) ──
-  const [allLedgerEntries, setAllLedgerEntries] = useState<LedgerEntry[]>([]);
-
   useEffect(() => {
     loadCustomers();
     loadBusinessProfile();
-    loadAllLedgerEntries();
   }, [userId]);
 
   const loadCustomers = async () => {
@@ -107,13 +108,6 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     try {
       const profile = await getBusinessProfile(userId);
       setBusinessProfile(profile);
-    } catch (err) { console.error(err); }
-  };
-
-  const loadAllLedgerEntries = async () => {
-    try {
-      const entries = await getLedgerEntries(userId);
-      setAllLedgerEntries(entries);
     } catch (err) { console.error(err); }
   };
 
@@ -227,6 +221,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     setShowPaymentForm(false);
     setPaymentAmount('');
     setPaymentDesc('');
+    setSortField('date');
+    setSortDir('desc');
   };
 
   const handleInlineEdit = () => {
@@ -277,14 +273,26 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     finally { setPaymentSaving(false); }
   };
 
-  // ── Running balance ──
+  // ── Running balance + sort ──
   const runningEntries = useMemo(() => {
+    // Compute running balance chronologically (entries from Firestore are already date-ASC)
     let balance = 0;
-    return ledgerEntries.map(e => {
+    const withBalance = ledgerEntries.map(e => {
       balance += e.type === 'Debit' ? e.amount : -e.amount;
       return { ...e, runningBalance: balance };
     });
-  }, [ledgerEntries]);
+    // Then sort for display
+    return [...withBalance].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'date')        cmp = a.date.localeCompare(b.date);
+      else if (sortField === 'type')   cmp = a.type.localeCompare(b.type);
+      else if (sortField === 'description') cmp = (a.description || '').localeCompare(b.description || '');
+      else if (sortField === 'debit')  cmp = (a.type === 'Debit' ? a.amount : 0) - (b.type === 'Debit' ? b.amount : 0);
+      else if (sortField === 'credit') cmp = (a.type === 'Credit' ? a.amount : 0) - (b.type === 'Credit' ? b.amount : 0);
+      else if (sortField === 'balance') cmp = a.runningBalance - b.runningBalance;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [ledgerEntries, sortField, sortDir]);
 
   const totalDebit = ledgerEntries.filter(e => e.type === 'Debit').reduce((s, e) => s + e.amount, 0);
   const totalCredit = ledgerEntries.filter(e => e.type === 'Credit').reduce((s, e) => s + e.amount, 0);
@@ -295,11 +303,6 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     c.city.toLowerCase().includes(search.toLowerCase()) ||
     (c.gstin && c.gstin.toLowerCase().includes(search.toLowerCase()))
   );
-
-  // ── Aggregate totals across ALL customers (for summary cards on list view) ──
-  const aggTotalDr  = allLedgerEntries.filter(e => e.type === 'Debit').reduce((s, e) => s + e.amount, 0);
-  const aggTotalCr  = allLedgerEntries.filter(e => e.type === 'Credit').reduce((s, e) => s + e.amount, 0);
-  const aggClosing  = aggTotalDr - aggTotalCr;
 
   // ── Loading screen ──
   if (loading) {
@@ -496,6 +499,27 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
           </div>
         )}
 
+        {/* ── Summary Cards (per-customer) ── */}
+        {ledgerEntries.length > 0 && (
+          <div className="grid grid-cols-3 gap-4 font-poppins">
+            <div className="bg-white rounded-[1.5rem] p-6 premium-shadow border border-slate-50">
+              <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2">Total Sales (Dr)</p>
+              <p className="text-2xl font-bold text-rose-500">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-white rounded-[1.5rem] p-6 premium-shadow border border-slate-50">
+              <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">Collections (Cr)</p>
+              <p className="text-2xl font-bold text-emerald-500">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="bg-slate-900 rounded-[1.5rem] p-6 premium-shadow">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Closing Balance</p>
+              <p className="text-2xl font-bold text-white">
+                ₹{Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                <span className="text-[11px] opacity-50 ml-1">{closingBalance >= 0 ? 'Dr' : 'Cr'}</span>
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Ledger table */}
         <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 min-h-[400px]">
           <h3 className="text-xl font-bold font-poppins text-slate-900 mb-8">Account Ledger</h3>
@@ -514,12 +538,33 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
               <table className="w-full text-left font-poppins">
                 <thead>
                   <tr className="bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-widest">
-                    <th className="px-6 py-4 rounded-tl-2xl">Date</th>
-                    <th className="px-6 py-4">Type</th>
-                    <th className="px-6 py-4">Description</th>
-                    <th className="px-6 py-4 text-right">Debit (₹)</th>
-                    <th className="px-6 py-4 text-right">Credit (₹)</th>
-                    <th className="px-6 py-4 text-right rounded-tr-2xl">Balance (₹)</th>
+                    {(
+                      [
+                        { field: 'date',        label: 'Date',        cls: 'rounded-tl-2xl', align: 'left'  },
+                        { field: 'type',        label: 'Type',        cls: '',               align: 'left'  },
+                        { field: 'description', label: 'Description', cls: '',               align: 'left'  },
+                        { field: 'debit',       label: 'Debit (₹)',   cls: '',               align: 'right' },
+                        { field: 'credit',      label: 'Credit (₹)',  cls: '',               align: 'right' },
+                        { field: 'balance',     label: 'Balance (₹)', cls: 'rounded-tr-2xl', align: 'right' },
+                      ] as { field: SortField; label: string; cls: string; align: 'left' | 'right' }[]
+                    ).map(col => (
+                      <th
+                        key={col.field}
+                        className={`px-6 py-4 cursor-pointer select-none hover:text-slate-600 transition-colors ${col.cls} ${col.align === 'right' ? 'text-right' : ''}`}
+                        onClick={() => {
+                          if (sortField === col.field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                          else { setSortField(col.field); setSortDir(col.field === 'date' ? 'desc' : 'asc'); }
+                        }}
+                      >
+                        <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'justify-end w-full' : ''}`}>
+                          {col.label}
+                          {sortField === col.field
+                            ? (sortDir === 'asc' ? <ChevronUp size={12} className="text-profee-blue" /> : <ChevronDown size={12} className="text-profee-blue" />)
+                            : <ChevronDown size={12} className="opacity-20" />
+                          }
+                        </span>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -592,26 +637,6 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
             </div>
           )}
 
-          {/* Summary footer */}
-          {ledgerEntries.length > 0 && (
-            <div className="mt-10 grid grid-cols-3 gap-6 font-poppins">
-              <div className="bg-rose-50 rounded-2xl p-6 text-center border border-rose-100/50">
-                <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2">Total Sales (Dr)</p>
-                <p className="text-2xl font-bold text-rose-600">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-              </div>
-              <div className="bg-emerald-50 rounded-2xl p-6 text-center border border-emerald-100/50">
-                <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">Collections (Cr)</p>
-                <p className="text-2xl font-bold text-emerald-600">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-              </div>
-              <div className="bg-slate-900 rounded-2xl p-6 text-center text-white shadow-xl">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Closing Balance</p>
-                <p className="text-2xl font-bold">
-                  ₹{Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  <span className="text-[10px] opacity-50 ml-1">{closingBalance >= 0 ? 'Dr' : 'Cr'}</span>
-                </p>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ── Invoice Detail Modal (row click → this → View PDF or Download) ── */}
@@ -989,29 +1014,6 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
       {error && !showForm && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-sm font-bold text-rose-600 font-poppins">{error}</div>
       )}
-
-      {/* ── Aggregate Summary Cards ── */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-[1.5rem] p-6 premium-shadow border border-slate-50">
-          <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2">Total Sales (Dr)</p>
-          <p className="text-2xl font-bold text-rose-500 font-poppins">
-            ₹{aggTotalDr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </p>
-        </div>
-        <div className="bg-white rounded-[1.5rem] p-6 premium-shadow border border-slate-50">
-          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">Collections (Cr)</p>
-          <p className="text-2xl font-bold text-emerald-500 font-poppins">
-            ₹{aggTotalCr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </p>
-        </div>
-        <div className="bg-slate-900 rounded-[1.5rem] p-6 premium-shadow">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Closing Balance</p>
-          <p className="text-2xl font-bold text-white font-poppins">
-            ₹{Math.abs(aggClosing).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            <span className="text-[11px] opacity-50 ml-1">{aggClosing >= 0 ? 'Dr' : 'Cr'}</span>
-          </p>
-        </div>
-      </div>
 
       {/* Search Bar */}
       <div className="relative">
