@@ -165,6 +165,22 @@ const S = StyleSheet.create({
 const fmt = (n: number) =>
   `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** Convert YYYY-MM-DD  →  DD-MM-YYYY */
+const fmtDate = (d: string): string => {
+  const parts = d.split('-');
+  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  return d;
+};
+
+/** Today as DD-MM-YYYY */
+const todayDMY = (): string => {
+  const now = new Date();
+  const dd  = String(now.getDate()).padStart(2, '0');
+  const mm  = String(now.getMonth() + 1).padStart(2, '0');
+  const yy  = now.getFullYear();
+  return `${dd}-${mm}-${yy}`;
+};
+
 interface EntryWithBalance extends LedgerEntry { runningBalance: number; }
 
 function computeRunning(entries: LedgerEntry[]): EntryWithBalance[] {
@@ -177,19 +193,20 @@ function computeRunning(entries: LedgerEntry[]): EntryWithBalance[] {
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LedgerPDFProps {
-  customer:     Customer;
-  entries:      LedgerEntry[];
-  businessName: string;
-  businessInfo: { gstin?: string; address: string; email?: string; phone?: string };
-  logoUrl?:     string;
+  customer:      Customer;
+  entries:       LedgerEntry[];
+  businessName:  string;
+  businessInfo:  { gstin?: string; address: string; email?: string; phone?: string };
+  logoUrl?:      string;
+  signatureUrl?: string;
   statementDate?: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const LedgerPDF: React.FC<LedgerPDFProps> = ({
-  customer, entries, businessName, businessInfo, logoUrl, statementDate,
+  customer, entries, businessName, businessInfo, logoUrl, signatureUrl, statementDate,
 }) => {
-  const today   = statementDate ?? new Date().toLocaleDateString('en-IN');
+  const today   = statementDate ?? todayDMY();
   const running = computeRunning(entries);
   const totalDr = entries.filter(e => e.type === 'Debit').reduce((s, e) => s + e.amount, 0);
   const totalCr = entries.filter(e => e.type === 'Credit').reduce((s, e) => s + e.amount, 0);
@@ -278,7 +295,7 @@ const LedgerPDF: React.FC<LedgerPDFProps> = ({
                 style={[S.tableRow, idx % 2 === 1 ? S.tableRowAlt : {}]}
                 wrap={false}
               >
-                <Text style={[S.tableCell, S.cDate]}>{entry.date}</Text>
+                <Text style={[S.tableCell, S.cDate]}>{fmtDate(entry.date)}</Text>
                 <Text style={[S.tableCell, S.cType, { color: entry.type === 'Debit' ? BLUE : '#16a34a', fontWeight: 600 }]}>
                   {typeLabel}
                 </Text>
@@ -324,7 +341,11 @@ const LedgerPDF: React.FC<LedgerPDFProps> = ({
             <Text style={S.signLabel}>Customer Signature</Text>
           </View>
           <View style={S.signBox}>
-            <View style={S.signLine} />
+            {signatureUrl ? (
+              <Image src={signatureUrl} style={{ width: 120, height: 40, objectFit: 'contain', marginBottom: 4 }} />
+            ) : (
+              <View style={S.signLine} />
+            )}
             <Text style={S.signLabel}>Authorised Signatory</Text>
             <Text style={S.signBlue}>{businessName}</Text>
           </View>

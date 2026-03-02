@@ -134,6 +134,22 @@ const S = StyleSheet.create({
 const fmt = (n: number) =>
   `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** Convert YYYY-MM-DD  →  DD-MM-YYYY */
+const fmtDate = (d: string): string => {
+  const parts = d.split('-');
+  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  return d;
+};
+
+/** Today as DD-MM-YYYY */
+const todayDMY = (): string => {
+  const now = new Date();
+  const dd  = String(now.getDate()).padStart(2, '0');
+  const mm  = String(now.getMonth() + 1).padStart(2, '0');
+  const yy  = now.getFullYear();
+  return `${dd}-${mm}-${yy}`;
+};
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 export interface ReceiptEntry extends LedgerEntry { runningBalance: number; }
 
@@ -143,13 +159,14 @@ interface ReceiptPDFProps {
   businessName: string;
   businessInfo: { gstin?: string; address: string; phone?: string; email?: string };
   logoUrl?:     string;
+  signatureUrl?: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const ReceiptPDF: React.FC<ReceiptPDFProps> = ({
-  entry, customer, businessName, businessInfo, logoUrl,
+  entry, customer, businessName, businessInfo, logoUrl, signatureUrl,
 }) => {
-  const today     = new Date().toLocaleDateString('en-IN');
+  const today     = todayDMY();
   const drCr      = entry.runningBalance >= 0 ? 'Dr' : 'Cr';
   const receiptId = `RCP-${(entry.id ?? Date.now().toString()).slice(-6).toUpperCase()}`;
 
@@ -190,7 +207,7 @@ const ReceiptPDF: React.FC<ReceiptPDFProps> = ({
             <Text style={S.idLabel}>Receipt ID</Text>
             <Text style={S.idValue}>{receiptId}</Text>
             <Text style={S.dateLabel}>Date</Text>
-            <Text style={S.dateValue}>{entry.date}</Text>
+            <Text style={S.dateValue}>{fmtDate(entry.date)}</Text>
           </View>
         </View>
 
@@ -218,7 +235,7 @@ const ReceiptPDF: React.FC<ReceiptPDFProps> = ({
           </View>
           <View style={S.detailLast}>
             <Text style={S.detailLabel}>Payment Date</Text>
-            <Text style={S.detailValue}>{entry.date}</Text>
+            <Text style={S.detailValue}>{fmtDate(entry.date)}</Text>
           </View>
         </View>
 
@@ -244,7 +261,11 @@ const ReceiptPDF: React.FC<ReceiptPDFProps> = ({
             <Text style={S.signLabel}>Customer Signature</Text>
           </View>
           <View style={S.signBox}>
-            <View style={S.signLine} />
+            {signatureUrl ? (
+              <Image src={signatureUrl} style={{ width: 120, height: 40, objectFit: 'contain', marginBottom: 4 }} />
+            ) : (
+              <View style={S.signLine} />
+            )}
             <Text style={S.signLabel}>Authorised Signatory</Text>
             <Text style={S.signBlue}>{businessName}</Text>
           </View>

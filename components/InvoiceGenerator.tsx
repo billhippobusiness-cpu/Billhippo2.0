@@ -1253,6 +1253,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                             email: profile.email || '',
                           }}
                           logoUrl={profile.theme?.logoUrl}
+                          signatureUrl={profile.signatureUrl}
                         />
                       ),
                       fileName: `Receipt-${customer!.name.replace(/\s+/g, '-')}-${entry!.date}.pdf`,
@@ -1284,6 +1285,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                   email: profile.email || '',
                 }}
                 logoUrl={profile.theme?.logoUrl}
+                signatureUrl={profile.signatureUrl}
               />
             }
             fileName={`Receipt-${receiptPdfData.customer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
