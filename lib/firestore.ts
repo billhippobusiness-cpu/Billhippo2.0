@@ -79,8 +79,11 @@ export async function saveBusinessProfile(userId: string, profile: BusinessProfi
 
 export async function getCustomers(userId: string): Promise<Customer[]> {
   const snap = await getDocs(userCollection(userId, 'customers'));
-  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Customer));
-  return docs.sort((a, b) => a.name.localeCompare(b.name));
+  // Sort by createdAt descending (latest first); fall back to name for equal timestamps
+  return snap.docs
+    .map((d) => ({ id: d.id, _createdAt: (d.data().createdAt?.seconds ?? 0) as number, ...d.data() } as Customer & { _createdAt: number }))
+    .sort((a, b) => b._createdAt - a._createdAt || a.name.localeCompare(b.name))
+    .map(({ _createdAt, ...c }) => c as Customer);
 }
 
 export async function addCustomer(userId: string, customer: Omit<Customer, 'id'>) {

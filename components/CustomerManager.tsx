@@ -77,9 +77,13 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
   const [paymentDesc, setPaymentDesc] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
 
+  // ── All-customer aggregate (for list-view summary cards) ──
+  const [allLedgerEntries, setAllLedgerEntries] = useState<LedgerEntry[]>([]);
+
   useEffect(() => {
     loadCustomers();
     loadBusinessProfile();
+    loadAllLedgerEntries();
   }, [userId]);
 
   const loadCustomers = async () => {
@@ -99,6 +103,13 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     try {
       const profile = await getBusinessProfile(userId);
       setBusinessProfile(profile);
+    } catch (err) { console.error(err); }
+  };
+
+  const loadAllLedgerEntries = async () => {
+    try {
+      const entries = await getLedgerEntries(userId);
+      setAllLedgerEntries(entries);
     } catch (err) { console.error(err); }
   };
 
@@ -280,6 +291,11 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
     c.city.toLowerCase().includes(search.toLowerCase()) ||
     (c.gstin && c.gstin.toLowerCase().includes(search.toLowerCase()))
   );
+
+  // ── Aggregate totals across ALL customers (for summary cards on list view) ──
+  const aggTotalDr  = allLedgerEntries.filter(e => e.type === 'Debit').reduce((s, e) => s + e.amount, 0);
+  const aggTotalCr  = allLedgerEntries.filter(e => e.type === 'Credit').reduce((s, e) => s + e.amount, 0);
+  const aggClosing  = aggTotalDr - aggTotalCr;
 
   // ── Loading screen ──
   if (loading) {
@@ -764,6 +780,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                                 email: businessProfile.email || '',
                               }}
                               logoUrl={businessProfile.theme?.logoUrl}
+                              signatureUrl={businessProfile.signatureUrl}
                             />
                           ),
                           fileName: `Receipt-${selectedCustomer!.name.replace(/\s+/g, '-')}-${entry.date}.pdf`,
@@ -797,7 +814,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                   email: businessProfile.email || '',
                 }}
                 logoUrl={businessProfile.theme?.logoUrl}
-                statementDate={new Date().toLocaleDateString('en-IN')}
+                signatureUrl={businessProfile.signatureUrl}
+                statementDate={(() => { const n = new Date(); return `${String(n.getDate()).padStart(2,'0')}-${String(n.getMonth()+1).padStart(2,'0')}-${n.getFullYear()}`; })()}
               />
             }
             fileName={`Statement-${selectedCustomer.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`}
@@ -821,6 +839,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
                   email: businessProfile.email || '',
                 }}
                 logoUrl={businessProfile.theme?.logoUrl}
+                signatureUrl={businessProfile.signatureUrl}
               />
             }
             fileName={`Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
@@ -966,6 +985,29 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId }) => {
       {error && !showForm && (
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-sm font-bold text-rose-600 font-poppins">{error}</div>
       )}
+
+      {/* ── Aggregate Summary Cards ── */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-white rounded-[1.5rem] p-6 premium-shadow border border-slate-50">
+          <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2">Total Sales (Dr)</p>
+          <p className="text-2xl font-bold text-rose-500 font-poppins">
+            ₹{aggTotalDr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+        <div className="bg-white rounded-[1.5rem] p-6 premium-shadow border border-slate-50">
+          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">Collections (Cr)</p>
+          <p className="text-2xl font-bold text-emerald-500 font-poppins">
+            ₹{aggTotalCr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+        <div className="bg-slate-900 rounded-[1.5rem] p-6 premium-shadow">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Closing Balance</p>
+          <p className="text-2xl font-bold text-white font-poppins">
+            ₹{Math.abs(aggClosing).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            <span className="text-[11px] opacity-50 ml-1">{aggClosing >= 0 ? 'Dr' : 'Cr'}</span>
+          </p>
+        </div>
+      </div>
 
       {/* Search Bar */}
       <div className="relative">
