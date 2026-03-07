@@ -18,9 +18,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
             <img src={BILLHIPPO_LOGO} alt="BillHippo" className="h-20 w-auto object-contain" />
           </div>
           <div className="hidden md:flex items-center gap-10">
-            <a href="#" className="text-sm font-semibold text-slate-600 hover:text-profee-blue transition-colors">Features</a>
-            <a href="#" className="text-sm font-semibold text-slate-600 hover:text-profee-blue transition-colors">Pricing</a>
-            <a href="#" className="text-sm font-semibold text-slate-600 hover:text-profee-blue transition-colors">Testimonials</a>
+            <a href="#features" className="text-sm font-semibold text-slate-600 hover:text-profee-blue transition-colors">Features</a>
+            <a href="#/about" className="text-sm font-semibold text-slate-600 hover:text-profee-blue transition-colors">About</a>
+            <a href="#/contact" className="text-sm font-semibold text-slate-600 hover:text-profee-blue transition-colors">Contact Us</a>
           </div>
           <div className="flex items-center gap-4">
             <button 
@@ -294,11 +294,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
             <div className="flex gap-10 text-sm font-bold text-slate-400 font-poppins">
               <a href="#features" className="hover:text-profee-blue transition-colors">Features</a>
               <a href="#pro" className="hover:text-profee-blue transition-colors">Pro</a>
-              <a href="#" className="hover:text-profee-blue transition-colors">Twitter</a>
-              <a href="#" className="hover:text-profee-blue transition-colors">LinkedIn</a>
-              <a href="#" className="hover:text-profee-blue transition-colors">Contact Us</a>
+              <a href="#/about" className="hover:text-profee-blue transition-colors">About</a>
+              <a href="#/contact" className="hover:text-profee-blue transition-colors">Contact Us</a>
+              <a href="#/privacy" className="hover:text-profee-blue transition-colors">Privacy Policy</a>
             </div>
-            <p className="text-xs text-slate-400 font-medium">© 2026 BillHippo. Made with love for India.</p>
+            <p className="text-xs text-slate-400 font-medium">© 2026 Mehtaji Bizcon LLP. All rights reserved.</p>
           </div>
         </div>
       </footer>
