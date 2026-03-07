@@ -4,6 +4,9 @@ import { LayoutDashboard } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import type { Quotation } from './types';
 import LandingPage from './components/LandingPage';
+import AboutPage from './components/AboutPage';
+import ContactPage from './components/ContactPage';
+import PrivacyPolicyPage from './components/PrivacyPolicyPage';
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
 import InvoiceGenerator from './components/InvoiceGenerator';
@@ -164,6 +167,18 @@ const App: React.FC = () => {
     const inviteToken = inviteMatch[1];
     return <InviteAccept token={inviteToken} onGoToSignIn={handleGoToSignIn} />;
   }
+
+  // ── Hash-based public routes: about / contact / privacy ──────────────────
+  // These pages are accessible to all visitors regardless of auth state.
+
+  const handleEnterApp = () => {
+    window.location.hash = '';
+    setView('auth');
+  };
+
+  if (hash === '#/about') return <AboutPage onEnterApp={handleEnterApp} />;
+  if (hash === '#/contact') return <ContactPage onEnterApp={handleEnterApp} />;
+  if (hash === '#/privacy') return <PrivacyPolicyPage onEnterApp={handleEnterApp} />;
 
   // ── Loading spinner ──────────────────────────────────────────────────────
 
