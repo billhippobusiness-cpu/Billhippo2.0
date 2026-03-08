@@ -308,20 +308,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* Section 11 — The Professional CA Portal */}
       <section className="w-full relative">
         <img src={BLANK_IMAGES[10]} alt="Feature 11" className="w-full h-auto block object-contain" loading="lazy" />
-        {/* Blank top-left: radial diagram starts ~45% from left */}
-        <div className="absolute pointer-events-none" style={{ left: '3%', top: '5%', width: '40%' }}>
-          <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-3" style={{ fontSize: '3vw' }}>
-            The Professional CA Portal
-          </h2>
-          <p className="text-slate-600 leading-relaxed mb-4" style={{ fontSize: '1.1vw' }}>
-            A dedicated multi-client management layer. Tax consultants can seamlessly view, manage, and batch-export GSTR-1 data across all linked client businesses from a single login.
-          </p>
-          <div className="flex flex-col gap-2 items-start">
-            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold shadow-sm" style={{ fontSize: '0.9vw', padding: '0.35vw 0.9vw', display: 'inline-block' }}>⊞ Multi-Client Dashboard</span>
-            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold shadow-sm" style={{ fontSize: '0.9vw', padding: '0.35vw 0.9vw', display: 'inline-block' }}>☰ White-Label Client Invoices</span>
-            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold shadow-sm" style={{ fontSize: '0.9vw', padding: '0.35vw 0.9vw', display: 'inline-block' }}>🔔 Client-Level Filing Alerts</span>
-          </div>
-        </div>
       </section>
 
       {/* Section 12 — Transform Your Tax Compliance Today (CTA) */}
