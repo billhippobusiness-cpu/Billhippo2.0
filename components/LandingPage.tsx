@@ -215,17 +215,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* Section 6 — Professional Print-Ready PDFs */}
       <section className="w-full relative">
         <img src={BLANK_IMAGES[5]} alt="Feature 6" className="w-full h-auto block object-contain" loading="lazy" />
-        <div className="absolute pointer-events-none" style={{ left: '57%', top: '15%', width: '40%' }}>
+        {/* Text block starts after hippo ends (~70% from left) */}
+        <div className="absolute pointer-events-none" style={{ left: '67%', top: '7%', width: '30%' }}>
           <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-3" style={{ fontSize: '2.8vw' }}>
             Professional<br />Print-Ready PDFs
           </h2>
-          <p className="text-slate-600 leading-relaxed mb-5" style={{ fontSize: '1.2vw' }}>
+          <p className="text-slate-600 leading-relaxed mb-5" style={{ fontSize: '1.15vw' }}>
             Export stunning, Rule 46 compliant tax invoices and account statements. Customize with your business logo, authorized signatures, and stamp support.
           </p>
-          <div className="flex flex-col gap-3">
-            <span className="rounded-full bg-indigo-700 text-white font-semibold px-4 py-2 text-center" style={{ fontSize: '0.95vw' }}>Rule 46 Compliant Layouts</span>
-            <span className="rounded-full bg-indigo-700 text-white font-semibold px-4 py-2 text-center" style={{ fontSize: '0.95vw' }}>e-Invoice QR Code Ready</span>
-            <span className="rounded-full bg-indigo-700 text-white font-semibold px-4 py-2 text-center" style={{ fontSize: '0.95vw' }}>Auto Amount-in-Words (Indian Format)</span>
+          <div className="flex flex-col gap-2">
+            <span className="rounded-full bg-indigo-700 text-white font-semibold text-center" style={{ fontSize: '0.9vw', padding: '0.4vw 0.8vw' }}>Rule 46 Compliant Layouts</span>
+            <span className="rounded-full bg-indigo-700 text-white font-semibold text-center" style={{ fontSize: '0.9vw', padding: '0.4vw 0.8vw' }}>e-Invoice QR Code Ready</span>
+            <span className="rounded-full bg-indigo-700 text-white font-semibold text-center" style={{ fontSize: '0.9vw', padding: '0.4vw 0.8vw' }}>Auto Amount-in-Words (Indian Format)</span>
           </div>
         </div>
       </section>
@@ -251,17 +252,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* Section 8 — The GST Filing Center */}
       <section className="w-full relative">
         <img src={BLANK_IMAGES[7]} alt="Feature 8" className="w-full h-auto block object-contain" loading="lazy" />
-        <div className="absolute pointer-events-none" style={{ left: '4%', top: '35%', width: '36%' }}>
+        {/* Blank left column: ~0-30% from left, sidebar starts ~32% */}
+        <div className="absolute pointer-events-none" style={{ left: '3%', top: '38%', width: '26%' }}>
           <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-3" style={{ fontSize: '3vw' }}>
             The GST<br />Filing Center
           </h2>
-          <p className="text-slate-600 leading-relaxed mb-4" style={{ fontSize: '1.2vw' }}>
+          <p className="text-slate-600 leading-relaxed mb-4" style={{ fontSize: '1.1vw' }}>
             Eliminate manual reporting errors. BillHippo continuously aggregates your invoicing data into ready-to-file government summaries.
           </p>
-          <div className="flex flex-col gap-2">
-            <span className="rounded-full bg-indigo-800 text-white font-semibold px-4 py-2" style={{ fontSize: '0.95vw' }}>GSTR-1 Outward Supplies</span>
-            <span className="rounded-full bg-indigo-800 text-white font-semibold px-4 py-2" style={{ fontSize: '0.95vw' }}>GSTR-3B Data Prep</span>
-            <span className="rounded-full bg-indigo-800 text-white font-semibold px-4 py-2" style={{ fontSize: '0.95vw' }}>Month-wise Due Date Reminders</span>
+          <div className="flex flex-col gap-2 items-start">
+            <span className="rounded-full bg-indigo-800 text-white font-semibold" style={{ fontSize: '0.85vw', padding: '0.35vw 0.7vw', display: 'inline-block' }}>GSTR-1 Outward Supplies</span>
+            <span className="rounded-full bg-indigo-800 text-white font-semibold" style={{ fontSize: '0.85vw', padding: '0.35vw 0.7vw', display: 'inline-block' }}>GSTR-3B Data Prep</span>
+            <span className="rounded-full bg-indigo-800 text-white font-semibold" style={{ fontSize: '0.85vw', padding: '0.35vw 0.7vw', display: 'inline-block' }}>Month-wise Due Date Reminders</span>
           </div>
         </div>
       </section>
@@ -287,17 +289,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* Section 10 — Real-Time Business Analytics */}
       <section className="w-full relative">
         <img src={BLANK_IMAGES[9]} alt="Feature 10" className="w-full h-auto block object-contain" loading="lazy" />
-        <div className="absolute pointer-events-none" style={{ left: '4%', top: '8%', width: '43%' }}>
+        {/* Blank left column: hippo starts ~30%, charts on right ~45%+ */}
+        <div className="absolute pointer-events-none" style={{ left: '3%', top: '7%', width: '25%' }}>
           <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-3" style={{ fontSize: '3vw' }}>
             Real-Time<br />Business Analytics
           </h2>
-          <p className="text-slate-600 leading-relaxed mb-4" style={{ fontSize: '1.2vw' }}>
+          <p className="text-slate-600 leading-relaxed mb-4" style={{ fontSize: '1.1vw' }}>
             Gain a crystal-clear picture of your financial health. Track total sales, output tax vs. ITC, and monitor top customers by revenue in real-time.
           </p>
-          <div className="flex flex-col gap-2">
-            <span className="rounded-full bg-indigo-800 text-white font-semibold px-4 py-2" style={{ fontSize: '0.95vw' }}>MoM &amp; YoY Revenue Trends</span>
-            <span className="rounded-full bg-indigo-800 text-white font-semibold px-4 py-2" style={{ fontSize: '0.95vw' }}>Receivables Ageing (0–90+ days)</span>
-            <span className="rounded-full bg-indigo-800 text-white font-semibold px-4 py-2" style={{ fontSize: '0.95vw' }}>GST Liability Tracking</span>
+          <div className="flex flex-col gap-2 items-start">
+            <span className="rounded-full bg-indigo-800 text-white font-semibold" style={{ fontSize: '0.85vw', padding: '0.35vw 0.7vw', display: 'inline-block' }}>MoM &amp; YoY Revenue Trends</span>
+            <span className="rounded-full bg-indigo-800 text-white font-semibold" style={{ fontSize: '0.85vw', padding: '0.35vw 0.7vw', display: 'inline-block' }}>Receivables Ageing (0–90+ days)</span>
+            <span className="rounded-full bg-indigo-800 text-white font-semibold" style={{ fontSize: '0.85vw', padding: '0.35vw 0.7vw', display: 'inline-block' }}>GST Liability Tracking</span>
           </div>
         </div>
       </section>
@@ -305,23 +308,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* Section 11 — The Professional CA Portal */}
       <section className="w-full relative">
         <img src={BLANK_IMAGES[10]} alt="Feature 11" className="w-full h-auto block object-contain" loading="lazy" />
-        <div className="absolute pointer-events-none" style={{ left: '4%', top: '5%', width: '45%' }}>
+        {/* Blank top-left: radial diagram starts ~45% from left */}
+        <div className="absolute pointer-events-none" style={{ left: '3%', top: '5%', width: '40%' }}>
           <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-3" style={{ fontSize: '3vw' }}>
             The Professional CA Portal
           </h2>
-          <p className="text-slate-600 leading-relaxed mb-5" style={{ fontSize: '1.2vw' }}>
+          <p className="text-slate-600 leading-relaxed mb-4" style={{ fontSize: '1.1vw' }}>
             A dedicated multi-client management layer. Tax consultants can seamlessly view, manage, and batch-export GSTR-1 data across all linked client businesses from a single login.
           </p>
-          <div className="flex flex-col gap-3">
-            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold px-4 py-2 shadow-sm flex items-center gap-2" style={{ fontSize: '1vw' }}>
-              <span className="text-indigo-600">⊞</span> Multi-Client Dashboard
-            </span>
-            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold px-4 py-2 shadow-sm flex items-center gap-2" style={{ fontSize: '1vw' }}>
-              <span className="text-indigo-600">☰</span> White-Label Client Invoices
-            </span>
-            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold px-4 py-2 shadow-sm flex items-center gap-2" style={{ fontSize: '1vw' }}>
-              <span className="text-indigo-600">🔔</span> Client-Level Filing Alerts
-            </span>
+          <div className="flex flex-col gap-2 items-start">
+            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold shadow-sm" style={{ fontSize: '0.9vw', padding: '0.35vw 0.9vw', display: 'inline-block' }}>⊞ Multi-Client Dashboard</span>
+            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold shadow-sm" style={{ fontSize: '0.9vw', padding: '0.35vw 0.9vw', display: 'inline-block' }}>☰ White-Label Client Invoices</span>
+            <span className="rounded-full bg-white border border-slate-200 text-slate-800 font-semibold shadow-sm" style={{ fontSize: '0.9vw', padding: '0.35vw 0.9vw', display: 'inline-block' }}>🔔 Client-Level Filing Alerts</span>
           </div>
         </div>
       </section>
@@ -329,18 +327,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* Section 12 — Transform Your Tax Compliance Today (CTA) */}
       <section className="w-full relative">
         <img src={BLANK_IMAGES[11]} alt="Feature 12" className="w-full h-auto block object-contain" loading="lazy" />
-        {/* Logo */}
-        <div className="absolute pointer-events-none flex justify-center" style={{ left: '38%', top: '2%', width: '24%' }}>
-          <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-full h-auto object-contain" />
-        </div>
-        {/* Heading */}
-        <div className="absolute pointer-events-none text-center" style={{ left: '5%', top: '17%', width: '90%' }}>
+        {/* Heading — blank image already has logo drawn at top; heading goes below it */}
+        <div className="absolute pointer-events-none text-center" style={{ left: '5%', top: '18%', width: '90%' }}>
           <h2 className="font-bold font-poppins text-indigo-800 leading-tight" style={{ fontSize: '3.5vw' }}>
             Transform Your Tax Compliance Today
           </h2>
         </div>
         {/* Body */}
-        <div className="absolute pointer-events-none text-center" style={{ left: '15%', top: '33%', width: '70%' }}>
+        <div className="absolute pointer-events-none text-center" style={{ left: '15%', top: '34%', width: '70%' }}>
           <p className="text-slate-600 leading-relaxed" style={{ fontSize: '1.2vw' }}>
             Self-serve onboarding for businesses, or join our Professional Referral Programme to earn tiered commissions on every active client you bring to BillHippo.
           </p>
