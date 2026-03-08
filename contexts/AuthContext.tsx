@@ -4,6 +4,8 @@ import {
   signIn,
   signUp,
   signInWithGoogle,
+  sendWhatsAppOtp,
+  verifyWhatsAppOtp,
   logOut,
   resetPassword,
 } from '../lib/auth';
@@ -41,6 +43,8 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<User>;
   signUp: (email: string, password: string, displayName: string) => Promise<User>;
   signInWithGoogle: () => Promise<User>;
+  sendWhatsAppOtp: (phoneNumber: string) => Promise<void>;
+  verifyWhatsAppOtp: (phoneNumber: string, otp: string) => Promise<User>;
   logOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
 }
@@ -65,6 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signUp,
     signInWithGoogle,
+    sendWhatsAppOtp,
+    verifyWhatsAppOtp,
     logOut,
     resetPassword,
   };

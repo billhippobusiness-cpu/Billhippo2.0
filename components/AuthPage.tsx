@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, Eye, EyeClosed, ArrowRight, ChevronLeft } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeClosed, ArrowRight, ChevronLeft, Phone, MessageCircle } from 'lucide-react';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -10,6 +10,8 @@ interface AuthPageProps {
   onLogin: (email: string, password: string) => Promise<void>;
   onSignUp: (email: string, password: string, name: string) => Promise<void>;
   onGoogleLogin: () => Promise<void>;
+  onSendWhatsAppOtp: (phoneNumber: string) => Promise<void>;
+  onVerifyWhatsAppOtp: (phoneNumber: string, otp: string) => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
   onCreateProAccount: () => void;
   onLoginSuccess?: (redirectHash: string | null) => void;
@@ -22,6 +24,8 @@ const AuthPage: React.FC<AuthPageProps> = ({
   onLogin,
   onSignUp,
   onGoogleLogin,
+  onSendWhatsAppOtp,
+  onVerifyWhatsAppOtp,
   onResetPassword,
   onCreateProAccount,
   onLoginSuccess,
@@ -45,6 +49,13 @@ const AuthPage: React.FC<AuthPageProps> = ({
   const [resetMessage, setResetMessage] = useState<string | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
 
+  // WhatsApp OTP state
+  const [whatsappStep, setWhatsappStep] = useState<'idle' | 'phone' | 'otp'>('idle');
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const switchTab = (tab: AuthTab) => {
     setActiveTab(tab);
     setEmail('');
@@ -53,6 +64,12 @@ const AuthPage: React.FC<AuthPageProps> = ({
     setIsSignUp(false);
     setShowPassword(false);
     setResetMessage(null);
+    // Reset WhatsApp OTP flow
+    setWhatsappStep('idle');
+    setPhone('');
+    setOtp('');
+    setOtpCooldown(0);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
   };
 
   const finishLogin = () => {
@@ -115,6 +132,70 @@ const AuthPage: React.FC<AuthPageProps> = ({
     } finally {
       setResetLoading(false);
     }
+  };
+
+  // WhatsApp OTP helpers
+  const startCooldown = (seconds = 30) => {
+    setOtpCooldown(seconds);
+    cooldownRef.current = setInterval(() => {
+      setOtpCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(cooldownRef.current!);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  // Normalise to E.164 (+91 prefix for 10-digit Indian numbers)
+  const normalisePhone = (raw: string) => {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 10) return `+91${digits}`;
+    if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+    return raw.trim().startsWith('+') ? raw.trim() : `+${digits}`;
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await onSendWhatsAppOtp(normalisePhone(phone));
+      setWhatsappStep('otp');
+      startCooldown(30);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await onVerifyWhatsAppOtp(normalisePhone(phone), otp.trim());
+      finishLogin();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (otpCooldown > 0) return;
+    setLoading(true);
+    try {
+      await onSendWhatsAppOtp(normalisePhone(phone));
+      startCooldown(30);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetWhatsappFlow = () => {
+    setWhatsappStep('idle');
+    setPhone('');
+    setOtp('');
+    setOtpCooldown(0);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
   };
 
   const isPro = activeTab === 'professional';
@@ -286,6 +367,134 @@ const AuthPage: React.FC<AuthPageProps> = ({
                       transition={{ duration: 0.2 }}
                       style={{ transition: 'none' }}
                     >
+                      {/* ── WHATSAPP OTP FLOW (overlays the email form) ── */}
+                      <AnimatePresence mode="wait">
+                        {whatsappStep === 'phone' && (
+                          <motion.div
+                            key="wa-phone"
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 8 }}
+                            transition={{ duration: 0.2 }}
+                            style={{ transition: 'none' }}
+                          >
+                            <form onSubmit={handleSendOtp} className="space-y-4">
+                              <div className="text-center mb-2">
+                                <div className="flex items-center justify-center gap-2 text-[#25D366]">
+                                  <MessageCircle className="w-5 h-5" />
+                                  <span className="text-sm font-bold font-poppins">Sign in with WhatsApp</span>
+                                </div>
+                                <p className="text-xs text-slate-400 font-poppins mt-1">Enter your mobile number to receive an OTP</p>
+                              </div>
+                              <div className="relative flex items-center rounded-2xl">
+                                <Phone className={`absolute left-4 w-4 h-4 ${focusedInput === 'wa-phone' ? 'text-[#25D366]' : 'text-slate-300'}`} style={{ transition: 'color 0.3s' }} />
+                                <span className="absolute left-11 text-sm text-slate-400 font-poppins font-medium">+91</span>
+                                <input
+                                  type="tel"
+                                  placeholder="10-digit mobile number"
+                                  value={phone}
+                                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                                  onFocus={() => setFocusedInput('wa-phone')}
+                                  onBlur={() => setFocusedInput(null)}
+                                  required
+                                  pattern="\d{10}"
+                                  className="w-full bg-slate-50 border border-slate-100 focus:border-[#25D366]/40 text-slate-800 placeholder:text-slate-300 h-12 rounded-2xl pl-20 pr-4 text-sm outline-none focus:ring-2 focus:ring-[#25D366]/10 font-poppins font-medium"
+                                />
+                              </div>
+                              <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                type="submit"
+                                disabled={loading || phone.length !== 10}
+                                className="w-full relative group/button disabled:opacity-50"
+                                style={{ transition: 'none' }}
+                              >
+                                <div className="relative overflow-hidden bg-[#25D366] text-white font-bold h-12 rounded-2xl flex items-center justify-center gap-2 font-poppins shadow-lg shadow-green-100">
+                                  {loading
+                                    ? <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                    : <><MessageCircle className="w-4 h-4" /><span className="text-sm">Send OTP via WhatsApp</span></>
+                                  }
+                                </div>
+                              </motion.button>
+                              <p className="text-center text-xs text-slate-400 font-poppins">
+                                <button type="button" onClick={resetWhatsappFlow} className="text-[#4c2de0] font-bold hover:underline">
+                                  ← Back to Email Sign In
+                                </button>
+                              </p>
+                            </form>
+                          </motion.div>
+                        )}
+
+                        {whatsappStep === 'otp' && (
+                          <motion.div
+                            key="wa-otp"
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 8 }}
+                            transition={{ duration: 0.2 }}
+                            style={{ transition: 'none' }}
+                          >
+                            <form onSubmit={handleVerifyOtp} className="space-y-4">
+                              <div className="text-center mb-2">
+                                <div className="flex items-center justify-center gap-2 text-[#25D366]">
+                                  <MessageCircle className="w-5 h-5" />
+                                  <span className="text-sm font-bold font-poppins">Enter OTP</span>
+                                </div>
+                                <p className="text-xs text-slate-400 font-poppins mt-1">
+                                  Sent to <span className="font-bold text-slate-600">+91 {phone}</span> on WhatsApp
+                                </p>
+                              </div>
+                              <div className="relative flex items-center rounded-2xl">
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  placeholder="6-digit OTP"
+                                  value={otp}
+                                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                  onFocus={() => setFocusedInput('wa-otp')}
+                                  onBlur={() => setFocusedInput(null)}
+                                  required
+                                  pattern="\d{6}"
+                                  autoComplete="one-time-code"
+                                  className="w-full bg-slate-50 border border-slate-100 focus:border-[#25D366]/40 text-slate-800 placeholder:text-slate-300 h-12 rounded-2xl px-4 text-center text-xl tracking-[0.4em] outline-none focus:ring-2 focus:ring-[#25D366]/10 font-poppins font-bold"
+                                />
+                              </div>
+                              <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                type="submit"
+                                disabled={loading || otp.length !== 6}
+                                className="w-full relative group/button disabled:opacity-50"
+                                style={{ transition: 'none' }}
+                              >
+                                <div className="relative overflow-hidden bg-[#25D366] text-white font-bold h-12 rounded-2xl flex items-center justify-center gap-2 font-poppins shadow-lg shadow-green-100">
+                                  {loading
+                                    ? <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                    : <><span className="text-sm">Verify & Sign In</span><ArrowRight className="w-4 h-4" /></>
+                                  }
+                                </div>
+                              </motion.button>
+                              <div className="flex items-center justify-between">
+                                <button type="button" onClick={resetWhatsappFlow} className="text-xs text-slate-400 hover:text-[#4c2de0] font-poppins font-medium" style={{ transition: 'color 0.2s' }}>
+                                  ← Change number
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleResendOtp}
+                                  disabled={otpCooldown > 0 || loading}
+                                  className="text-xs text-slate-400 hover:text-[#25D366] font-poppins font-medium disabled:opacity-50"
+                                  style={{ transition: 'color 0.2s' }}
+                                >
+                                  {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : 'Resend OTP'}
+                                </button>
+                              </div>
+                            </form>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* ── BUSINESS FORM (hidden when WhatsApp flow is active) ── */}
+                      <div className={whatsappStep !== 'idle' ? 'hidden' : ''}>
                       {/* ── BUSINESS FORM ── */}
                       <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-3">
@@ -423,6 +632,32 @@ const AuthPage: React.FC<AuthPageProps> = ({
                           </div>
                         </motion.button>
 
+                        {/* Divider */}
+                        <div className="relative flex items-center">
+                          <div className="flex-grow border-t border-slate-100" />
+                          <span className="mx-3 text-[10px] text-slate-300 font-bold uppercase tracking-widest font-poppins">or</span>
+                          <div className="flex-grow border-t border-slate-100" />
+                        </div>
+
+                        {/* WhatsApp Sign In */}
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          type="button"
+                          onClick={() => setWhatsappStep('phone')}
+                          disabled={loading}
+                          className="w-full relative group/whatsapp disabled:opacity-50"
+                          style={{ transition: 'none' }}
+                        >
+                          <div className="relative overflow-hidden bg-white text-slate-700 font-bold h-12 rounded-2xl border border-slate-200 hover:border-[#25D366]/40 flex items-center justify-center gap-3 font-poppins hover:shadow-lg hover:shadow-green-50" style={{ transition: 'border-color 0.3s, box-shadow 0.3s' }}>
+                            {/* WhatsApp logo SVG */}
+                            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none">
+                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" fill="#25D366"/>
+                            </svg>
+                            <span className="text-sm">Continue with WhatsApp</span>
+                          </div>
+                        </motion.button>
+
                         {/* Toggle Sign In / Sign Up */}
                         <p className="text-center text-xs text-slate-400 mt-3 font-poppins">
                           {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
@@ -435,6 +670,7 @@ const AuthPage: React.FC<AuthPageProps> = ({
                           </button>
                         </p>
                       </form>
+                      </div>{/* end whatsapp-idle wrapper */}
                     </motion.div>
                   ) : (
                     <motion.div

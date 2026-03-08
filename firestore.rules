@@ -129,5 +129,14 @@ service cloud.firestore {
          || resource.data.referredUid == request.auth.uid);
     }
 
+    // ── WhatsApp OTP ────────────────────────────────────────────────────────────
+    // OTP documents are written and read exclusively by Cloud Functions via the
+    // Admin SDK, which bypasses Firestore security rules entirely.
+    // This deny-all rule is a safety net preventing any client from reading or
+    // guessing OTP values directly.
+    match /whatsapp_otps/{phoneNumber} {
+      allow read, write: if false;
+    }
+
   }
 }
