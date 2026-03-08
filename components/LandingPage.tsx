@@ -113,22 +113,16 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* Section 1 — Print-Ready Rule 46 Compliant Invoices */}
       <section id="features" className="w-full relative">
         <img src={BLANK_IMAGES[0]} alt="Feature 1" className="w-full h-auto block object-contain" loading="eager" />
-        {/* Speech bubble text */}
-        <div className="absolute pointer-events-none" style={{ left: '24%', top: '17%', width: '24%' }}>
-          <p className="text-slate-700 leading-snug" style={{ fontSize: '1.1vw' }}>
-            Every invoice guarantees compliance with Rule 46 of the CGST Rules, complete with QR codes.
-          </p>
-        </div>
         {/* Heading + bullet list on right */}
-        <div className="absolute pointer-events-none" style={{ left: '56%', top: '9%', width: '40%' }}>
-          <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-4" style={{ fontSize: '2.2vw' }}>
+        <div className="absolute pointer-events-none" style={{ left: '55%', top: '8%', width: '42%' }}>
+          <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-6" style={{ fontSize: '3vw' }}>
             Print-Ready Rule 46<br />Compliant Invoices
           </h2>
-          <ul className="space-y-2 text-slate-700" style={{ fontSize: '1.1vw' }}>
-            <li className="flex items-start gap-2"><span className="mt-1 shrink-0">•</span>Multiple beautifully designed templates to match your brand.</li>
-            <li className="flex items-start gap-2"><span className="mt-1 shrink-0">•</span>Support for embedded business logos, signatures, and stamps.</li>
-            <li className="flex items-start gap-2"><span className="mt-1 shrink-0">•</span>Automatic Indian formatting for Rupee symbols and amount-in-words.</li>
-            <li className="flex items-start gap-2"><span className="mt-1 shrink-0">•</span>Print directly from the browser or download as a high-quality PDF.</li>
+          <ul className="text-slate-700" style={{ fontSize: '1.4vw', lineHeight: '2.2' }}>
+            <li className="flex items-start gap-2"><span className="shrink-0 mt-1">•</span>Multiple beautifully designed templates to match your brand.</li>
+            <li className="flex items-start gap-2"><span className="shrink-0 mt-1">•</span>Support for embedded business logos, signatures, and stamps.</li>
+            <li className="flex items-start gap-2"><span className="shrink-0 mt-1">•</span>Automatic Indian formatting for Rupee symbols and amount-in-words.</li>
+            <li className="flex items-start gap-2"><span className="shrink-0 mt-1">•</span>Print directly from the browser or download as a high-quality PDF.</li>
           </ul>
         </div>
         {/* Overlay: Start Billing for Free */}
