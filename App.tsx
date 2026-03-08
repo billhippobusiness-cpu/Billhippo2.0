@@ -40,6 +40,7 @@ const App: React.FC = () => {
   } = useAuth();
 
   const [view, setView] = useState<'landing' | 'auth'>('landing');
+  const [authInitialTab, setAuthInitialTab] = useState<'business' | 'professional'>('business');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -199,7 +200,10 @@ const App: React.FC = () => {
 
   if (!user) {
     if (view === 'landing') {
-      return <LandingPage onEnterApp={() => setView('auth')} />;
+      return <LandingPage onEnterApp={(tab?: 'business' | 'professional') => {
+        if (tab) setAuthInitialTab(tab);
+        setView('auth');
+      }} />;
     }
     return (
       <AuthPage
@@ -211,6 +215,7 @@ const App: React.FC = () => {
         onLoginSuccess={handleLoginSuccess}
         onBackToHome={() => setView('landing')}
         error={authError}
+        initialTab={authInitialTab}
       />
     );
   }

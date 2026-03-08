@@ -9,7 +9,7 @@ const FEATURE_IMAGES = Array.from({ length: 12 }, (_, i) =>
 );
 
 interface LandingPageProps {
-  onEnterApp: () => void;
+  onEnterApp: (tab?: 'business' | 'professional') => void;
 }
 
 const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
@@ -111,12 +111,39 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* ── Feature Image Sections ── */}
       {FEATURE_IMAGES.map((src, idx) => (
         <section key={idx} id={idx === 0 ? 'features' : undefined} className="w-full">
-          <img
-            src={src}
-            alt={`Feature ${idx + 1}`}
-            className="w-full h-auto block object-contain"
-            loading={idx === 0 ? 'eager' : 'lazy'}
-          />
+          {idx === 0 ? (
+            /* First image has "Start Billing for Free" and "Join Professional Portal" buttons drawn in it.
+               Transparent clickable overlays are positioned over those drawn buttons. */
+            <div className="relative w-full">
+              <img
+                src={src}
+                alt="Feature 1"
+                className="w-full h-auto block object-contain"
+                loading="eager"
+              />
+              {/* Overlay: Start Billing for Free (left purple button) */}
+              <button
+                onClick={() => onEnterApp('business')}
+                aria-label="Start Billing for Free"
+                className="absolute cursor-pointer bg-transparent border-0 p-0"
+                style={{ left: '4.5%', top: '52%', width: '37%', height: '14%' }}
+              />
+              {/* Overlay: Join Professional Portal (right outline button) */}
+              <button
+                onClick={() => onEnterApp('professional')}
+                aria-label="Join Professional Portal"
+                className="absolute cursor-pointer bg-transparent border-0 p-0"
+                style={{ left: '62%', top: '52%', width: '34%', height: '14%' }}
+              />
+            </div>
+          ) : (
+            <img
+              src={src}
+              alt={`Feature ${idx + 1}`}
+              className="w-full h-auto block object-contain"
+              loading="lazy"
+            />
+          )}
         </section>
       ))}
 
