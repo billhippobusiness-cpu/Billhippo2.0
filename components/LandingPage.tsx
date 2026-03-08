@@ -340,24 +340,22 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
           </p>
         </div>
         {/* Clickable button overlays */}
+        {/* Left button — "Start Billing for Free" to the left of the hippo */}
         <button
           onClick={() => onEnterApp('business')}
-          aria-label="Start Billing for Free"
-          className="absolute cursor-pointer bg-transparent border-0 p-0"
-          style={{ left: '5%', top: '47%', width: '34%', height: '18%' }}
-        />
+          className="absolute cursor-pointer flex items-center justify-center font-bold font-poppins text-white rounded-2xl shadow-lg transition-all hover:scale-105 active:scale-95"
+          style={{ left: '5%', top: '50%', width: '33%', height: '14%', backgroundColor: '#4F46E5', fontSize: '1.3vw' }}
+        >
+          Sign Up Now
+        </button>
+        {/* Right button — "Join Professional Portal" to the right of the hippo */}
         <button
           onClick={() => onEnterApp('professional')}
-          aria-label="Join Professional Portal"
-          className="absolute cursor-pointer bg-transparent border-0 p-0"
-          style={{ left: '62%', top: '47%', width: '34%', height: '18%' }}
-        />
-        {/* Bottom tags */}
-        <div className="absolute pointer-events-none flex justify-center gap-6" style={{ left: '5%', top: '86%', width: '90%' }}>
-          <span className="rounded-full bg-white border border-slate-200 text-slate-600 font-medium px-4 py-1" style={{ fontSize: '0.9vw' }}>Direct SMB Onboarding</span>
-          <span className="rounded-full bg-white border border-slate-200 text-slate-600 font-medium px-4 py-1" style={{ fontSize: '0.9vw' }}>Professional Commission Tier</span>
-          <span className="rounded-full bg-white border border-slate-200 text-slate-600 font-medium px-4 py-1" style={{ fontSize: '0.9vw' }}>billhippo.com</span>
-        </div>
+          className="absolute cursor-pointer flex items-center justify-center font-bold font-poppins rounded-2xl shadow-lg transition-all hover:scale-105 active:scale-95"
+          style={{ left: '62%', top: '50%', width: '33%', height: '14%', border: '2.5px solid #4F46E5', color: '#4F46E5', backgroundColor: 'white', fontSize: '1.3vw' }}
+        >
+          Sign Up Now
+        </button>
       </section>
 
       {/* ── Footer ── */}
