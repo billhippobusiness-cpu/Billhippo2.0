@@ -144,27 +144,26 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
       {/* Section 2 — Smart Invoicing Engine */}
       <section className="w-full relative">
         <img src={BLANK_IMAGES[1]} alt="Feature 2" className="w-full h-auto block object-contain" loading="lazy" />
-        {/* Heading + body — blank upper-middle zone (clear of hippo left and invoice right) */}
-        <div className="absolute pointer-events-none" style={{ left: '28%', top: '12%', width: '34%' }}>
-          <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-4" style={{ fontSize: '3vw' }}>
+        {/* Heading + body — blank zone between hippo (ends ~26%) and invoice (starts ~62%) */}
+        <div className="absolute pointer-events-none" style={{ left: '28%', top: '10%', width: '30%' }}>
+          <h2 className="font-bold font-poppins text-slate-900 leading-tight mb-3" style={{ fontSize: '2.6vw' }}>
             Smart Invoicing Engine
           </h2>
-          <p className="text-slate-600 leading-relaxed" style={{ fontSize: '1.3vw', lineHeight: '1.7' }}>
+          <p className="text-slate-600 leading-relaxed" style={{ fontSize: '1.1vw', lineHeight: '1.7' }}>
             Create GST-compliant B2B and B2C invoices instantly. Our system automatically computes the right taxes based on your supply type and applies line-item level HSN/SAC codes.
           </p>
         </div>
-        {/* Tag labels centered inside the 3 pre-drawn capsule shapes */}
-        {/* Green capsule — top-left of the capsule group */}
-        <div className="absolute pointer-events-none flex items-center justify-center" style={{ left: '24%', top: '56%', width: '20%', height: '9%' }}>
-          <span className="font-semibold text-teal-600 text-center" style={{ fontSize: '1vw' }}>CGST, SGST, IGST Auto-Applied</span>
+        {/* Green capsule — centered inside the drawn green pill (top-left) */}
+        <div className="absolute pointer-events-none flex items-center justify-center" style={{ left: '25%', top: '58%', width: '15%', height: '5.5%' }}>
+          <span className="font-semibold text-teal-600 text-center leading-tight" style={{ fontSize: '0.8vw' }}>CGST, SGST, IGST Auto-Applied</span>
         </div>
-        {/* Yellow capsule — top-right of the capsule group */}
-        <div className="absolute pointer-events-none flex items-center justify-center" style={{ left: '45%', top: '56%', width: '20%', height: '9%' }}>
-          <span className="font-semibold text-amber-600 text-center" style={{ fontSize: '1vw' }}>Regular, Composition, Exempt Support</span>
+        {/* Yellow capsule — centered inside the drawn yellow pill (top-right) */}
+        <div className="absolute pointer-events-none flex items-center justify-center" style={{ left: '41%', top: '58%', width: '17%', height: '5.5%' }}>
+          <span className="font-semibold text-amber-600 text-center leading-tight" style={{ fontSize: '0.8vw' }}>Regular, Composition, Exempt Support</span>
         </div>
-        {/* Purple/blue capsule — bottom row */}
-        <div className="absolute pointer-events-none flex items-center justify-center" style={{ left: '24%', top: '68%', width: '28%', height: '9%' }}>
-          <span className="font-semibold text-indigo-600 text-center" style={{ fontSize: '1vw' }}>Draft → Sent → Paid Tracking</span>
+        {/* Purple capsule — centered inside the drawn purple pill (bottom-left) */}
+        <div className="absolute pointer-events-none flex items-center justify-center" style={{ left: '25%', top: '66%', width: '22%', height: '5.5%' }}>
+          <span className="font-semibold text-indigo-600 text-center leading-tight" style={{ fontSize: '0.8vw' }}>Draft → Sent → Paid Tracking</span>
         </div>
       </section>
 
