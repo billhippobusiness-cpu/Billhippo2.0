@@ -22,12 +22,12 @@ const appUrl = defineString("APP_URL", {
 const LOGO_URL =
   "https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c";
 
-// ── WhatsApp Business API credentials ─────────────────────────────────────
-// Set via: firebase functions:secrets:set WHATSAPP_ACCESS_TOKEN
+// ── 2factor.in WhatsApp OTP credentials ───────────────────────────────────
+// API key — set via: firebase functions:secrets:set WHATSAPP_ACCESS_TOKEN
 const whatsappAccessToken = defineSecret("WHATSAPP_ACCESS_TOKEN");
-// Set via: firebase functions:params:set WHATSAPP_PHONE_NUMBER_ID=1071356189388444
-const whatsappPhoneNumberId = defineString("WHATSAPP_PHONE_NUMBER_ID", {
-  default: "1071356189388444",
+// Template ID from 2factor.in WhatsApp Templates dashboard
+const twofactorTemplateSid = defineString("TWOFACTOR_TEMPLATE_SID", {
+  default: "3034331",
 });
 
 // ═══════════════════════════════════════════
@@ -579,25 +579,11 @@ function normaliseToE164(raw: string): string {
   return `+${digits}`;
 }
 
-/** Make an HTTPS POST to the Meta Graph API using the built-in fetch (Node 20+). */
-async function metaApiPost(
-  path: string,
-  token: string,
-  body: object
-): Promise<unknown> {
-  const url = `https://graph.facebook.com${path}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const json = await response.json();
-  if (!response.ok) {
-    throw new Error(`Meta API error ${response.status}: ${JSON.stringify(json)}`);
-  }
+/** Call the 2factor.in REST API (GET request, returns JSON). */
+async function twofactorGet(path: string): Promise<{ Status: string; Details: string }> {
+  const url = `https://2factor.in/API/V1${path}`;
+  const response = await fetch(url);
+  const json = await response.json() as { Status: string; Details: string };
   return json;
 }
 
@@ -639,39 +625,27 @@ export const sendWhatsAppOtp = onCall(
       }
     }
 
-    // Generate 6-digit OTP
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    // Send OTP via 2factor.in WhatsApp API — they generate the OTP for us
+    const apiKey = whatsappAccessToken.value();
+    const tsid = twofactorTemplateSid.value();
+    const result = await twofactorGet(
+      `/${apiKey}/WHATSAPP/TSID/${tsid}/${e164}/AUTOGEN`
+    );
 
-    // Store OTP in Firestore (expires in 10 minutes)
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+    if (result.Status !== "Success") {
+      console.error("2factor.in send error:", result);
+      throw new HttpsError("internal", "Failed to send WhatsApp OTP. Please try again.");
+    }
+
+    // Store the session ID returned by 2factor.in (used later to verify the OTP)
+    const sessionId = result.Details;
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await otpRef.set({
-      otp,
+      sessionId,
       createdAt: FieldValue.serverTimestamp(),
       expiresAt: Timestamp.fromDate(expiresAt),
       attempts: 0,
     });
-
-    // Send OTP via WhatsApp Business API
-    await metaApiPost(
-      `/v21.0/${whatsappPhoneNumberId.value()}/messages`,
-      whatsappAccessToken.value(),
-      {
-        messaging_product: "whatsapp",
-        to: e164,
-        type: "template",
-        template: {
-          name: "billhippo_otp",
-          language: { code: "en" },
-          components: [
-            {
-              type: "body",
-              parameters: [{ type: "text", text: otp }],
-            },
-          ],
-        },
-      }
-    );
 
     return { success: true };
   }
@@ -713,6 +687,7 @@ export const verifyWhatsAppOtp = onCall(
     const data = otpDoc.data()!;
     const expiresAt = (data.expiresAt as Timestamp).toDate();
     const attempts = (data.attempts as number) || 0;
+    const sessionId = data.sessionId as string;
 
     // Check expiry
     if (new Date() > expiresAt) {
@@ -729,8 +704,13 @@ export const verifyWhatsAppOtp = onCall(
       );
     }
 
-    // Verify OTP
-    if (data.otp !== otp.trim()) {
+    // Verify OTP via 2factor.in
+    const apiKey = whatsappAccessToken.value();
+    const verifyResult = await twofactorGet(
+      `/${apiKey}/SMS/VERIFY/${sessionId}/${otp.trim()}`
+    );
+
+    if (verifyResult.Status !== "Success" || verifyResult.Details !== "OTP Matched") {
       await otpRef.update({ attempts: FieldValue.increment(1) });
       const remaining = 4 - attempts;
       throw new HttpsError(
@@ -739,7 +719,7 @@ export const verifyWhatsAppOtp = onCall(
       );
     }
 
-    // OTP is correct — delete the document
+    // OTP matched — delete the document
     await otpRef.delete();
 
     // Find or create Firebase Auth user with this phone number
