@@ -7,6 +7,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithCustomToken,
   signOut,
   onAuthStateChanged,
   updateProfile,
@@ -14,7 +15,8 @@ import {
   type User,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp, type DocumentReference } from 'firebase/firestore';
-import { auth, googleProvider, db } from './firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, googleProvider, db, functions } from './firebase';
 
 // Sign up with email & password
 export async function signUp(email: string, password: string, displayName: string) {
@@ -87,4 +89,51 @@ export async function resetPassword(email: string) {
 // Listen to auth state changes
 export function onAuthChange(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
+}
+
+// ── WhatsApp OTP Authentication ─────────────────────────────────────────────
+
+// Shared safe-get helper (mirrors the one used in signInWithGoogle)
+const tryGetOtp = async (ref: DocumentReference) => {
+  try { return await getDoc(ref); } catch { return null; }
+};
+
+/**
+ * Step 1: Send a 6-digit OTP to the given phone number via WhatsApp.
+ * phoneNumber should be a 10-digit Indian number (e.g. "9876543210") or E.164.
+ */
+export async function sendWhatsAppOtp(phoneNumber: string): Promise<void> {
+  const fn = httpsCallable(functions, 'sendWhatsAppOtp');
+  await fn({ phoneNumber });
+}
+
+/**
+ * Step 2: Verify the OTP and sign the user in via Firebase custom token.
+ * Creates a Firestore user document for first-time sign-ups.
+ */
+export async function verifyWhatsAppOtp(phoneNumber: string, otp: string): Promise<User> {
+  const fn = httpsCallable<{ phoneNumber: string; otp: string }, { customToken: string }>(
+    functions,
+    'verifyWhatsAppOtp',
+  );
+  const result = await fn({ phoneNumber, otp });
+  const credential = await signInWithCustomToken(auth, result.data.customToken);
+  const user = credential.user;
+
+  // Create Firestore user doc for new users (mirrors signInWithGoogle logic)
+  const [userDoc, proDoc] = await Promise.all([
+    tryGetOtp(doc(db, 'users', user.uid)),
+    tryGetOtp(doc(db, 'users', user.uid, 'professional', 'main')),
+  ]);
+
+  if (!userDoc?.exists() && !proDoc?.exists()) {
+    await setDoc(doc(db, 'users', user.uid), {
+      phoneNumber,
+      displayName: 'BillHippo User',
+      createdAt: serverTimestamp(),
+      plan: 'free',
+    });
+  }
+
+  return user;
 }

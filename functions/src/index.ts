@@ -1,7 +1,9 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 import { Resend } from "resend";
 
 initializeApp();
@@ -19,6 +21,14 @@ const appUrl = defineString("APP_URL", {
 
 const LOGO_URL =
   "https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c";
+
+// ── 2factor.in WhatsApp OTP credentials ───────────────────────────────────
+// API key — set via: firebase functions:secrets:set WHATSAPP_ACCESS_TOKEN
+const whatsappAccessToken = defineSecret("WHATSAPP_ACCESS_TOKEN");
+// Template ID from 2factor.in WhatsApp Templates dashboard
+const twofactorTemplateSid = defineString("TWOFACTOR_TEMPLATE_SID", {
+  default: "3034331",
+});
 
 // ═══════════════════════════════════════════
 //  CLOUD FUNCTIONS
@@ -555,3 +565,186 @@ function buildInvoiceEmail(p: {
     body
   );
 }
+
+// ═══════════════════════════════════════════
+//  WHATSAPP OTP AUTHENTICATION
+// ═══════════════════════════════════════════
+
+/** Normalise phone to E.164. Accepts 10-digit Indian or full E.164. */
+function normaliseToE164(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.startsWith("91") && digits.length === 12) return `+${digits}`;
+  if (raw.trim().startsWith("+")) return raw.trim();
+  return `+${digits}`;
+}
+
+/** Call the 2factor.in REST API (GET request, returns JSON). */
+async function twofactorGet(path: string): Promise<{ Status: string; Details: string }> {
+  const url = `https://2factor.in/API/V1${path}`;
+  const response = await fetch(url);
+  const json = await response.json() as { Status: string; Details: string };
+  return json;
+}
+
+/**
+ * sendWhatsAppOtp — generates a 6-digit OTP and sends it via WhatsApp.
+ *
+ * Input:  { phoneNumber: string }  — 10-digit Indian or E.164 format
+ * Output: { success: true }
+ */
+export const sendWhatsAppOtp = onCall(
+  { secrets: [whatsappAccessToken] },
+  async (request) => {
+    const { phoneNumber } = request.data as { phoneNumber?: string };
+
+    if (!phoneNumber || typeof phoneNumber !== "string") {
+      throw new HttpsError("invalid-argument", "phoneNumber is required.");
+    }
+
+    const e164 = normaliseToE164(phoneNumber);
+    const phoneDigits = e164.replace(/\D/g, "");
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      throw new HttpsError("invalid-argument", "Invalid phone number format.");
+    }
+
+    const db = getFirestore();
+    const otpRef = db.collection("whatsapp_otps").doc(e164);
+
+    // Rate limit: reject if an OTP was sent within the last 60 seconds
+    const existing = await otpRef.get();
+    if (existing.exists) {
+      const data = existing.data()!;
+      const createdAt = (data.createdAt as Timestamp).toDate();
+      const secondsAgo = (Date.now() - createdAt.getTime()) / 1000;
+      if (secondsAgo < 60) {
+        throw new HttpsError(
+          "resource-exhausted",
+          `Please wait ${Math.ceil(60 - secondsAgo)} seconds before requesting a new OTP.`
+        );
+      }
+    }
+
+    // Send OTP via 2factor.in WhatsApp API — they generate the OTP for us
+    const apiKey = whatsappAccessToken.value();
+    const tsid = twofactorTemplateSid.value();
+    const result = await twofactorGet(
+      `/${apiKey}/WHATSAPP/TSID/${tsid}/${e164}/AUTOGEN`
+    );
+
+    if (result.Status !== "Success") {
+      console.error("2factor.in send error:", result);
+      throw new HttpsError("internal", "Failed to send WhatsApp OTP. Please try again.");
+    }
+
+    // Store the session ID returned by 2factor.in (used later to verify the OTP)
+    const sessionId = result.Details;
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await otpRef.set({
+      sessionId,
+      createdAt: FieldValue.serverTimestamp(),
+      expiresAt: Timestamp.fromDate(expiresAt),
+      attempts: 0,
+    });
+
+    return { success: true };
+  }
+);
+
+/**
+ * verifyWhatsAppOtp — validates the OTP and returns a Firebase custom auth token.
+ *
+ * Input:  { phoneNumber: string, otp: string }
+ * Output: { customToken: string }
+ */
+export const verifyWhatsAppOtp = onCall(
+  { secrets: [whatsappAccessToken] },
+  async (request) => {
+    const { phoneNumber, otp } = request.data as {
+      phoneNumber?: string;
+      otp?: string;
+    };
+
+    if (!phoneNumber || !otp) {
+      throw new HttpsError(
+        "invalid-argument",
+        "phoneNumber and otp are required."
+      );
+    }
+
+    const e164 = normaliseToE164(phoneNumber);
+    const db = getFirestore();
+    const otpRef = db.collection("whatsapp_otps").doc(e164);
+    const otpDoc = await otpRef.get();
+
+    if (!otpDoc.exists) {
+      throw new HttpsError(
+        "not-found",
+        "No OTP found for this number. Please request a new one."
+      );
+    }
+
+    const data = otpDoc.data()!;
+    const expiresAt = (data.expiresAt as Timestamp).toDate();
+    const attempts = (data.attempts as number) || 0;
+    const sessionId = data.sessionId as string;
+
+    // Check expiry
+    if (new Date() > expiresAt) {
+      await otpRef.delete();
+      throw new HttpsError("deadline-exceeded", "OTP has expired. Please request a new one.");
+    }
+
+    // Check attempt limit
+    if (attempts >= 5) {
+      await otpRef.delete();
+      throw new HttpsError(
+        "resource-exhausted",
+        "Too many incorrect attempts. Please request a new OTP."
+      );
+    }
+
+    // Verify OTP via 2factor.in
+    const apiKey = whatsappAccessToken.value();
+    const verifyResult = await twofactorGet(
+      `/${apiKey}/SMS/VERIFY/${sessionId}/${otp.trim()}`
+    );
+
+    if (verifyResult.Status !== "Success" || verifyResult.Details !== "OTP Matched") {
+      await otpRef.update({ attempts: FieldValue.increment(1) });
+      const remaining = 4 - attempts;
+      throw new HttpsError(
+        "invalid-argument",
+        `Incorrect OTP. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.`
+      );
+    }
+
+    // OTP matched — delete the document
+    await otpRef.delete();
+
+    // Find or create Firebase Auth user with this phone number
+    const adminAuth = getAuth();
+    let uid: string;
+    try {
+      const existingUser = await adminAuth.getUserByPhoneNumber(e164);
+      uid = existingUser.uid;
+    } catch (err: unknown) {
+      // User doesn't exist — create them
+      const notFound =
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        (err as { code: string }).code === "auth/user-not-found";
+      if (notFound) {
+        const newUser = await adminAuth.createUser({ phoneNumber: e164 });
+        uid = newUser.uid;
+      } else {
+        throw err;
+      }
+    }
+
+    // Issue a Firebase custom token for this UID
+    const customToken = await adminAuth.createCustomToken(uid);
+    return { customToken };
+  }
+);

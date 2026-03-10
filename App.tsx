@@ -35,6 +35,8 @@ const App: React.FC = () => {
     signIn,
     signUp,
     signInWithGoogle,
+    sendWhatsAppOtp,
+    verifyWhatsAppOtp,
     logOut,
     resetPassword,
   } = useAuth();
@@ -114,6 +116,26 @@ const App: React.FC = () => {
       } else {
         setAuthError(err.message?.replace('Firebase: ', '') || 'Google login failed.');
       }
+    }
+  };
+
+  const handleSendWhatsAppOtp = async (phoneNumber: string) => {
+    setAuthError(null);
+    try {
+      await sendWhatsAppOtp(phoneNumber);
+    } catch (err: any) {
+      setAuthError(err.message?.replace('Firebase: ', '') || 'Failed to send OTP. Please try again.');
+      throw err;
+    }
+  };
+
+  const handleVerifyWhatsAppOtp = async (phoneNumber: string, otp: string) => {
+    setAuthError(null);
+    try {
+      await verifyWhatsAppOtp(phoneNumber, otp);
+    } catch (err: any) {
+      setAuthError(err.message?.replace('Firebase: ', '') || 'Invalid or expired OTP. Please try again.');
+      throw err;
     }
   };
 
@@ -210,6 +232,8 @@ const App: React.FC = () => {
         onLogin={handleLogin}
         onSignUp={handleSignUp}
         onGoogleLogin={handleGoogleLogin}
+        onSendWhatsAppOtp={handleSendWhatsAppOtp}
+        onVerifyWhatsAppOtp={handleVerifyWhatsAppOtp}
         onResetPassword={handleResetPassword}
         onCreateProAccount={handleCreateProAccount}
         onLoginSuccess={handleLoginSuccess}
