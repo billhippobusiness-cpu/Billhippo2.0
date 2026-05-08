@@ -176,16 +176,17 @@ const S = StyleSheet.create({
   m1SupplyValue: { fontSize: 9, fontFamily: 'Poppins', fontWeight: 600, color: DARK, marginTop: 2 },
 
   // Table columns (shared by both templates)
-  // CGST_SGST mode: # | Desc | HSN | Qty | GST% | Taxable | SGST | CGST | Total
+  // CGST_SGST mode: # | Desc | HSN | Qty | Rate | GST% | Taxable | SGST | CGST | Total
   m1cNo:   { width: '4%' },
-  m1cDesc: { width: '24%' },
+  m1cDesc: { width: '20%' },
   m1cHsn:  { width: '10%', textAlign: 'center' },
   m1cQty:  { width: '6%',  textAlign: 'center' },
-  m1cGst:  { width: '7%',  textAlign: 'center' },
-  m1cTax:  { width: '13%', textAlign: 'right' },
-  m1cHalf: { width: '9%',  textAlign: 'right' },   // SGST or CGST column (each)
-  m1cIgst: { width: '18%', textAlign: 'right' },   // merged IGST column
-  m1cTot:  { width: '18%', textAlign: 'right' },
+  m1cRate: { width: '10%', textAlign: 'right' },   // Rate per unit column
+  m1cGst:  { width: '6%',  textAlign: 'center' },
+  m1cTax:  { width: '12%', textAlign: 'right' },
+  m1cHalf: { width: '8%',  textAlign: 'right' },   // SGST or CGST column (each)
+  m1cIgst: { width: '16%', textAlign: 'right' },   // merged IGST column
+  m1cTot:  { width: '16%', textAlign: 'right' },
 
   // Two-column footer (shared by both templates)
   m1FooterGrid:   { flexDirection: 'row', gap: 14, marginTop: 12 },
@@ -288,6 +289,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
       </View>
       <Text style={[S.tableCell, S.m1cHsn]}>{item.hsnCode || '—'}</Text>
       <Text style={[S.tableCell, S.m1cQty]}>{item.quantity}</Text>
+      <Text style={[S.tableCell, S.m1cRate]}>{fmt(item.rate)}</Text>
       {hasGst && <Text style={[S.tableCell, S.m1cGst]}>{item.gstRate}%</Text>}
       <Text style={[S.tableCell, S.m1cTax]}>{fmt(item.lineTotal)}</Text>
       {hasGst && isCgst ? (
@@ -309,6 +311,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
       <Text style={[S.tableHeaderText, S.m1cDesc]}>Item Description</Text>
       <Text style={[S.tableHeaderText, S.m1cHsn]}>HSN/SAC</Text>
       <Text style={[S.tableHeaderText, S.m1cQty]}>Qty</Text>
+      <Text style={[S.tableHeaderText, S.m1cRate]}>Rate (₹)</Text>
       {hasGst && <Text style={[S.tableHeaderText, S.m1cGst]}>GST%</Text>}
       <Text style={[S.tableHeaderText, S.m1cTax]}>Taxable Amt</Text>
       {hasGst && isCgst ? (
