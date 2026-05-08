@@ -107,6 +107,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  // Inline description autocomplete
+  const [activeDescItemId, setActiveDescItemId] = useState<string | null>(null);
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -297,18 +299,37 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     }
   };
 
-  // Open inventory picker (lazy-load items)
-  const openInventoryPicker = async () => {
+  // Lazy-load inventory items (shared by modal picker and inline autocomplete)
+  const ensureInventoryLoaded = async () => {
     if (!inventoryLoaded) {
       const data = await getInventoryItems(userId);
       setInventoryItems(data);
       setInventoryLoaded(true);
     }
+  };
+
+  // Open inventory picker modal (lazy-load items)
+  const openInventoryPicker = async () => {
+    await ensureInventoryLoaded();
     setInventorySearch('');
     setShowInventoryPicker(true);
   };
 
-  // Select an inventory item → add as a line item
+  // Select an inventory item inline from the description autocomplete
+  const handleInlinePickInventoryItem = (itemId: string, inv: InventoryItem) => {
+    setItems(prev => prev.map(i => i.id === itemId ? {
+      ...i,
+      description: inv.name,
+      notes: inv.description || i.notes || '',
+      hsnCode: inv.hsnCode,
+      quantity: i.quantity || 1,
+      rate: inv.sellingPrice,
+      gstRate: inv.gstRate,
+    } : i));
+    setActiveDescItemId(null);
+  };
+
+  // Select an inventory item → add as a line item (modal picker)
   const handlePickInventoryItem = (item: InventoryItem) => {
     const firstEmpty = items.find(i => !i.description.trim());
     const newLineItem: InvoiceItem = {
@@ -1502,7 +1523,55 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 <div key={item.id} className="grid grid-cols-12 gap-3 items-start animate-in fade-in duration-300">
                   <div className="col-span-3 space-y-1.5">
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
-                    <input placeholder="Product or service" className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium" value={item.description} onChange={e => handleItemChange(item.id, 'description', e.target.value)} />
+                    <div className="relative">
+                      <input
+                        placeholder="Product or service"
+                        autoComplete="off"
+                        className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
+                        value={item.description}
+                        onChange={e => handleItemChange(item.id, 'description', e.target.value)}
+                        onFocus={() => {
+                          setActiveDescItemId(item.id);
+                          if (profile.businessType === 'trading') ensureInventoryLoaded();
+                        }}
+                        onBlur={() => setTimeout(() => setActiveDescItemId(null), 160)}
+                      />
+                      {profile.businessType === 'trading' && activeDescItemId === item.id && (() => {
+                        const q = item.description.toLowerCase().trim();
+                        const filtered = (q.length === 0
+                          ? inventoryItems
+                          : inventoryItems.filter(inv =>
+                              inv.name.toLowerCase().includes(q) ||
+                              (inv.hsnCode || '').toLowerCase().includes(q)
+                            )
+                        ).slice(0, 6);
+                        if (filtered.length === 0) return null;
+                        return (
+                          <div className="absolute top-full left-0 right-0 z-40 mt-1 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+                            {filtered.map(inv => (
+                              <button
+                                key={inv.id}
+                                type="button"
+                                onMouseDown={() => handleInlinePickInventoryItem(item.id, inv)}
+                                className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-amber-50 border-b border-slate-50 last:border-0 transition-colors text-left group"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold text-slate-800 group-hover:text-amber-800 truncate">{inv.name}</p>
+                                  <p className="text-xs text-slate-400 mt-0.5">HSN: {inv.hsnCode || '—'} · {inv.unit} · GST {inv.gstRate}%</p>
+                                </div>
+                                <div className="text-right flex-shrink-0 ml-3">
+                                  <p className="text-sm font-black text-slate-900">₹{inv.sellingPrice.toLocaleString('en-IN')}</p>
+                                  {(inv.stock ?? 0) > 0
+                                    ? <p className="text-xs text-emerald-600">Stock: {inv.stock}</p>
+                                    : <p className="text-xs text-rose-400">Out of stock</p>
+                                  }
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
                     <input placeholder="Add a note or specification… (optional)" className="w-full bg-transparent border border-dashed border-slate-200 rounded-xl px-4 py-2 text-xs text-slate-500 placeholder-slate-300 focus:outline-none focus:border-indigo-200 transition-colors" value={item.notes || ''} onChange={e => handleItemChange(item.id, 'notes', e.target.value)} />
                   </div>
                   <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-3">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium font-mono" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
