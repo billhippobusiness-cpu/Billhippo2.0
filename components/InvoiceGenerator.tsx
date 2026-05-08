@@ -359,10 +359,13 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       } else {
         const invoiceId = await addInvoice(userId, invoicePayload);
         // Keep list in sync immediately — no page reload needed
+        const newInvoice = { id: invoiceId, ...invoicePayload } as Invoice;
         setAllInvoices(prev =>
-          [{ id: invoiceId, ...invoicePayload } as Invoice, ...prev]
+          [newInvoice, ...prev]
             .sort((a, b) => b.date.localeCompare(a.date))
         );
+        // Set editingInvoice so that returning to edit mode updates rather than creates a duplicate
+        setEditingInvoice(newInvoice);
         await addLedgerEntry(userId, {
           date: invoiceDate, type: 'Debit', amount: grandTotal,
           description: `Sale - ${invoiceNumber}`, invoiceId, customerId: selectedCustomerId
@@ -1497,20 +1500,31 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             <div className="space-y-4">
               {items.map((item) => (
                 <div key={item.id} className="grid grid-cols-12 gap-3 items-start animate-in fade-in duration-300">
-                  <div className="col-span-4 space-y-1.5">
+                  <div className="col-span-3 space-y-1.5">
                     <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
                     <input placeholder="Product or service" className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium" value={item.description} onChange={e => handleItemChange(item.id, 'description', e.target.value)} />
                     <input placeholder="Add a note or specification… (optional)" className="w-full bg-transparent border border-dashed border-slate-200 rounded-xl px-4 py-2 text-xs text-slate-500 placeholder-slate-300 focus:outline-none focus:border-indigo-200 transition-colors" value={item.notes || ''} onChange={e => handleItemChange(item.id, 'notes', e.target.value)} />
                   </div>
                   <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-3">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium font-mono" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
-                  <div className="col-span-1 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-2 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
+                  <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
                   <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center text-profee-blue" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
                   <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label><select className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-center appearance-none" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
                   <div className="col-span-1 pb-2 flex justify-center"><button onClick={() => handleRemoveItem(item.id)} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button></div>
                 </div>
               ))}
             </div>
-            <button onClick={handleAddItem} className="flex items-center gap-2 font-bold text-sm px-6 py-3 rounded-2xl bg-slate-50 text-profee-blue hover:bg-indigo-50 transition-all border border-dashed border-indigo-200"><Plus size={18} /> Add Line Item</button>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={handleAddItem} className="flex items-center gap-2 font-bold text-sm px-6 py-3 rounded-2xl bg-slate-50 text-profee-blue hover:bg-indigo-50 transition-all border border-dashed border-indigo-200"><Plus size={18} /> Add Line Item</button>
+              {profile.businessType === 'trading' && (
+                <button
+                  type="button"
+                  onClick={openInventoryPicker}
+                  className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors text-sm font-bold border border-dashed border-amber-200"
+                >
+                  <Package size={16} /> Pick from Inventory
+                </button>
+              )}
+            </div>
           </div>
 
           {/* ── GST Classification (GSTR-1 compliance) ── */}
