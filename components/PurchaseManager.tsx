@@ -226,11 +226,34 @@ const PurchaseManager: React.FC<Props> = ({ userId }) => {
       const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
 
-      // Drop empty lines and strip undefined optional fields (Firestore rejects undefined)
+      // Ensure inventory catalogue is loaded so we can auto-link items by name/HSN
+      await ensureInventoryLoaded();
+      const nameMap = new Map(inventoryItems.map(it => [it.name.trim().toLowerCase(), it.id]));
+      // HSN map — only use if exactly one inventory item has that HSN (avoid ambiguity)
+      const hsnCount = new Map<string, number>();
+      const hsnMap   = new Map<string, string>();
+      for (const it of inventoryItems) {
+        if (!it.hsnCode) continue;
+        const key = it.hsnCode.trim().toLowerCase();
+        hsnCount.set(key, (hsnCount.get(key) ?? 0) + 1);
+        hsnMap.set(key, it.id);
+      }
+
+      // Drop empty lines; auto-link to inventory by name → HSN when id is missing
       const cleanItems = items
         .filter(i => i.description.trim())
         .map(i => {
-          const { inventoryItemId, unit, ...rest } = i;
+          let inventoryItemId = i.inventoryItemId;
+          if (!inventoryItemId) {
+            inventoryItemId = nameMap.get(i.description.trim().toLowerCase());
+            if (!inventoryItemId && i.hsnCode) {
+              const hsnKey = i.hsnCode.trim().toLowerCase();
+              if ((hsnCount.get(hsnKey) ?? 0) === 1) {
+                inventoryItemId = hsnMap.get(hsnKey);
+              }
+            }
+          }
+          const { unit, ...rest } = i;
           return {
             ...rest,
             ...(inventoryItemId ? { inventoryItemId } : {}),
