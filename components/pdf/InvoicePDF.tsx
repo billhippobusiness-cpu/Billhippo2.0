@@ -229,10 +229,10 @@ const S = StyleSheet.create({
 
   // Header: Business info (left) | Invoice title + meta (right)
   m2HdrRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  m2HdrLeft:     { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 },
-  m2LogoBox:     { width: 46, height: 46, borderRadius: 8, borderWidth: 0.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  m2LogoInitial: { fontSize: 19, fontFamily: 'Poppins', fontWeight: 800 },
-  m2BizBlock:    { flexDirection: 'column', flex: 1 },
+  m2HdrLeft:     { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
+  m2LogoBox:     { width: 64, height: 64, borderRadius: 8, borderWidth: 0.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  m2LogoInitial: { fontSize: 24, fontFamily: 'Poppins', fontWeight: 800 },
+  m2BizBlock:    { flexDirection: 'column', flex: 1, maxWidth: 210 },
   m2BizNameLg:   { fontSize: 13, fontFamily: 'Poppins', fontWeight: 700, color: DARK, marginBottom: 2 },
   m2BizDetail:   { fontSize: 7.5, color: MID, lineHeight: 1.5 },
   m2BizGstin:    { fontSize: 7.5, fontFamily: 'Poppins', fontWeight: 600, lineHeight: 1.5 },
@@ -605,7 +605,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
               <View style={[S.m2LogoBox, { backgroundColor: hexToRgba(PRIMARY, 0.10), borderColor: hexToRgba(PRIMARY, 0.25), borderStyle: 'solid' }]}>
                 {business.theme?.logoUrl ? (
                   <Image
-                    style={{ width: 40, height: 40, objectFit: 'contain' }}
+                    style={{ width: 58, height: 58, objectFit: 'contain' }}
                     src={business.theme.logoUrl}
                   />
                 ) : (
