@@ -20,6 +20,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  runTransaction,
   query,
   where,
   orderBy,
@@ -39,6 +40,7 @@ import type {
   CreditNote,
   DebitNote,
   Quotation,
+  Purchase,
   AssignedProfessional,
   ProfessionalDesignation,
   ProfessionalInvite,
@@ -222,6 +224,49 @@ export async function deleteInventoryItem(userId: string, itemId: string) {
   await deleteDoc(userDoc(userId, 'inventory', itemId));
 }
 
+/**
+ * Atomically adjusts the `stock` field of an inventory item by `delta`.
+ * Positive delta = inward (purchase); negative = outward (sale).
+ * Uses a Firestore transaction so concurrent purchases/invoices don't clobber.
+ */
+export async function adjustInventoryStock(
+  userId: string,
+  itemId: string,
+  delta: number,
+): Promise<void> {
+  if (!itemId || delta === 0) return;
+  const ref = userDoc(userId, 'inventory', itemId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const cur = (snap.data().stock ?? 0) as number;
+    tx.update(ref, { stock: cur + delta, updatedAt: serverTimestamp() });
+  });
+}
+
+/**
+ * Apply a batch of stock adjustments — one per (inventoryItemId, qtyDelta).
+ * Lines without an inventoryItemId are skipped silently.
+ */
+export async function applyStockAdjustments(
+  userId: string,
+  adjustments: { inventoryItemId?: string; quantity: number }[],
+  direction: 'inward' | 'outward',
+): Promise<void> {
+  const sign = direction === 'inward' ? 1 : -1;
+  // Aggregate per item to minimise transactions when the same SKU appears twice
+  const byItem = new Map<string, number>();
+  for (const a of adjustments) {
+    if (!a.inventoryItemId) continue;
+    byItem.set(a.inventoryItemId, (byItem.get(a.inventoryItemId) ?? 0) + a.quantity);
+  }
+  await Promise.all(
+    Array.from(byItem.entries()).map(([id, qty]) =>
+      adjustInventoryStock(userId, id, sign * qty),
+    ),
+  );
+}
+
 // ═══════════════════════════════════════════
 //  CREDIT NOTES
 // ═══════════════════════════════════════════
@@ -278,6 +323,38 @@ export async function updateDebitNote(userId: string, noteId: string, data: Part
 
 export async function deleteDebitNote(userId: string, noteId: string) {
   await deleteDoc(userDoc(userId, 'debitNotes', noteId));
+}
+
+// ═══════════════════════════════════════════
+//  PURCHASES
+//  Stored at users/{userId}/purchases/{id}.
+//  Each line item with an inventoryItemId increments the corresponding
+//  catalogue stock on save and reverses on edit/delete.
+// ═══════════════════════════════════════════
+
+export async function getPurchases(userId: string): Promise<Purchase[]> {
+  const snap = await getDocs(userCollection(userId, 'purchases'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Purchase));
+  return docs.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function addPurchase(userId: string, purchase: Omit<Purchase, 'id'>): Promise<string> {
+  const ref = await addDoc(userCollection(userId, 'purchases'), {
+    ...purchase,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updatePurchase(userId: string, purchaseId: string, data: Partial<Purchase>): Promise<void> {
+  await updateDoc(userDoc(userId, 'purchases', purchaseId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deletePurchase(userId: string, purchaseId: string): Promise<void> {
+  await deleteDoc(userDoc(userId, 'purchases', purchaseId));
 }
 
 // ═══════════════════════════════════════════

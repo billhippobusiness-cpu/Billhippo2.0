@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight, Briefcase, ScrollText } from 'lucide-react';
+import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight, Briefcase, ScrollText, ShoppingBag } from 'lucide-react';
 import { type User } from 'firebase/auth';
 import type { UserRole } from '../types';
 
@@ -34,6 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
     ? [
         ...baseItems.slice(0, 6),
         { id: 'inventory', icon: Package, label: 'Inventory' },
+        { id: 'purchases', icon: ShoppingBag, label: 'Purchases' },
         ...baseItems.slice(6),
       ]
     : baseItems;

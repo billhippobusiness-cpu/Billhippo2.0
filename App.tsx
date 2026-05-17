@@ -17,6 +17,7 @@ import InvoiceTheme from './components/InvoiceTheme';
 import CustomerManager from './components/CustomerManager';
 import OnboardingWizard from './components/OnboardingWizard';
 import InventoryManager from './components/InventoryManager';
+import PurchaseManager from './components/PurchaseManager';
 import CreditDebitNotes from './components/CreditDebitNotes';
 import QuotationManager from './components/QuotationManager';
 import ProDashboard from './components/ProDashboard';
@@ -308,6 +309,7 @@ const App: React.FC = () => {
       case 'theme':       return <InvoiceTheme userId={userId} />;
       case 'settings':    return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
       case 'inventory':   return <InventoryManager userId={userId} />;
+      case 'purchases':   return <PurchaseManager userId={userId} />;
       default:            return <Dashboard userId={userId} />;
     }
   };
