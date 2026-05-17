@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX, IndianRupee, Receipt } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation } from '../lib/firestore';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -264,6 +264,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     // Play the deletion animation, then commit to Firestore
     setTimeout(async () => {
       await softDeleteInvoice(userId, inv.id);
+      // Restore stock that was decremented when the invoice was created
+      if (inv.stockApplied) {
+        await applyStockAdjustments(userId, inv.items, 'inward');
+      }
       setAllInvoices(prev => prev.filter(i => i.id !== inv.id));
       setDeletedInvoices(prev => [{ ...inv, deleted: true, deletedAt: new Date().toISOString().split('T')[0] }, ...prev]);
       setDeletingInvoiceId(null);
@@ -273,6 +277,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const handleRestoreInvoice = async (inv: Invoice, e: React.MouseEvent) => {
     e.stopPropagation();
     await restoreInvoice(userId, inv.id);
+    // Re-apply stock decrement when restoring a soft-deleted invoice
+    if (inv.stockApplied) {
+      await applyStockAdjustments(userId, inv.items, 'outward');
+    }
     setDeletedInvoices(prev => prev.filter(i => i.id !== inv.id));
     setAllInvoices(prev => [{ ...inv, deleted: false, deletedAt: undefined }, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
   };
@@ -319,9 +327,11 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const handleInlinePickInventoryItem = (itemId: string, inv: InventoryItem) => {
     setItems(prev => prev.map(i => i.id === itemId ? {
       ...i,
+      inventoryItemId: inv.id,
       description: inv.name,
       notes: inv.description || i.notes || '',
       hsnCode: inv.hsnCode,
+      unit: inv.unit,
       quantity: i.quantity || 1,
       rate: inv.sellingPrice,
       gstRate: inv.gstRate,
@@ -334,9 +344,11 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     const firstEmpty = items.find(i => !i.description.trim());
     const newLineItem: InvoiceItem = {
       id: firstEmpty?.id || Math.random().toString(36).substr(2, 9),
+      inventoryItemId: item.id,
       description: item.name,
       notes: item.description || '',
       hsnCode: item.hsnCode,
+      unit: item.unit,
       quantity: 1,
       rate: item.sellingPrice,
       gstRate: item.gstRate,
@@ -364,6 +376,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         customerName: selectedCustomer?.name || '', items, gstType,
         totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: grandTotal,
         status: (editingInvoice?.status || 'Unpaid') as 'Paid' | 'Unpaid' | 'Partial',
+        stockApplied: true,
         supplyType: effectiveSupplyType,
         reverseCharge,
         ...(portCode         ? { portCode }         : {}),
@@ -374,11 +387,17 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
       if (editingInvoice) {
         await updateInvoice(userId, editingInvoice.id, invoicePayload);
+        // Reverse the previously-applied stock decrement (if any), then apply the new one
+        if (editingInvoice.stockApplied) {
+          await applyStockAdjustments(userId, editingInvoice.items, 'inward');
+        }
+        await applyStockAdjustments(userId, items, 'outward');
         setAllInvoices(prev =>
           prev.map(inv => inv.id === editingInvoice.id ? { ...inv, ...invoicePayload } : inv)
         );
       } else {
         const invoiceId = await addInvoice(userId, invoicePayload);
+        await applyStockAdjustments(userId, items, 'outward');
         // Keep list in sync immediately — no page reload needed
         const newInvoice = { id: invoiceId, ...invoicePayload } as Invoice;
         setAllInvoices(prev =>

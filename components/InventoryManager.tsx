@@ -9,15 +9,22 @@ import {
   Search,
   X,
   ChevronDown,
+  FileDown,
+  Loader2,
 } from 'lucide-react';
 import {
   getInventoryItems,
   addInventoryItem,
   updateInventoryItem,
   deleteInventoryItem,
+  getInvoices,
+  getPurchases,
+  getBusinessProfile,
 } from '../lib/firestore';
-import type { InventoryItem } from '../types';
+import type { InventoryItem, BusinessProfile } from '../types';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
+import PDFPreviewModal from './pdf/PDFPreviewModal';
+import InventoryStatementPDF, { type InventoryStatementRow } from './pdf/InventoryStatementPDF';
 
 const UNITS = ['PCS', 'KG', 'GMS', 'LTR', 'MTR', 'BOX', 'NOS', 'SET', 'BAG', 'PKT'];
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -37,6 +44,14 @@ interface Props {
   userId: string;
 }
 
+// ── Helpers for inventory statement ──────────────────────────────────────────
+const todayISO = () => new Date().toISOString().split('T')[0];
+const financialYearStart = () => {
+  const now = new Date();
+  const yr = now.getMonth() < 3 ? now.getFullYear() - 1 : now.getFullYear();
+  return `${yr}-04-01`;
+};
+
 export default function InventoryManager({ userId }: Props) {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +62,19 @@ export default function InventoryManager({ userId }: Props) {
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ── Inventory statement ──
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [statementFrom, setStatementFrom] = useState(financialYearStart());
+  const [statementTo, setStatementTo] = useState(todayISO());
+  const [statementBuilding, setStatementBuilding] = useState(false);
+  const [statementError, setStatementError] = useState<string | null>(null);
+  const [statementPdf, setStatementPdf] = useState<{
+    rows: InventoryStatementRow[];
+    profile: BusinessProfile;
+    fromDate: string;
+    toDate: string;
+  } | null>(null);
 
   useEffect(() => {
     loadItems();
@@ -138,6 +166,121 @@ export default function InventoryManager({ userId }: Props) {
   const inr = (n: number) =>
     `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+  // ── Build inventory statement rows for the selected period ──
+  // Logic: current stock is the truth of "now". For any past date `d`, the
+  // closing stock at d equals current_stock minus all movements after d.
+  //   ClosingQty(to)    = stock - inwardAfter(to)    + outwardAfter(to)
+  //   OpeningQty(from)  = stock - inwardAfter(from)  + outwardAfter(from)
+  //                     = ClosingQty(to) - inwardInPeriod + outwardInPeriod
+  //
+  // Inward comes from purchases (line item × inventoryItemId).
+  // Outward comes from invoices (line item × inventoryItemId).
+  async function buildStatement(): Promise<void> {
+    if (!statementFrom || !statementTo || statementFrom > statementTo) {
+      setStatementError('Please select a valid date range (From ≤ To).');
+      return;
+    }
+    setStatementBuilding(true);
+    setStatementError(null);
+    try {
+      const [profile, allItems, invoices, purchases] = await Promise.all([
+        getBusinessProfile(userId),
+        getInventoryItems(userId),
+        getInvoices(userId),
+        getPurchases(userId),
+      ]);
+      if (!profile) {
+        setStatementError('Business profile not found. Complete onboarding first.');
+        return;
+      }
+
+      // Aggregate movements per inventory item.
+      const inPeriod = new Map<string, { qty: number; value: number }>();
+      const outPeriod = new Map<string, { qty: number; value: number }>();
+      const afterTo = new Map<string, { inQty: number; outQty: number }>();
+
+      const bump = (
+        map: Map<string, { qty: number; value: number }>,
+        id: string,
+        qty: number,
+        value: number,
+      ) => {
+        const cur = map.get(id) || { qty: 0, value: 0 };
+        cur.qty += qty;
+        cur.value += value;
+        map.set(id, cur);
+      };
+      const bumpAfter = (
+        map: Map<string, { inQty: number; outQty: number }>,
+        id: string,
+        inwardQty: number,
+        outwardQty: number,
+      ) => {
+        const cur = map.get(id) || { inQty: 0, outQty: 0 };
+        cur.inQty += inwardQty;
+        cur.outQty += outwardQty;
+        map.set(id, cur);
+      };
+
+      // Inward (purchases)
+      for (const p of purchases) {
+        const inRange = p.date >= statementFrom && p.date <= statementTo;
+        const after   = p.date > statementTo;
+        for (const li of p.items) {
+          if (!li.inventoryItemId) continue;
+          const q = li.quantity || 0;
+          const v = q * (li.rate || 0);
+          if (inRange) bump(inPeriod, li.inventoryItemId, q, v);
+          if (after)   bumpAfter(afterTo, li.inventoryItemId, q, 0);
+        }
+      }
+
+      // Outward (invoices)
+      for (const inv of invoices) {
+        const inRange = inv.date >= statementFrom && inv.date <= statementTo;
+        const after   = inv.date > statementTo;
+        for (const li of inv.items) {
+          if (!li.inventoryItemId) continue;
+          const q = li.quantity || 0;
+          const v = q * (li.rate || 0);
+          if (inRange) bump(outPeriod, li.inventoryItemId, q, v);
+          if (after)   bumpAfter(afterTo, li.inventoryItemId, 0, q);
+        }
+      }
+
+      const rows: InventoryStatementRow[] = allItems.map((it) => {
+        const inP   = inPeriod.get(it.id)  || { qty: 0, value: 0 };
+        const outP  = outPeriod.get(it.id) || { qty: 0, value: 0 };
+        const aft   = afterTo.get(it.id)   || { inQty: 0, outQty: 0 };
+        const currentStock = it.stock ?? 0;
+        const closingQty = currentStock - aft.inQty + aft.outQty;
+        const openingQty = closingQty - inP.qty + outP.qty;
+
+        return {
+          itemId: it.id,
+          name: it.name,
+          hsnCode: it.hsnCode,
+          unit: it.unit,
+          openingQty,
+          openingRate: it.costPrice ?? 0,
+          inwardQty: inP.qty,
+          inwardRate: inP.qty > 0 ? inP.value / inP.qty : 0,
+          outwardQty: outP.qty,
+          outwardRate: outP.qty > 0 ? outP.value / outP.qty : 0,
+          closingRate: it.costPrice ?? 0,
+        };
+      });
+
+      setStatementPdf({ rows, profile, fromDate: statementFrom, toDate: statementTo });
+      setShowStatementModal(false);
+    } catch (e) {
+      console.error(e);
+      setStatementError('Failed to build inventory statement. Please try again.');
+    } finally {
+      setStatementBuilding(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
       {/* ── Header ── */}
@@ -151,13 +294,25 @@ export default function InventoryManager({ userId }: Props) {
             <p className="text-xs text-gray-500">{items.length} item{items.length !== 1 ? 's' : ''} in catalogue</p>
           </div>
         </div>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Item
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setStatementError(null);
+              setShowStatementModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 border border-amber-200 text-amber-700 hover:bg-amber-50 text-sm font-medium rounded-lg transition-colors"
+          >
+            <FileDown className="w-4 h-4" />
+            Inventory Statement
+          </button>
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Item
+          </button>
+        </div>
       </div>
 
       {/* ── Search bar ── */}
@@ -444,6 +599,129 @@ export default function InventoryManager({ userId }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Inventory Statement: date range picker ── */}
+      {showStatementModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-base font-semibold text-gray-900">Inventory Statement</h2>
+              <button
+                onClick={() => setShowStatementModal(false)}
+                className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-xs text-gray-500">
+                Generates an A4 PDF with opening, inward (purchases), outward (sales) and
+                closing quantities, rates and values per inventory item for the chosen period.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
+                  <input
+                    type="date"
+                    value={statementFrom}
+                    onChange={e => setStatementFrom(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
+                  <input
+                    type="date"
+                    value={statementTo}
+                    onChange={e => setStatementTo(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatementFrom(financialYearStart());
+                    setStatementTo(todayISO());
+                  }}
+                  className="px-3 py-1.5 text-xs rounded-full border border-gray-200 text-gray-600 hover:border-amber-300 hover:text-amber-700"
+                >
+                  Current FY
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = new Date();
+                    const first = new Date(t.getFullYear(), t.getMonth(), 1).toISOString().split('T')[0];
+                    setStatementFrom(first);
+                    setStatementTo(todayISO());
+                  }}
+                  className="px-3 py-1.5 text-xs rounded-full border border-gray-200 text-gray-600 hover:border-amber-300 hover:text-amber-700"
+                >
+                  This Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const t = new Date();
+                    const start = new Date(t.getFullYear(), t.getMonth() - 1, 1).toISOString().split('T')[0];
+                    const end   = new Date(t.getFullYear(), t.getMonth(), 0).toISOString().split('T')[0];
+                    setStatementFrom(start);
+                    setStatementTo(end);
+                  }}
+                  className="px-3 py-1.5 text-xs rounded-full border border-gray-200 text-gray-600 hover:border-amber-300 hover:text-amber-700"
+                >
+                  Last Month
+                </button>
+              </div>
+
+              {statementError && (
+                <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                  {statementError}
+                </p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
+              <button
+                onClick={() => setShowStatementModal(false)}
+                className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={buildStatement}
+                disabled={statementBuilding}
+                className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+              >
+                {statementBuilding
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Building…</>
+                  : <><FileDown className="w-4 h-4" /> Generate PDF</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PDF Preview Modal ── */}
+      {statementPdf && (
+        <PDFPreviewModal
+          open={true}
+          onClose={() => setStatementPdf(null)}
+          fileName={`Inventory-Statement-${statementPdf.fromDate}-to-${statementPdf.toDate}.pdf`}
+          document={
+            <InventoryStatementPDF
+              profile={statementPdf.profile}
+              rows={statementPdf.rows}
+              fromDate={statementPdf.fromDate}
+              toDate={statementPdf.toDate}
+              logoUrl={statementPdf.profile.theme?.logoUrl}
+            />
+          }
+        />
       )}
     </div>
   );

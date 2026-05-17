@@ -177,6 +177,10 @@ export interface InvoiceItem {
   quantity: number;
   rate: number;
   gstRate: number;
+  // When the line item was picked from the inventory catalogue, this stores
+  // the inventory doc id so stock adjustments can be applied on save/edit/delete.
+  inventoryItemId?: string;
+  unit?: string;
 }
 
 export type SupplyType = 'B2B' | 'B2CS' | 'B2CL' | 'SEZWP' | 'SEZWOP' | 'EXPWP' | 'EXPWOP' | 'DE';
@@ -197,6 +201,9 @@ export interface Invoice {
   status: 'Paid' | 'Unpaid' | 'Partial';
   deleted?: boolean;
   deletedAt?: string;
+  // Set true once stock has been decremented for this invoice's line items;
+  // prevents double-application when the invoice is edited.
+  stockApplied?: boolean;
   // GSTR-1 classification fields
   supplyType?: SupplyType;
   reverseCharge?: boolean;
@@ -262,6 +269,43 @@ export interface DebitNote {
   sgst: number;
   igst: number;
   totalAmount: number;
+}
+
+// ── Purchases ──────────────────────────────────────────────────────────────
+// A purchase records goods received from a supplier. Inventory stock is
+// incremented for each line item linked to the catalogue. Stored at
+// users/{userId}/purchases/{id}.
+
+export interface PurchaseItem {
+  id: string;
+  // Required when the line should affect inventory stock and appear in the
+  // "inward" column of the inventory statement.
+  inventoryItemId?: string;
+  description: string;
+  hsnCode: string;
+  unit?: string;
+  quantity: number;
+  rate: number;          // Cost rate per unit
+  gstRate: number;
+}
+
+export interface Purchase {
+  id: string;
+  purchaseNumber: string;       // Supplier's bill / invoice number
+  date: string;                 // YYYY-MM-DD
+  supplierName: string;
+  supplierGstin?: string;
+  supplierState?: string;
+  items: PurchaseItem[];
+  gstType: GSTType;
+  totalBeforeTax: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  totalAmount: number;
+  notes?: string;
+  // Set true once stock has been incremented for this purchase's line items.
+  stockApplied?: boolean;
 }
 
 // ── Quotations ─────────────────────────────────────────────────────────────
