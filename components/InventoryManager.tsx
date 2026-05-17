@@ -194,6 +194,31 @@ export default function InventoryManager({ userId }: Props) {
         return;
       }
 
+      // Build fast-lookup maps for name/HSN → inventory item id (fallback matching).
+      // Name lookup is exact case-insensitive. HSN lookup only used when exactly one
+      // inventory item has that HSN code (avoids ambiguity).
+      const nameMap = new Map(allItems.map(it => [it.name.trim().toLowerCase(), it.id]));
+      const hsnCount = new Map<string, number>();
+      const hsnMap   = new Map<string, string>();
+      for (const it of allItems) {
+        if (!it.hsnCode) continue;
+        const key = it.hsnCode.trim().toLowerCase();
+        hsnCount.set(key, (hsnCount.get(key) ?? 0) + 1);
+        hsnMap.set(key, it.id);
+      }
+      function resolveId(li: { inventoryItemId?: string; description?: string; hsnCode?: string }): string | undefined {
+        if (li.inventoryItemId) return li.inventoryItemId;
+        if (li.description) {
+          const byName = nameMap.get(li.description.trim().toLowerCase());
+          if (byName) return byName;
+        }
+        if (li.hsnCode) {
+          const hsnKey = li.hsnCode.trim().toLowerCase();
+          if ((hsnCount.get(hsnKey) ?? 0) === 1) return hsnMap.get(hsnKey);
+        }
+        return undefined;
+      }
+
       // Aggregate movements per inventory item.
       const inPeriod = new Map<string, { qty: number; value: number }>();
       const outPeriod = new Map<string, { qty: number; value: number }>();
@@ -222,29 +247,31 @@ export default function InventoryManager({ userId }: Props) {
         map.set(id, cur);
       };
 
-      // Inward (purchases)
+      // Inward (purchases) — match by inventoryItemId first, then name, then HSN
       for (const p of purchases) {
         const inRange = p.date >= statementFrom && p.date <= statementTo;
         const after   = p.date > statementTo;
         for (const li of p.items) {
-          if (!li.inventoryItemId) continue;
+          const id = resolveId(li);
+          if (!id) continue;
           const q = li.quantity || 0;
           const v = q * (li.rate || 0);
-          if (inRange) bump(inPeriod, li.inventoryItemId, q, v);
-          if (after)   bumpAfter(afterTo, li.inventoryItemId, q, 0);
+          if (inRange) bump(inPeriod, id, q, v);
+          if (after)   bumpAfter(afterTo, id, q, 0);
         }
       }
 
-      // Outward (invoices)
+      // Outward (invoices) — same fallback matching
       for (const inv of invoices) {
         const inRange = inv.date >= statementFrom && inv.date <= statementTo;
         const after   = inv.date > statementTo;
         for (const li of inv.items) {
-          if (!li.inventoryItemId) continue;
+          const id = resolveId(li);
+          if (!id) continue;
           const q = li.quantity || 0;
           const v = q * (li.rate || 0);
-          if (inRange) bump(outPeriod, li.inventoryItemId, q, v);
-          if (after)   bumpAfter(afterTo, li.inventoryItemId, 0, q);
+          if (inRange) bump(outPeriod, id, q, v);
+          if (after)   bumpAfter(afterTo, id, 0, q);
         }
       }
 
@@ -256,18 +283,24 @@ export default function InventoryManager({ userId }: Props) {
         const closingQty = currentStock - aft.inQty + aft.outQty;
         const openingQty = closingQty - inP.qty + outP.qty;
 
+        // Use cost price for stock valuation; fall back to selling price when not set
+        const stockRate = (it.costPrice && it.costPrice > 0) ? it.costPrice : it.sellingPrice;
+        // Inward rate = weighted-avg purchase cost; outward rate = weighted-avg invoice rate
+        const inwardRate  = inP.qty  > 0 ? inP.value  / inP.qty  : 0;
+        const outwardRate = outP.qty > 0 ? outP.value / outP.qty : 0;
+
         return {
           itemId: it.id,
           name: it.name,
           hsnCode: it.hsnCode,
           unit: it.unit,
           openingQty,
-          openingRate: it.costPrice ?? 0,
+          openingRate: stockRate,
           inwardQty: inP.qty,
-          inwardRate: inP.qty > 0 ? inP.value / inP.qty : 0,
+          inwardRate,
           outwardQty: outP.qty,
-          outwardRate: outP.qty > 0 ? outP.value / outP.qty : 0,
-          closingRate: it.costPrice ?? 0,
+          outwardRate,
+          closingRate: stockRate,
         };
       });
 
