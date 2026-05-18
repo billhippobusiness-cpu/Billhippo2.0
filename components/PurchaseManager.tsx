@@ -17,7 +17,7 @@ import {
 import {
   getBusinessProfile, getInventoryItems, getPurchases,
   addPurchase, updatePurchase, deletePurchase, applyStockAdjustments,
-  addInventoryItem,
+  addInventoryItem, updateInventoryItem,
 } from '../lib/firestore';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 
@@ -283,6 +283,41 @@ const PurchaseManager: React.FC<Props> = ({ userId }) => {
           inventoryItemId,
           ...(unit ? { unit } : {}),
         } as PurchaseItem);
+      }
+
+      // Sync edited line-item fields back to the linked inventory entry so
+      // changes made on the purchase row (HSN, unit, GST %, cost rate) flow
+      // into the catalogue. New items created above already carry these
+      // fields, so we only patch items that existed before this save.
+      const inventoryById = new Map(latestInventory.map(it => [it.id, it]));
+      const itemPatches = new Map<string, Partial<InventoryItem>>();
+      for (const line of cleanItems) {
+        if (!line.inventoryItemId) continue;
+        const inv = inventoryById.get(line.inventoryItemId);
+        if (!inv) continue;
+        const patch: Partial<InventoryItem> = {};
+        const newHsn  = (line.hsnCode || '').trim();
+        const newUnit = (line.unit || '').trim();
+        if (newHsn !== (inv.hsnCode || '')) patch.hsnCode = newHsn;
+        if (newUnit && newUnit !== (inv.unit || '')) patch.unit = newUnit;
+        if (line.gstRate !== inv.gstRate) patch.gstRate = line.gstRate;
+        if (line.rate > 0 && line.rate !== inv.costPrice) patch.costPrice = line.rate;
+        if (Object.keys(patch).length) {
+          // Last line wins if the same inventory item appears more than once
+          itemPatches.set(line.inventoryItemId, { ...itemPatches.get(line.inventoryItemId), ...patch });
+        }
+      }
+      if (itemPatches.size) {
+        await Promise.all(
+          Array.from(itemPatches.entries()).map(([id, patch]) =>
+            updateInventoryItem(userId, id, patch),
+          ),
+        );
+        // Reflect patches in the local cache too
+        setInventoryItems(prev => prev.map(it => {
+          const patch = itemPatches.get(it.id);
+          return patch ? { ...it, ...patch } : it;
+        }));
       }
 
       // Keep the local cache in sync so the picker reflects newly-created items
