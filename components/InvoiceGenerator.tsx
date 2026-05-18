@@ -99,7 +99,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
   // Quick-create customer modal
   const [showQuickCreate, setShowQuickCreate] = useState(false);
-  const [qcForm, setQcForm] = useState({ name: '', phone: '', gstin: '', state: 'Maharashtra' });
+  const [qcForm, setQcForm] = useState({ name: '', phone: '', gstin: '', state: 'Maharashtra', email: '', address: '', city: '', pincode: '' });
   const [qcSaving, setQcSaving] = useState(false);
 
   // Inventory picker (trading only)
@@ -295,13 +295,17 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         phone: qcForm.phone,
         gstin: qcForm.gstin,
         state: qcForm.state,
-        email: '', address: '', city: '', pincode: '', balance: 0,
+        email: qcForm.email,
+        address: qcForm.address,
+        city: qcForm.city,
+        pincode: qcForm.pincode,
+        balance: 0,
       });
-      const newCustomer: Customer = { id, name: qcForm.name.trim(), phone: qcForm.phone, gstin: qcForm.gstin, state: qcForm.state, email: '', address: '', city: '', pincode: '', balance: 0 };
+      const newCustomer: Customer = { id, name: qcForm.name.trim(), phone: qcForm.phone, gstin: qcForm.gstin, state: qcForm.state, email: qcForm.email, address: qcForm.address, city: qcForm.city, pincode: qcForm.pincode, balance: 0 };
       setCustomers(prev => [...prev, newCustomer].sort((a, b) => a.name.localeCompare(b.name)));
       setSelectedCustomerId(id);
       setShowQuickCreate(false);
-      setQcForm({ name: '', phone: '', gstin: '', state: 'Maharashtra' });
+      setQcForm({ name: '', phone: '', gstin: '', state: 'Maharashtra', email: '', address: '', city: '', pincode: '' });
     } finally {
       setQcSaving(false);
     }
@@ -1799,7 +1803,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 //  QUICK-CREATE CUSTOMER MODAL
 // ══════════════════════════════════════════════════
 const QuickCreateCustomerModal: React.FC<{
-  form: { name: string; phone: string; gstin: string; state: string };
+  form: { name: string; phone: string; gstin: string; state: string; email: string; address: string; city: string; pincode: string };
   setForm: (f: any) => void;
   onSave: () => void;
   onClose: () => void;
@@ -1808,25 +1812,17 @@ const QuickCreateCustomerModal: React.FC<{
   const STATES = ['Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Delhi','Jammu and Kashmir','Ladakh','Puducherry','Chandigarh','Dadra and Nagar Haveli and Daman and Diu','Lakshadweep','Andaman and Nicobar Islands'];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
           <h2 className="text-base font-bold font-poppins text-slate-900">New Customer</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><X size={16} /></button>
         </div>
-        <div className="px-6 py-5 space-y-4 font-poppins">
+        <div className="px-6 py-5 space-y-4 font-poppins overflow-y-auto flex-1">
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Customer Name *</label>
             <input
               autoFocus type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
               placeholder="e.g. Raj Traders"
-              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Phone</label>
-            <input
-              type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
-              placeholder="10-digit mobile"
               className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
             />
           </div>
@@ -1839,6 +1835,48 @@ const QuickCreateCustomerModal: React.FC<{
             />
           </div>
           <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Phone</label>
+            <input
+              type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
+              placeholder="10-digit mobile"
+              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Email</label>
+            <input
+              type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+              placeholder="customer@example.com"
+              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Address</label>
+            <input
+              type="text" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })}
+              placeholder="Street / Building"
+              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">City</label>
+              <input
+                type="text" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })}
+                placeholder="City"
+                className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Pincode</label>
+              <input
+                type="text" value={form.pincode} onChange={e => setForm({ ...form, pincode: e.target.value })}
+                placeholder="6-digit PIN"
+                className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
+              />
+            </div>
+          </div>
+          <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">State *</label>
             <select
               value={form.state} onChange={e => setForm({ ...form, state: e.target.value })}
@@ -1848,7 +1886,7 @@ const QuickCreateCustomerModal: React.FC<{
             </select>
           </div>
         </div>
-        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
+        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end flex-shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-poppins font-medium">Cancel</button>
           <button onClick={onSave} disabled={saving || !form.name.trim()} className="px-5 py-2 text-sm bg-profee-blue hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl font-poppins transition-colors">
             {saving ? 'Saving…' : 'Create Customer'}
