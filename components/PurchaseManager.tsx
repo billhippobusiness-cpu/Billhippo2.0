@@ -17,6 +17,7 @@ import {
 import {
   getBusinessProfile, getInventoryItems, getPurchases,
   addPurchase, updatePurchase, deletePurchase, applyStockAdjustments,
+  addInventoryItem,
 } from '../lib/firestore';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 
@@ -226,40 +227,68 @@ const PurchaseManager: React.FC<Props> = ({ userId }) => {
       const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
 
-      // Ensure inventory catalogue is loaded so we can auto-link items by name/HSN
-      await ensureInventoryLoaded();
-      const nameMap = new Map(inventoryItems.map(it => [it.name.trim().toLowerCase(), it.id]));
-      // HSN map — only use if exactly one inventory item has that HSN (avoid ambiguity)
+      // Always fetch the freshest inventory before saving so concurrent edits
+      // don't cause duplicate catalogue entries.
+      const latestInventory = await getInventoryItems(userId);
+      setInventoryItems(latestInventory);
+      setInventoryLoaded(true);
+
+      const nameMap = new Map(latestInventory.map(it => [it.name.trim().toLowerCase(), it.id]));
+      // HSN map — only use when exactly one inventory item has that HSN (avoids ambiguity)
       const hsnCount = new Map<string, number>();
       const hsnMap   = new Map<string, string>();
-      for (const it of inventoryItems) {
+      for (const it of latestInventory) {
         if (!it.hsnCode) continue;
         const key = it.hsnCode.trim().toLowerCase();
         hsnCount.set(key, (hsnCount.get(key) ?? 0) + 1);
         hsnMap.set(key, it.id);
       }
 
-      // Drop empty lines; auto-link to inventory by name → HSN when id is missing
-      const cleanItems = items
-        .filter(i => i.description.trim())
-        .map(i => {
-          let inventoryItemId = i.inventoryItemId;
-          if (!inventoryItemId) {
-            inventoryItemId = nameMap.get(i.description.trim().toLowerCase());
-            if (!inventoryItemId && i.hsnCode) {
-              const hsnKey = i.hsnCode.trim().toLowerCase();
-              if ((hsnCount.get(hsnKey) ?? 0) === 1) {
-                inventoryItemId = hsnMap.get(hsnKey);
-              }
+      // Drop empty lines; for each remaining line resolve (or auto-create) an
+      // inventory entry so stock can be incremented uniformly.
+      const rawLines = items.filter(i => i.description.trim());
+      const newInventoryCreated: InventoryItem[] = [];
+      const cleanItems: PurchaseItem[] = [];
+      for (const i of rawLines) {
+        let inventoryItemId = i.inventoryItemId;
+        if (!inventoryItemId) {
+          inventoryItemId = nameMap.get(i.description.trim().toLowerCase());
+          if (!inventoryItemId && i.hsnCode) {
+            const hsnKey = i.hsnCode.trim().toLowerCase();
+            if ((hsnCount.get(hsnKey) ?? 0) === 1) {
+              inventoryItemId = hsnMap.get(hsnKey);
             }
           }
-          const { unit, ...rest } = i;
-          return {
-            ...rest,
-            ...(inventoryItemId ? { inventoryItemId } : {}),
-            ...(unit ? { unit } : {}),
-          } as PurchaseItem;
-        });
+        }
+        if (!inventoryItemId) {
+          // Item isn't in the catalogue yet → create it now with stock = 0.
+          // applyStockAdjustments below will increment by the purchase qty.
+          const draft: Omit<InventoryItem, 'id'> = {
+            name: i.description.trim(),
+            hsnCode: i.hsnCode || '',
+            unit: i.unit || 'PCS',
+            sellingPrice: 0,
+            costPrice: i.rate,
+            gstRate: i.gstRate,
+            stock: 0,
+          };
+          inventoryItemId = await addInventoryItem(userId, draft);
+          // Make the new id discoverable for any subsequent lines with the same name
+          nameMap.set(draft.name.toLowerCase(), inventoryItemId);
+          newInventoryCreated.push({ id: inventoryItemId, ...draft });
+        }
+        const { unit, ...rest } = i;
+        cleanItems.push({
+          ...rest,
+          inventoryItemId,
+          ...(unit ? { unit } : {}),
+        } as PurchaseItem);
+      }
+
+      // Keep the local cache in sync so the picker reflects newly-created items
+      if (newInventoryCreated.length) {
+        setInventoryItems(prev => [...prev, ...newInventoryCreated]);
+      }
 
       const payload: Omit<Purchase, 'id'> = {
         purchaseNumber: purchaseNumber.trim(),
