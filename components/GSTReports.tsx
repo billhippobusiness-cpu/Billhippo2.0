@@ -21,6 +21,7 @@ import { downloadSalesRegisterExcel, downloadNotesRegisterExcel, downloadHSNExce
 import { Invoice, GSTType, Customer, BusinessProfile, CreditNote, DebitNote } from '../types';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import SalesRegisterPDF from './pdf/SalesRegisterPDF';
+import GSTR3BPDF from './pdf/GSTR3BPDF';
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
@@ -153,6 +154,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
   // PDF Preview
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [gstr3bPdfOpen, setGstr3bPdfOpen] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -616,7 +618,17 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       ];
       return (
         <div>
-          <SubTabBar tabs={subTabs} active={activeSubTab} onChange={setActiveSubTab} />
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <SubTabBar tabs={subTabs} active={activeSubTab} onChange={setActiveSubTab} />
+            <button
+              onClick={() => setGstr3bPdfOpen(true)}
+              disabled={!profile}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed font-poppins shrink-0"
+            >
+              <FileText size={13} />
+              Download PDF
+            </button>
+          </div>
           <div className="mt-4">
             {activeSubTab === 'taxsummary' && (
               <div className="space-y-4">
@@ -1252,6 +1264,27 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
             />
           }
           fileName={`Sales_Register_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}
+        />
+      )}
+
+      {/* ── GSTR-3B PDF Preview Modal ── */}
+      {profile && (
+        <PDFPreviewModal
+          open={gstr3bPdfOpen}
+          onClose={() => setGstr3bPdfOpen(false)}
+          document={
+            <GSTR3BPDF
+              profile={profile}
+              invoices={filteredInvoices}
+              customers={customers}
+              creditNotes={filteredCreditNotes}
+              debitNotes={filteredDebitNotes}
+              periodLabel={periodLabel}
+              natureOfReturn={periodMode === 'monthly' ? 'Monthly' : 'Quarterly'}
+              logoUrl={profile.theme?.logoUrl}
+            />
+          }
+          fileName={`GSTR-3B_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}
         />
       )}
     </div>
