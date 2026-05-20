@@ -3,13 +3,13 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
-import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, BarChart3, Loader2, ChevronDown, Calendar, RefreshCw, X, ExternalLink } from 'lucide-react';
+import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, BarChart3, Loader2, ChevronDown, Calendar, RefreshCw, X, ExternalLink, Plus } from 'lucide-react';
 import { Invoice, Customer, LedgerEntry, BusinessProfile } from '../types';
 import { getInvoices, getCustomers, getLedgerEntries, getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 
-interface DashboardProps { userId: string; }
+interface DashboardProps { userId: string; onNavigate?: (tab: string) => void; }
 
 const COLORS_PIE = ['#10b981', '#f43f5e', '#f59e0b'];
 
@@ -42,7 +42,7 @@ function generateFYOptions(): string[] {
   return options;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
+const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [allLedgerEntries, setAllLedgerEntries] = useState<LedgerEntry[]>([]);
@@ -339,11 +339,16 @@ const Dashboard: React.FC<DashboardProps> = ({ userId }) => {
             </div>
           )}
 
-          {/* Data summary chip */}
+          {/* Create Invoice CTA */}
           <div className="ml-auto hidden md:flex items-center gap-2">
-            <div className="px-4 py-2 rounded-xl bg-indigo-50 text-profee-blue text-[10px] font-black uppercase tracking-wider font-poppins">
-              {invoices.length} invoice{invoices.length !== 1 ? 's' : ''} found
-            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate?.('invoices')}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-profee-blue text-white text-[10px] font-black uppercase tracking-wider font-poppins shadow-lg shadow-indigo-100 hover:scale-105 transition-all"
+            >
+              <Plus size={14} strokeWidth={3} />
+              Create Invoice
+            </button>
           </div>
         </div>
       </div>

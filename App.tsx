@@ -282,7 +282,7 @@ const App: React.FC = () => {
   const renderContent = () => {
     const userId = user.uid;
     switch (activeTab) {
-      case 'dashboard':   return <Dashboard userId={userId} />;
+      case 'dashboard':   return <Dashboard userId={userId} onNavigate={setActiveTab} />;
       case 'customers':   return (
         <CustomerManager
           userId={userId}
@@ -310,7 +310,7 @@ const App: React.FC = () => {
       case 'settings':    return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
       case 'inventory':   return <InventoryManager userId={userId} />;
       case 'purchases':   return <PurchaseManager userId={userId} />;
-      default:            return <Dashboard userId={userId} />;
+      default:            return <Dashboard userId={userId} onNavigate={setActiveTab} />;
     }
   };
 
