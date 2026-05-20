@@ -28,13 +28,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
           </div>
           <div className="flex items-center gap-4">
             <button
-              onClick={onEnterApp}
+              onClick={() => onEnterApp('business')}
               className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all font-poppins"
             >
               Sign In
             </button>
             <button
-              onClick={onEnterApp}
+              onClick={() => onEnterApp('business')}
               className="px-6 py-2.5 bg-profee-blue text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 hover:scale-105 transition-all font-poppins"
             >
               Start Free
