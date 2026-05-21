@@ -57,10 +57,11 @@ export const wbLookupGSTIN = onCall(
       address:                d.pradr?.addr?.bnm
                                 ? [d.pradr.addr.bnm, d.pradr.addr.st, d.pradr.addr.loc].filter(Boolean).join(", ")
                                 : (d.address ?? ""),
-      city:                   d.pradr?.addr?.dst  ?? d.city     ?? "",
-      state:                  d.pradr?.addr?.stcd ? stateCodeToName(d.pradr.addr.stcd) : (d.state ?? ""),
-      pincode:                d.pradr?.addr?.pncd ?? d.pincode  ?? "",
-      stateCode:              d.pradr?.addr?.stcd ?? d.stateCode ?? "",
+      city:                   d.pradr?.addr?.dst  ?? d.city    ?? "",
+      // State always derived from GSTIN first 2 digits — most reliable source
+      state:                  stateCodeToName(g.substring(0, 2)),
+      pincode:                d.pradr?.addr?.pncd ?? d.pincode ?? "",
+      stateCode:              g.substring(0, 2),
       registrationDate:       d.rgdt  ?? d.registration_date ?? "",
       taxpayerType:           d.dty   ?? d.taxpayer_type     ?? "",
       status:                 d.sts   ?? d.status            ?? "",
