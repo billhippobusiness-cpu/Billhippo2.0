@@ -3,40 +3,56 @@ import { defineSecret } from "firebase-functions/params";
 import { getFirestore } from "firebase-admin/firestore";
 
 // ─── WhiteBooks API Configuration ────────────────────────────────────────────
-// Update these URLs from your WhiteBooks dashboard → Resources → API Documentation
-const WB_SANDBOX_BASE = "https://api.whitebooks.in/gsp/v0.1";
-const WB_PROD_BASE    = "https://api.whitebooks.in/gsp/v0.1";
-const IS_SANDBOX      = true; // Set to false when using Production credentials
-const WB_BASE         = IS_SANDBOX ? WB_SANDBOX_BASE : WB_PROD_BASE;
+// Base URL for WhiteBooks GSP API (sandbox and production use same URL, differ by credentials)
+const WB_BASE = "https://api.whitebooks.in/api/v1.0";
 
 const wbClientId     = defineSecret("WHITEBOOKS_CLIENT_ID");
 const wbClientSecret = defineSecret("WHITEBOOKS_CLIENT_SECRET");
+const wbEmail        = defineSecret("WHITEBOOKS_EMAIL"); // Your WhiteBooks registered email
 
 // ─── Helper: get app-level auth token from WhiteBooks ────────────────────────
 async function getAppToken(): Promise<string> {
-  const res = await fetch(`${WB_BASE}/auth/token`, {
+  const res = await fetch(`${WB_BASE}/authenticate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      username:      wbEmail.value(),
       client_id:     wbClientId.value(),
       client_secret: wbClientSecret.value(),
     }),
   });
+
+  const raw = await res.json().catch(() => ({}));
+
   if (!res.ok) {
-    const txt = await res.text();
-    throw new HttpsError("unavailable", `WhiteBooks auth failed: ${txt}`);
+    throw new HttpsError("unavailable", `WhiteBooks auth failed (${res.status}): ${JSON.stringify(raw)}`);
   }
-  const data = await res.json();
-  // WhiteBooks returns { auth_token: "..." } or { token: "..." } — adjust field name per their docs
-  const token = data.auth_token ?? data.token ?? data.access_token;
-  if (!token) throw new HttpsError("unavailable", "WhiteBooks auth token missing in response");
+
+  // WhiteBooks returns: { status_cd: "1", data: { AuthToken: "..." } }
+  // Try all known field locations
+  const token =
+    raw?.data?.AuthToken ??
+    raw?.data?.auth_token ??
+    raw?.data?.token ??
+    raw?.AuthToken ??
+    raw?.auth_token ??
+    raw?.token ??
+    raw?.access_token;
+
+  if (!token) {
+    // Surface the full response so the exact field name can be identified
+    throw new HttpsError(
+      "unavailable",
+      `WhiteBooks auth token not found. Full response: ${JSON.stringify(raw)}`
+    );
+  }
   return token as string;
 }
 
 // ─── 1. GSTIN Lookup (Public taxpayer search — no user OTP required) ─────────
 export const wbLookupGSTIN = onCall(
   {
-    secrets: [wbClientId, wbClientSecret],
+    secrets: [wbClientId, wbClientSecret, wbEmail],
     region: "asia-south1",
   },
   async (request) => {
@@ -47,8 +63,8 @@ export const wbLookupGSTIN = onCall(
 
     const appToken = await getAppToken();
 
-    // Taxpayer profile endpoint — verify exact path from WhiteBooks docs
-    const res = await fetch(`${WB_BASE}/taxpayer/${gstin.toUpperCase()}`, {
+    // Taxpayer profile endpoint
+    const res = await fetch(`${WB_BASE}/taxpayerprofile/tp/${gstin.toUpperCase()}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -91,7 +107,7 @@ export const wbLookupGSTIN = onCall(
 // ─── 2. Initiate GST Portal Session (triggers OTP to registered mobile) ──────
 export const wbInitSession = onCall(
   {
-    secrets: [wbClientId, wbClientSecret],
+    secrets: [wbClientId, wbClientSecret, wbEmail],
     region: "asia-south1",
   },
   async (request) => {
@@ -123,7 +139,7 @@ export const wbInitSession = onCall(
 // ─── 3. Verify OTP → get user session token ───────────────────────────────────
 export const wbVerifyOTP = onCall(
   {
-    secrets: [wbClientId, wbClientSecret],
+    secrets: [wbClientId, wbClientSecret, wbEmail],
     region: "asia-south1",
   },
   async (request) => {
@@ -170,7 +186,7 @@ export const wbVerifyOTP = onCall(
 // ─── 4. Fetch GSTR-2B ────────────────────────────────────────────────────────
 export const wbFetchGSTR2B = onCall(
   {
-    secrets: [wbClientId, wbClientSecret],
+    secrets: [wbClientId, wbClientSecret, wbEmail],
     region: "asia-south1",
   },
   async (request) => {
@@ -204,7 +220,7 @@ export const wbFetchGSTR2B = onCall(
 // ─── 5. Fetch GSTR-3B (filed return) ─────────────────────────────────────────
 export const wbFetchGSTR3B = onCall(
   {
-    secrets: [wbClientId, wbClientSecret],
+    secrets: [wbClientId, wbClientSecret, wbEmail],
     region: "asia-south1",
   },
   async (request) => {
@@ -237,7 +253,7 @@ export const wbFetchGSTR3B = onCall(
 // ─── 6. Fetch GSTR-1 filed data ──────────────────────────────────────────────
 export const wbFetchGSTR1 = onCall(
   {
-    secrets: [wbClientId, wbClientSecret],
+    secrets: [wbClientId, wbClientSecret, wbEmail],
     region: "asia-south1",
   },
   async (request) => {
