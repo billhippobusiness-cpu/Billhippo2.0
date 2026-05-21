@@ -623,3 +623,44 @@ export async function getPendingInvitesByEmail(
     } as PendingAssignment))
     .filter((a) => a.status === 'pending');
 }
+
+// ═══════════════════════════════════════════
+//  GSTR CACHE  (users/{userId}/gstrCache/{type}_{period})
+// Stores fetched GSTR data so the user doesn't need to re-fetch every visit.
+
+export interface GSTRCacheDoc {
+  type: '2b' | '3b' | '1';
+  gstin: string;
+  period: string;
+  data: Record<string, any>;
+  fetchedAt: number; // epoch ms
+}
+
+export async function saveGSTRCache(
+  userId: string,
+  type: '2b' | '3b' | '1',
+  gstin: string,
+  period: string,
+  data: Record<string, any>,
+): Promise<void> {
+  const docId = `${type}_${gstin}_${period}`;
+  await setDoc(userDoc(userId, 'gstrCache', docId), {
+    type,
+    gstin: gstin.toUpperCase(),
+    period,
+    data,
+    fetchedAt: Date.now(),
+  });
+}
+
+export async function loadGSTRCache(
+  userId: string,
+  type: '2b' | '3b' | '1',
+  gstin: string,
+  period: string,
+): Promise<GSTRCacheDoc | null> {
+  const docId = `${type}_${gstin}_${period}`;
+  const snap = await getDoc(userDoc(userId, 'gstrCache', docId));
+  if (!snap.exists()) return null;
+  return snap.data() as GSTRCacheDoc;
+}

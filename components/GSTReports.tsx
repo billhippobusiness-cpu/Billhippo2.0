@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   WifiOff,
 } from 'lucide-react';
-import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes } from '../lib/firestore';
+import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes, saveGSTRCache, loadGSTRCache } from '../lib/firestore';
 import { downloadGSTR1Excel, downloadGSTR1JSON } from '../lib/gstr1Generator';
 import { downloadSalesRegisterExcel, downloadNotesRegisterExcel, downloadHSNExcel, aggregateHSN } from '../lib/salesRegisterExport';
 import { Invoice, GSTType, Customer, BusinessProfile, CreditNote, DebitNote } from '../types';
@@ -126,6 +126,15 @@ function fmtDate(d: string): string {
   return `${day}-${m}-${y}`;
 }
 
+function fmtFetchedAt(ms: number): string {
+  const mins = Math.floor((Date.now() - ms) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface GSTReportsProps {
@@ -175,6 +184,8 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const [portalFetching, setPortalFetching] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const [gstr2bPdfOpen, setGstr2bPdfOpen] = useState(false);
+  // Cache fetch timestamps keyed by type
+  const [cacheFetchedAt, setCacheFetchedAt] = useState<{ '2b'?: number; '3b'?: number; '1'?: number }>({});
 
   // Load data
   useEffect(() => {
@@ -201,6 +212,26 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     };
     load();
   }, [userId]);
+
+  // Load cached GSTR data whenever the period or GSTIN changes
+  useEffect(() => {
+    if (!profile?.gstin || !wbPeriod) return;
+    const gstin = profile.gstin;
+    (async () => {
+      const [c2b, c3b, c1] = await Promise.all([
+        loadGSTRCache(userId, '2b', gstin, wbPeriod),
+        loadGSTRCache(userId, '3b', gstin, wbPeriod),
+        loadGSTRCache(userId, '1', gstin, wbPeriod),
+      ]);
+      if (c2b) { setGstr2bData(c2b.data as GSTR2BData); setCacheFetchedAt(p => ({ ...p, '2b': c2b.fetchedAt })); }
+      else { setGstr2bData(null); setCacheFetchedAt(p => ({ ...p, '2b': undefined })); }
+      if (c3b) { setGstr3bOnline(c3b.data as GSTR3BOnlineData); setCacheFetchedAt(p => ({ ...p, '3b': c3b.fetchedAt })); }
+      else { setGstr3bOnline(null); setCacheFetchedAt(p => ({ ...p, '3b': undefined })); }
+      if (c1) { setGstr1Online(c1.data as GSTR1OnlineData); setCacheFetchedAt(p => ({ ...p, '1': c1.fetchedAt })); }
+      else { setGstr1Online(null); setCacheFetchedAt(p => ({ ...p, '1': undefined })); }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, profile?.gstin, wbPeriod]);
 
   // Customer map
   const custMap = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers]);
@@ -413,9 +444,12 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     setPortalFetching(true);
     setPortalError(null);
     try {
-      const data = await fetchGSTR2B(profile.gstin, wbPeriod, gstSession.authToken);
+      const data = await fetchGSTR2B(profile.gstin, wbPeriod, gstSession.authToken, gstSession.gstUsername);
       setGstr2bData(data);
       setPortalDataPeriod(periodLabel);
+      const now = Date.now();
+      setCacheFetchedAt(p => ({ ...p, '2b': now }));
+      await saveGSTRCache(userId, '2b', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
       setPortalError(err?.message ?? 'Failed to fetch GSTR-2B. Session may have expired.');
     } finally {
@@ -428,8 +462,11 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     setPortalFetching(true);
     setPortalError(null);
     try {
-      const data = await fetchGSTR3BOnline(profile.gstin, wbPeriod, gstSession.authToken);
+      const data = await fetchGSTR3BOnline(profile.gstin, wbPeriod, gstSession.authToken, gstSession.gstUsername);
       setGstr3bOnline(data);
+      const now = Date.now();
+      setCacheFetchedAt(p => ({ ...p, '3b': now }));
+      await saveGSTRCache(userId, '3b', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
       setPortalError(err?.message ?? 'Failed to fetch GSTR-3B online data.');
     } finally {
@@ -442,8 +479,11 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     setPortalFetching(true);
     setPortalError(null);
     try {
-      const data = await fetchGSTR1Online(profile.gstin, wbPeriod, gstSession.authToken);
+      const data = await fetchGSTR1Online(profile.gstin, wbPeriod, gstSession.authToken, gstSession.gstUsername);
       setGstr1Online(data);
+      const now = Date.now();
+      setCacheFetchedAt(p => ({ ...p, '1': now }));
+      await saveGSTRCache(userId, '1', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
       setPortalError(err?.message ?? 'Failed to fetch GSTR-1 online data.');
     } finally {
@@ -689,14 +729,17 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                 <Cloud size={15} className="text-indigo-500" /> Compare with Filed GSTR-1 on Portal
               </h4>
               {isSessionActive() ? (
-                <button
-                  onClick={handleFetchGSTR1Online}
-                  disabled={portalFetching}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
-                >
-                  {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                  Fetch Filed GSTR-1
-                </button>
+                <div className="flex items-center gap-2">
+                  {cacheFetchedAt['1'] && <span className="text-xs text-slate-400">Cached · {fmtFetchedAt(cacheFetchedAt['1'])}</span>}
+                  <button
+                    onClick={handleFetchGSTR1Online}
+                    disabled={portalFetching}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
+                  >
+                    {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    {cacheFetchedAt['1'] ? 'Refresh Filed GSTR-1' : 'Fetch Filed GSTR-1'}
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={() => setShowPortalLogin(true)}
@@ -855,14 +898,17 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     <Cloud size={15} className="text-indigo-500" /> Compare with GST Portal (Filed GSTR-3B)
                   </h4>
                   {isSessionActive() ? (
-                    <button
-                      onClick={handleFetchGSTR3BOnline}
-                      disabled={portalFetching}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
-                    >
-                      {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                      Fetch Filed Data
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {cacheFetchedAt['3b'] && <span className="text-xs text-slate-400">Cached · {fmtFetchedAt(cacheFetchedAt['3b'])}</span>}
+                      <button
+                        onClick={handleFetchGSTR3BOnline}
+                        disabled={portalFetching}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
+                      >
+                        {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                        {cacheFetchedAt['3b'] ? 'Refresh' : 'Fetch Filed Data'}
+                      </button>
+                    </div>
                   ) : (
                     <button
                       onClick={() => setShowPortalLogin(true)}
@@ -1206,14 +1252,19 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                   <Lock size={14} /> Connect GST Portal
                 </button>
               ) : (
-                <button
-                  onClick={handleFetchGSTR2B}
-                  disabled={portalFetching}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-all shadow-lg shadow-teal-100 disabled:opacity-50"
-                >
-                  {portalFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  {portalFetching ? 'Fetching...' : 'Fetch GSTR-2B'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleFetchGSTR2B}
+                    disabled={portalFetching}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-all shadow-lg shadow-teal-100 disabled:opacity-50"
+                  >
+                    {portalFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {portalFetching ? 'Fetching...' : (cacheFetchedAt['2b'] ? 'Refresh GSTR-2B' : 'Fetch GSTR-2B')}
+                  </button>
+                  {cacheFetchedAt['2b'] && (
+                    <span className="text-xs text-slate-400">Cached · {fmtFetchedAt(cacheFetchedAt['2b'])}</span>
+                  )}
+                </div>
               )}
               {gstr2bData && (
                 <>

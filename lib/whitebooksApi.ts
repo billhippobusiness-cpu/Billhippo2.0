@@ -116,20 +116,20 @@ export async function verifyGSTOTP(
   return result.data;
 }
 
-export async function fetchGSTR2B(gstin: string, period: string, authToken: string): Promise<GSTR2BData> {
-  const fn = httpsCallable<{ gstin: string; period: string; authToken: string }, GSTR2BData>(functions, 'wbFetchGSTR2B');
-  const result = await fn({ gstin, period, authToken });
+export async function fetchGSTR2B(gstin: string, period: string, authToken: string, gstUsername: string): Promise<GSTR2BData> {
+  const fn = httpsCallable<{ gstin: string; period: string; authToken: string; gstUsername: string }, GSTR2BData>(functions, 'wbFetchGSTR2B');
+  const result = await fn({ gstin, period, authToken, gstUsername });
   return result.data;
 }
 
-export async function fetchGSTR3BOnline(gstin: string, period: string, authToken: string): Promise<GSTR3BOnlineData> {
-  const fn = httpsCallable<{ gstin: string; period: string; authToken: string }, GSTR3BOnlineData>(functions, 'wbFetchGSTR3B');
-  const result = await fn({ gstin, period, authToken });
+export async function fetchGSTR3BOnline(gstin: string, period: string, authToken: string, gstUsername: string): Promise<GSTR3BOnlineData> {
+  const fn = httpsCallable<{ gstin: string; period: string; authToken: string; gstUsername: string }, GSTR3BOnlineData>(functions, 'wbFetchGSTR3B');
+  const result = await fn({ gstin, period, authToken, gstUsername });
   return result.data;
 }
 
-export async function fetchGSTR1Online(gstin: string, period: string, authToken: string): Promise<GSTR1OnlineData> {
-  const fn = httpsCallable<{ gstin: string; period: string; authToken: string }, GSTR1OnlineData>(functions, 'wbFetchGSTR1');
-  const result = await fn({ gstin, period, authToken });
+export async function fetchGSTR1Online(gstin: string, period: string, authToken: string, gstUsername: string): Promise<GSTR1OnlineData> {
+  const fn = httpsCallable<{ gstin: string; period: string; authToken: string; gstUsername: string }, GSTR1OnlineData>(functions, 'wbFetchGSTR1');
+  const result = await fn({ gstin, period, authToken, gstUsername });
   return result.data;
 }
