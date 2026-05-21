@@ -146,10 +146,12 @@ export const wbVerifyOTP = onCall(
       throw new HttpsError("unauthenticated", `OTP verification failed: ${JSON.stringify(raw)}`);
     }
 
-    // Auth token — WhiteBooks may return it as AuthToken, authToken, txn etc.
+    // WhiteBooks GSP: on successful verify the API returns status_cd "1" and
+    // echoes the txn in raw.header.txn. The verified txn IS the AuthToken for
+    // subsequent API calls — there is no separate AuthToken field.
     const authToken =
       raw?.data?.AuthToken ?? raw?.data?.authToken ?? raw?.data?.auth_token ??
-      raw?.data?.txn ?? raw?.AuthToken ?? raw?.txn ?? "";
+      raw?.data?.txn ?? raw?.AuthToken ?? raw?.header?.txn ?? raw?.txn ?? txn;
     if (!authToken) {
       throw new HttpsError("unavailable", `Auth token missing: ${JSON.stringify(raw)}`);
     }
