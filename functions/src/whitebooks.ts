@@ -99,7 +99,20 @@ export const wbInitSession = onCall(
       throw new HttpsError("unavailable", `OTP request failed: ${JSON.stringify(raw)}`);
     }
 
-    const txn = raw?.data?.txn ?? raw?.txn ?? "";
+    const d = raw?.data ?? {};
+    const txn =
+      d.txn ?? d.auth_token ?? d.authToken ?? d.AuthToken ??
+      d.app_key ?? d.appKey ?? d.AppKey ?? d.appkey ??
+      raw.txn ?? raw.auth_token ?? raw.authToken ?? raw.AuthToken ??
+      raw.app_key ?? raw.appKey ?? raw.AppKey ?? raw.appkey ?? "";
+
+    if (!txn) {
+      throw new HttpsError(
+        "unavailable",
+        `OTP sent, but no transaction ID returned. Full response: ${JSON.stringify(raw)}`
+      );
+    }
+
     return { txn, message: "OTP sent to GST-registered mobile/email" };
   }
 );
