@@ -28,8 +28,10 @@ export const wbLookupGSTIN = onCall(
       throw new HttpsError("invalid-argument", "GSTIN must be 15 characters");
     }
 
-    const url = `${WB_BASE}/public/search?gstin=${encodeURIComponent(gstin.toUpperCase())}`;
-    const res = await fetch(url, { method: "GET", headers: credHeaders() });
+    const url = `${WB_BASE}/public/search?gstin=${encodeURIComponent(gstin.toUpperCase())}&email=${encodeURIComponent(wbEmail.value())}`;
+    const res = await fetch(url, { method: "GET", headers: credHeaders({
+      "email": wbEmail.value(),
+    }) });
     const bodyText = await res.text();
 
     // TEMPORARY DEBUG — shows HTTP status + raw body text
