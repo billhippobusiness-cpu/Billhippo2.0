@@ -28,14 +28,38 @@ export const wbLookupGSTIN = onCall(
       throw new HttpsError("invalid-argument", "GSTIN must be 15 characters");
     }
 
-    const url = `${WB_BASE}/public/search?gstin=${encodeURIComponent(gstin.toUpperCase())}&email=${encodeURIComponent(wbEmail.value())}`;
-    const res = await fetch(url, { method: "GET", headers: credHeaders({
-      "email": wbEmail.value(),
-    }) });
-    const bodyText = await res.text();
+    const email = wbEmail.value();
+    const g = gstin.toUpperCase();
 
-    // TEMPORARY DEBUG — shows HTTP status + raw body text
-    throw new HttpsError("not-found", `DEBUG: HTTP ${res.status} | URL: ${url} | Body: ${bodyText.substring(0, 800)}`);
+    // Try multiple endpoint formats to find which one WhiteBooks uses
+    const attempts: { url: string; headers: Record<string, string> }[] = [
+      {
+        url: `${WB_BASE}/public/search/${g}`,
+        headers: credHeaders({ "email": email }),
+      },
+      {
+        url: `${WB_BASE}/public/search?gstin=${g}`,
+        headers: credHeaders({ "email": email, "gstin": g }),
+      },
+      {
+        url: `${WB_BASE}/taxpayerprofile/tp/${g}`,
+        headers: credHeaders({ "email": email }),
+      },
+      {
+        url: `${WB_BASE}/public/search?tin=${g}`,
+        headers: credHeaders({ "email": email }),
+      },
+    ];
+
+    const debugResults: string[] = [];
+    for (const attempt of attempts) {
+      const r = await fetch(attempt.url, { method: "GET", headers: attempt.headers });
+      const body = await r.text();
+      debugResults.push(`[${r.status}] ${attempt.url} => ${body.substring(0, 200) || "(empty)"}`);
+      if (r.ok && body && body !== "null" && body.length > 2) break;
+    }
+
+    throw new HttpsError("not-found", `DEBUG multi-attempt: ${debugResults.join(" ||| ")}`);
 
     return {
       gstin:                  gstin.toUpperCase(),
