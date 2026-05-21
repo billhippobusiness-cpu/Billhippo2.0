@@ -1,0 +1,405 @@
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
+import { getFirestore } from "firebase-admin/firestore";
+
+// ─── WhiteBooks API Configuration ────────────────────────────────────────────
+// Update these URLs from your WhiteBooks dashboard → Resources → API Documentation
+const WB_SANDBOX_BASE = "https://api.whitebooks.in/gsp/v0.1";
+const WB_PROD_BASE    = "https://api.whitebooks.in/gsp/v0.1";
+const IS_SANDBOX      = true; // Set to false when using Production credentials
+const WB_BASE         = IS_SANDBOX ? WB_SANDBOX_BASE : WB_PROD_BASE;
+
+const wbClientId     = defineSecret("WHITEBOOKS_CLIENT_ID");
+const wbClientSecret = defineSecret("WHITEBOOKS_CLIENT_SECRET");
+
+// ─── Helper: get app-level auth token from WhiteBooks ────────────────────────
+async function getAppToken(): Promise<string> {
+  const res = await fetch(`${WB_BASE}/auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id:     wbClientId.value(),
+      client_secret: wbClientSecret.value(),
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new HttpsError("unavailable", `WhiteBooks auth failed: ${txt}`);
+  }
+  const data = await res.json();
+  // WhiteBooks returns { auth_token: "..." } or { token: "..." } — adjust field name per their docs
+  const token = data.auth_token ?? data.token ?? data.access_token;
+  if (!token) throw new HttpsError("unavailable", "WhiteBooks auth token missing in response");
+  return token as string;
+}
+
+// ─── 1. GSTIN Lookup (Public taxpayer search — no user OTP required) ─────────
+export const wbLookupGSTIN = onCall(
+  {
+    secrets: [wbClientId, wbClientSecret],
+    region: "asia-south1",
+  },
+  async (request) => {
+    const { gstin } = request.data as { gstin: string };
+    if (!gstin || gstin.length !== 15) {
+      throw new HttpsError("invalid-argument", "GSTIN must be 15 characters");
+    }
+
+    const appToken = await getAppToken();
+
+    // Taxpayer profile endpoint — verify exact path from WhiteBooks docs
+    const res = await fetch(`${WB_BASE}/taxpayer/${gstin.toUpperCase()}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${appToken}`,
+      },
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new HttpsError("not-found", `GSTIN lookup failed: ${txt}`);
+    }
+
+    const raw = await res.json();
+
+    // Normalize the response — WhiteBooks may wrap in { data: {...} } or return directly
+    const d = raw.data ?? raw;
+
+    return {
+      gstin:                  gstin.toUpperCase(),
+      legalName:              d.lgnm  ?? d.legal_name  ?? d.legalName  ?? "",
+      tradeName:              d.tradeNam ?? d.trade_name ?? d.tradeName ?? "",
+      address:                d.pradr?.addr?.bnm ? [
+                                d.pradr.addr.bnm,
+                                d.pradr.addr.st,
+                                d.pradr.addr.loc,
+                              ].filter(Boolean).join(", ") : (d.address ?? ""),
+      city:                   d.pradr?.addr?.dst ?? d.city ?? "",
+      state:                  d.pradr?.addr?.stcd ? stateCodeToName(d.pradr.addr.stcd) : (d.state ?? ""),
+      pincode:                d.pradr?.addr?.pncd ?? d.pincode ?? "",
+      stateCode:              d.pradr?.addr?.stcd ?? d.stateCode ?? "",
+      registrationDate:       d.rgdt  ?? d.registration_date ?? "",
+      taxpayerType:           d.dty   ?? d.taxpayer_type ?? d.constitutionOfBusiness ?? "",
+      status:                 d.sts   ?? d.status ?? "Active",
+      constitutionOfBusiness: d.ctb   ?? d.constitution_of_business ?? "",
+      filingStatus:           d.filingstatus ?? "",
+    };
+  }
+);
+
+// ─── 2. Initiate GST Portal Session (triggers OTP to registered mobile) ──────
+export const wbInitSession = onCall(
+  {
+    secrets: [wbClientId, wbClientSecret],
+    region: "asia-south1",
+  },
+  async (request) => {
+    const { gstin, gstUsername } = request.data as { gstin: string; gstUsername: string };
+    if (!gstin || !gstUsername) {
+      throw new HttpsError("invalid-argument", "GSTIN and GST Username are required");
+    }
+
+    const appToken = await getAppToken();
+
+    const res = await fetch(`${WB_BASE}/auth/session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${appToken}`,
+      },
+      body: JSON.stringify({ gstin: gstin.toUpperCase(), username: gstUsername }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new HttpsError("unavailable", `Session initiation failed: ${txt}`);
+    }
+
+    return { message: "OTP sent to your GST-registered mobile number" };
+  }
+);
+
+// ─── 3. Verify OTP → get user session token ───────────────────────────────────
+export const wbVerifyOTP = onCall(
+  {
+    secrets: [wbClientId, wbClientSecret],
+    region: "asia-south1",
+  },
+  async (request) => {
+    const { gstin, otp, gstUsername, userId } = request.data as {
+      gstin: string; otp: string; gstUsername: string; userId: string;
+    };
+
+    const appToken = await getAppToken();
+
+    const res = await fetch(`${WB_BASE}/auth/otp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${appToken}`,
+      },
+      body: JSON.stringify({ gstin: gstin.toUpperCase(), otp, username: gstUsername }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new HttpsError("unauthenticated", `OTP verification failed: ${txt}`);
+    }
+
+    const data = await res.json();
+    const authToken = data.auth_token ?? data.token ?? data.access_token;
+    if (!authToken) throw new HttpsError("unavailable", "Session token missing in response");
+
+    // Session valid for 6 hours
+    const expiresAt = Date.now() + 6 * 60 * 60 * 1000;
+
+    // Store session token in Firestore for this user
+    if (userId) {
+      const db = getFirestore();
+      await db
+        .collection("users").doc(userId)
+        .collection("gstSessions").doc(gstin.toUpperCase())
+        .set({ authToken, expiresAt, gstin: gstin.toUpperCase(), gstUsername, updatedAt: new Date() }, { merge: true });
+    }
+
+    return { authToken, expiresAt };
+  }
+);
+
+// ─── 4. Fetch GSTR-2B ────────────────────────────────────────────────────────
+export const wbFetchGSTR2B = onCall(
+  {
+    secrets: [wbClientId, wbClientSecret],
+    region: "asia-south1",
+  },
+  async (request) => {
+    const { gstin, period, authToken } = request.data as {
+      gstin: string; period: string; authToken: string;
+    };
+    // period format: MMYYYY e.g. "042024" for April 2024
+
+    const appToken = await getAppToken();
+
+    const res = await fetch(`${WB_BASE}/returns/gstr2b?gstin=${gstin.toUpperCase()}&ret_period=${period}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${appToken}`,
+        "gstin": gstin.toUpperCase(),
+        "auth-token": authToken,
+      },
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new HttpsError("unavailable", `GSTR-2B fetch failed: ${txt}`);
+    }
+
+    const raw = await res.json();
+    return normalizeGSTR2B(gstin, period, raw);
+  }
+);
+
+// ─── 5. Fetch GSTR-3B (filed return) ─────────────────────────────────────────
+export const wbFetchGSTR3B = onCall(
+  {
+    secrets: [wbClientId, wbClientSecret],
+    region: "asia-south1",
+  },
+  async (request) => {
+    const { gstin, period, authToken } = request.data as {
+      gstin: string; period: string; authToken: string;
+    };
+
+    const appToken = await getAppToken();
+
+    const res = await fetch(`${WB_BASE}/returns/gstr3b?gstin=${gstin.toUpperCase()}&ret_period=${period}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${appToken}`,
+        "gstin": gstin.toUpperCase(),
+        "auth-token": authToken,
+      },
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new HttpsError("unavailable", `GSTR-3B fetch failed: ${txt}`);
+    }
+
+    const raw = await res.json();
+    return normalizeGSTR3B(gstin, period, raw);
+  }
+);
+
+// ─── 6. Fetch GSTR-1 filed data ──────────────────────────────────────────────
+export const wbFetchGSTR1 = onCall(
+  {
+    secrets: [wbClientId, wbClientSecret],
+    region: "asia-south1",
+  },
+  async (request) => {
+    const { gstin, period, authToken } = request.data as {
+      gstin: string; period: string; authToken: string;
+    };
+
+    const appToken = await getAppToken();
+
+    const res = await fetch(`${WB_BASE}/returns/gstr1?gstin=${gstin.toUpperCase()}&ret_period=${period}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${appToken}`,
+        "gstin": gstin.toUpperCase(),
+        "auth-token": authToken,
+      },
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new HttpsError("unavailable", `GSTR-1 fetch failed: ${txt}`);
+    }
+
+    const raw = await res.json();
+    return normalizeGSTR1(gstin, period, raw);
+  }
+);
+
+// ─── Normalization helpers ────────────────────────────────────────────────────
+
+function normalizeGSTR2B(gstin: string, period: string, raw: any) {
+  const d = raw.data ?? raw;
+  const suppliers: any[] = [];
+  let totalTaxable = 0, totalIGST = 0, totalCGST = 0, totalSGST = 0, invoiceCount = 0;
+
+  // WhiteBooks GSTR-2B response: { data: { docdata: { b2b: [...] } } }
+  const b2bList: any[] = d?.docdata?.b2b ?? d?.b2b ?? [];
+  for (const supplier of b2bList) {
+    const invoices = (supplier.inv ?? supplier.invoices ?? []).map((inv: any) => {
+      const items = inv.itms ?? inv.items ?? [];
+      let taxable = 0, igst = 0, cgst = 0, sgst = 0;
+      for (const itm of items) {
+        const detail = itm.itm_det ?? itm;
+        taxable += detail.txval ?? 0;
+        igst    += detail.iamt  ?? 0;
+        cgst    += detail.camt  ?? 0;
+        sgst    += detail.samt  ?? 0;
+      }
+      return {
+        invoiceNumber:   inv.inum ?? inv.invoice_number ?? "",
+        invoiceDate:     inv.idt  ?? inv.invoice_date  ?? "",
+        invoiceType:     inv.typ  ?? "B2B",
+        placeOfSupply:   inv.pos  ?? "",
+        reverseCharge:   inv.rchrg === "Y",
+        taxableValue:    taxable,
+        igst, cgst, sgst,
+        cess:            0,
+        itcAvailability: inv.itcavl ?? "Yes",
+      };
+    });
+    const sTotal = invoices.reduce((acc: any, i: any) => ({
+      taxable: acc.taxable + i.taxableValue,
+      igst:    acc.igst    + i.igst,
+      cgst:    acc.cgst    + i.cgst,
+      sgst:    acc.sgst    + i.sgst,
+    }), { taxable: 0, igst: 0, cgst: 0, sgst: 0 });
+    suppliers.push({
+      gstin:     supplier.ctin ?? supplier.gstin ?? "",
+      tradeName: supplier.trdnm ?? supplier.trade_name ?? "",
+      legalName: supplier.lgnm  ?? supplier.legal_name ?? "",
+      invoices,
+      totalTaxable: sTotal.taxable,
+      totalIGST:    sTotal.igst,
+      totalCGST:    sTotal.cgst,
+      totalSGST:    sTotal.sgst,
+    });
+    totalTaxable  += sTotal.taxable;
+    totalIGST     += sTotal.igst;
+    totalCGST     += sTotal.cgst;
+    totalSGST     += sTotal.sgst;
+    invoiceCount  += invoices.length;
+  }
+  return { gstin, period, suppliers, totalTaxableValue: totalTaxable, totalIGST, totalCGST, totalSGST, invoiceCount, generationDate: d.gendt ?? "" };
+}
+
+function normalizeGSTR3B(gstin: string, period: string, raw: any) {
+  const d = raw.data ?? raw;
+  const sup_details = d.sup_details ?? d.supDetails ?? {};
+  const itc_elg     = d.itc_elg     ?? d.itcElg     ?? {};
+  const intr_ltfee  = d.intr_ltfee  ?? d.intrLtfee  ?? {};
+
+  return {
+    gstin,
+    period,
+    filedDate:      d.filed_date ?? d.filedDate ?? "",
+    outwardTaxable: sup_details?.osup_det?.txval ?? 0,
+    outwardTax:     (sup_details?.osup_det?.iamt ?? 0) + (sup_details?.osup_det?.camt ?? 0) + (sup_details?.osup_det?.samt ?? 0),
+    outwardIGST:    sup_details?.osup_det?.iamt  ?? 0,
+    outwardCGST:    sup_details?.osup_det?.camt  ?? 0,
+    outwardSGST:    sup_details?.osup_det?.samt  ?? 0,
+    itcIGST:        itc_elg?.itc_avl?.find((x: any) => x.ty === "IMPG")?.iamt ?? 0,
+    itcCGST:        itc_elg?.itc_avl?.reduce((s: number, x: any) => s + (x.camt ?? 0), 0) ?? 0,
+    itcSGST:        itc_elg?.itc_avl?.reduce((s: number, x: any) => s + (x.samt ?? 0), 0) ?? 0,
+    netTaxPayable:  intr_ltfee?.intr_details?.iamt ?? 0,
+  };
+}
+
+function normalizeGSTR1(gstin: string, period: string, raw: any) {
+  const d = raw.data ?? raw;
+  const b2bList: any[] = d?.b2b ?? [];
+  const b2bInvoices = b2bList.flatMap((supplier: any) =>
+    (supplier.inv ?? []).map((inv: any) => {
+      const items = inv.itms ?? [];
+      let taxable = 0, igst = 0, cgst = 0, sgst = 0;
+      for (const itm of items) {
+        const dt = itm.itm_det ?? itm;
+        taxable += dt.txval ?? 0;
+        igst    += dt.iamt  ?? 0;
+        cgst    += dt.camt  ?? 0;
+        sgst    += dt.samt  ?? 0;
+      }
+      return {
+        invoiceNumber: inv.inum ?? "",
+        invoiceDate:   inv.idt  ?? "",
+        receiverGSTIN: supplier.ctin ?? "",
+        receiverName:  supplier.trdnm ?? supplier.lgnm ?? "",
+        placeOfSupply: inv.pos ?? "",
+        taxableValue:  taxable,
+        igst, cgst, sgst,
+        invoiceValue:  taxable + igst + cgst + sgst,
+      };
+    })
+  );
+  return {
+    gstin,
+    period,
+    filedDate: d.filed_date ?? d.filedDate ?? "",
+    b2bInvoices,
+    totalTaxableValue: b2bInvoices.reduce((s: number, i: any) => s + i.taxableValue, 0),
+    totalIGST:         b2bInvoices.reduce((s: number, i: any) => s + i.igst, 0),
+    totalCGST:         b2bInvoices.reduce((s: number, i: any) => s + i.cgst, 0),
+    totalSGST:         b2bInvoices.reduce((s: number, i: any) => s + i.sgst, 0),
+  };
+}
+
+// ─── State code → State name mapping ─────────────────────────────────────────
+function stateCodeToName(code: string): string {
+  const map: Record<string, string> = {
+    "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab",
+    "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana",
+    "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh",
+    "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh",
+    "13": "Nagaland", "14": "Manipur", "15": "Mizoram",
+    "16": "Tripura", "17": "Meghalaya", "18": "Assam",
+    "19": "West Bengal", "20": "Jharkhand", "21": "Odisha",
+    "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat",
+    "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra",
+    "28": "Andhra Pradesh", "29": "Karnataka", "30": "Goa",
+    "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu",
+    "34": "Puducherry", "35": "Andaman and Nicobar Islands",
+    "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh",
+  };
+  return map[code] ?? "";
+}

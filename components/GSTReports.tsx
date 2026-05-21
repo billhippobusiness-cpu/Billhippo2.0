@@ -14,6 +14,11 @@ import {
   IndianRupee,
   FileText,
   AlertCircle,
+  Lock,
+  Cloud,
+  RefreshCw,
+  ShieldCheck,
+  WifiOff,
 } from 'lucide-react';
 import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes } from '../lib/firestore';
 import { downloadGSTR1Excel, downloadGSTR1JSON } from '../lib/gstr1Generator';
@@ -22,6 +27,10 @@ import { Invoice, GSTType, Customer, BusinessProfile, CreditNote, DebitNote } fr
 import PDFPreviewModal from './pdf/PDFPreviewModal';
 import SalesRegisterPDF from './pdf/SalesRegisterPDF';
 import GSTR3BPDF from './pdf/GSTR3BPDF';
+import { fetchGSTR2B, fetchGSTR3BOnline, fetchGSTR1Online, GSTR2BData, GSTR3BOnlineData, GSTR1OnlineData } from '../lib/whitebooksApi';
+import GSTPortalLogin from './GSTPortalLogin';
+import { downloadGSTR2BExcel } from '../lib/gstr2bExport';
+import GSTR2BPDF from './pdf/GSTR2BPDF';
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
@@ -124,7 +133,7 @@ interface GSTReportsProps {
   onNavigate?: (tab: string) => void;
 }
 
-type ActiveDetail = 'gstr1' | 'gstr3b' | 'taxsummary' | 'salesregister' | null;
+type ActiveDetail = 'gstr1' | 'gstr3b' | 'taxsummary' | 'salesregister' | 'gstr2b' | null;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -155,6 +164,17 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   // PDF Preview
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [gstr3bPdfOpen, setGstr3bPdfOpen] = useState(false);
+
+  // ── WhiteBooks / GST Portal state ──
+  const [gstSession, setGstSession] = useState<{ authToken: string; expiresAt: number; gstUsername: string } | null>(null);
+  const [showPortalLogin, setShowPortalLogin] = useState(false);
+  const [portalDataPeriod, setPortalDataPeriod] = useState<string>('');
+  const [gstr2bData, setGstr2bData] = useState<GSTR2BData | null>(null);
+  const [gstr3bOnline, setGstr3bOnline] = useState<GSTR3BOnlineData | null>(null);
+  const [gstr1Online, setGstr1Online] = useState<GSTR1OnlineData | null>(null);
+  const [portalFetching, setPortalFetching] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [gstr2bPdfOpen, setGstr2bPdfOpen] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -204,6 +224,9 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     const [year, month] = selectedMonth.split('-');
     return `${month}${year}`;
   }, [selectedMonth]);
+
+  // MMYYYY format for WhiteBooks API (same as fp)
+  const wbPeriod = fp; // Already in MMYYYY format
 
   // Filtered data
   const filteredInvoices = useMemo(() => {
@@ -372,10 +395,61 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     else if (detail === 'gstr3b') setActiveSubTab('taxsummary');
     else if (detail === 'taxsummary') setActiveSubTab('ratewise');
     else if (detail === 'salesregister') setActiveSubTab('salesreg');
+    else if (detail === 'gstr2b') setActiveSubTab('summary');
     else setActiveSubTab('');
   };
 
   const hasGSTR1Data = filteredInvoices.length > 0;
+
+  const isSessionActive = () => gstSession && gstSession.expiresAt > Date.now();
+
+  const handlePortalLogin = (authToken: string, expiresAt: number, gstUsername: string) => {
+    setGstSession({ authToken, expiresAt, gstUsername });
+    setShowPortalLogin(false);
+  };
+
+  const handleFetchGSTR2B = async () => {
+    if (!profile?.gstin || !gstSession) return;
+    setPortalFetching(true);
+    setPortalError(null);
+    try {
+      const data = await fetchGSTR2B(profile.gstin, wbPeriod, gstSession.authToken);
+      setGstr2bData(data);
+      setPortalDataPeriod(periodLabel);
+    } catch (err: any) {
+      setPortalError(err?.message ?? 'Failed to fetch GSTR-2B. Session may have expired.');
+    } finally {
+      setPortalFetching(false);
+    }
+  };
+
+  const handleFetchGSTR3BOnline = async () => {
+    if (!profile?.gstin || !gstSession) return;
+    setPortalFetching(true);
+    setPortalError(null);
+    try {
+      const data = await fetchGSTR3BOnline(profile.gstin, wbPeriod, gstSession.authToken);
+      setGstr3bOnline(data);
+    } catch (err: any) {
+      setPortalError(err?.message ?? 'Failed to fetch GSTR-3B online data.');
+    } finally {
+      setPortalFetching(false);
+    }
+  };
+
+  const handleFetchGSTR1Online = async () => {
+    if (!profile?.gstin || !gstSession) return;
+    setPortalFetching(true);
+    setPortalError(null);
+    try {
+      const data = await fetchGSTR1Online(profile.gstin, wbPeriod, gstSession.authToken);
+      setGstr1Online(data);
+    } catch (err: any) {
+      setPortalError(err?.message ?? 'Failed to fetch GSTR-1 online data.');
+    } finally {
+      setPortalFetching(false);
+    }
+  };
 
   // ─── Loading state ───────────────────────────────────────────────────────────
 
@@ -607,6 +681,78 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
               </table>
             </div>
           )}
+
+          {/* Portal comparison for GSTR-1 */}
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                <Cloud size={15} className="text-indigo-500" /> Compare with Filed GSTR-1 on Portal
+              </h4>
+              {isSessionActive() ? (
+                <button
+                  onClick={handleFetchGSTR1Online}
+                  disabled={portalFetching}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
+                >
+                  {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                  Fetch Filed GSTR-1
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowPortalLogin(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-200 text-slate-600 font-bold text-xs hover:bg-indigo-600 hover:text-white transition-all"
+                >
+                  <Lock size={12} /> Connect Portal
+                </button>
+              )}
+            </div>
+            {gstr1Online ? (
+              <div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="py-2 px-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wide">Field</th>
+                        <th className="py-2 px-3 text-right text-xs font-bold text-indigo-600 uppercase tracking-wide">Your App</th>
+                        <th className="py-2 px-3 text-right text-xs font-bold text-teal-600 uppercase tracking-wide">Filed on Portal</th>
+                        <th className="py-2 px-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wide">Difference</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {[
+                        { label: 'Taxable Value (B2B)', app: filteredInvoices.filter(i => custMap.get(i.customerId)?.gstin).reduce((s, i) => s + i.totalBeforeTax, 0), portal: gstr1Online.totalTaxableValue },
+                        { label: 'IGST', app: totalIGST, portal: gstr1Online.totalIGST },
+                        { label: 'CGST', app: totalCGST, portal: gstr1Online.totalCGST },
+                        { label: 'SGST', app: totalSGST, portal: gstr1Online.totalSGST },
+                        { label: 'B2B Invoice Count', app: filteredInvoices.filter(i => custMap.get(i.customerId)?.gstin).length, portal: gstr1Online.b2bInvoices.length },
+                      ].map(row => {
+                        const diff = row.app - row.portal;
+                        const isCount = row.label.includes('Count');
+                        const diffColor = Math.abs(diff) < (isCount ? 1 : 1) ? 'text-emerald-600' : 'text-amber-600';
+                        return (
+                          <tr key={row.label} className="hover:bg-white transition-colors">
+                            <td className="py-2.5 px-3 text-xs font-medium text-slate-700">{row.label}</td>
+                            <td className="py-2.5 px-3 text-xs font-bold text-indigo-700 text-right">{isCount ? row.app : inr(row.app as number)}</td>
+                            <td className="py-2.5 px-3 text-xs font-bold text-teal-700 text-right">{isCount ? row.portal : inr(row.portal as number)}</td>
+                            <td className={`py-2.5 px-3 text-xs font-bold text-right ${diffColor}`}>
+                              {Math.abs(diff) < 1 ? '✓ Match' : `${diff > 0 ? '+' : ''}${isCount ? diff : inr(diff as number)}`}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {gstr1Online.filedDate && (
+                  <p className="text-xs text-slate-400 mt-3 text-right">Filed on: {gstr1Online.filedDate}</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 text-center py-4">
+                {isSessionActive() ? 'Click "Fetch Filed GSTR-1" to compare with your portal-filed data' : 'Connect to GST Portal to fetch and compare filed GSTR-1'}
+              </p>
+            )}
+          </div>
         </div>
       );
     }
@@ -701,6 +847,75 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                 </table>
               </div>
             )}
+
+              {/* Portal comparison */}
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                    <Cloud size={15} className="text-indigo-500" /> Compare with GST Portal (Filed GSTR-3B)
+                  </h4>
+                  {isSessionActive() ? (
+                    <button
+                      onClick={handleFetchGSTR3BOnline}
+                      disabled={portalFetching}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
+                    >
+                      {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      Fetch Filed Data
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowPortalLogin(true)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-200 text-slate-600 font-bold text-xs hover:bg-indigo-600 hover:text-white transition-all"
+                    >
+                      <Lock size={12} /> Connect Portal
+                    </button>
+                  )}
+                </div>
+                {gstr3bOnline ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="py-2 px-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wide">Field</th>
+                          <th className="py-2 px-3 text-right text-xs font-bold text-indigo-600 uppercase tracking-wide">Your App (BillHippo)</th>
+                          <th className="py-2 px-3 text-right text-xs font-bold text-teal-600 uppercase tracking-wide">GST Portal (Filed)</th>
+                          <th className="py-2 px-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wide">Difference</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {[
+                          { label: 'Taxable Value', app: totalTaxable, portal: gstr3bOnline.outwardTaxable },
+                          { label: 'IGST', app: totalIGST, portal: gstr3bOnline.outwardIGST },
+                          { label: 'CGST', app: totalCGST, portal: gstr3bOnline.outwardCGST },
+                          { label: 'SGST', app: totalSGST, portal: gstr3bOnline.outwardSGST },
+                          { label: 'Total Tax', app: totalTax, portal: gstr3bOnline.outwardTax },
+                        ].map(row => {
+                          const diff = row.app - row.portal;
+                          const diffColor = Math.abs(diff) < 1 ? 'text-emerald-600' : diff > 0 ? 'text-amber-600' : 'text-rose-600';
+                          return (
+                            <tr key={row.label} className="hover:bg-white transition-colors">
+                              <td className="py-2.5 px-3 text-xs font-medium text-slate-700">{row.label}</td>
+                              <td className="py-2.5 px-3 text-xs font-bold text-indigo-700 text-right">{inr(row.app)}</td>
+                              <td className="py-2.5 px-3 text-xs font-bold text-teal-700 text-right">{inr(row.portal)}</td>
+                              <td className={`py-2.5 px-3 text-xs font-bold text-right ${diffColor}`}>
+                                {Math.abs(diff) < 1 ? '✓ Match' : `${diff > 0 ? '+' : ''}${inr(diff)}`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {gstr3bOnline.filedDate && (
+                      <p className="text-xs text-slate-400 mt-3 text-right">Filed on: {gstr3bOnline.filedDate}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400 text-center py-4">
+                    {isSessionActive() ? 'Click "Fetch Filed Data" to compare with your filed GSTR-3B' : 'Connect to GST Portal to compare with filed returns'}
+                  </p>
+                )}
+              </div>
           </div>
         </div>
       );
@@ -977,6 +1192,152 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       );
     }
 
+    if (activeDetail === 'gstr2b') {
+      return (
+        <div className="space-y-6">
+          {/* Actions bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              {!isSessionActive() ? (
+                <button
+                  onClick={() => setShowPortalLogin(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                >
+                  <Lock size={14} /> Connect GST Portal
+                </button>
+              ) : (
+                <button
+                  onClick={handleFetchGSTR2B}
+                  disabled={portalFetching}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-all shadow-lg shadow-teal-100 disabled:opacity-50"
+                >
+                  {portalFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  {portalFetching ? 'Fetching...' : 'Fetch GSTR-2B'}
+                </button>
+              )}
+              {gstr2bData && (
+                <>
+                  <button
+                    onClick={() => setGstr2bPdfOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-sm hover:bg-indigo-600 hover:text-white transition-all"
+                  >
+                    <FileText size={14} /> PDF
+                  </button>
+                  <button
+                    onClick={() => profile && downloadGSTR2BExcel(gstr2bData, profile.name, profile.gstin)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-sm hover:bg-indigo-600 hover:text-white transition-all"
+                  >
+                    <FileSpreadsheet size={14} /> Excel
+                  </button>
+                </>
+              )}
+            </div>
+            {portalDataPeriod && gstr2bData && (
+              <p className="text-xs text-slate-400 font-poppins">Data for: <span className="font-bold text-slate-600">{portalDataPeriod}</span></p>
+            )}
+          </div>
+
+          {portalError && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-600 flex items-start gap-3">
+              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+              {portalError}
+            </div>
+          )}
+
+          {!gstr2bData && !portalError && (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center mb-4">
+                <Cloud size={28} className="text-teal-400" />
+              </div>
+              <p className="text-base font-bold text-slate-700 mb-2">No GSTR-2B data loaded</p>
+              <p className="text-sm text-slate-400 max-w-sm">
+                {isSessionActive()
+                  ? 'Click "Fetch GSTR-2B" to load your Input Tax Credit data from the GST portal for this period.'
+                  : 'Connect to the GST portal first, then fetch your GSTR-2B data.'
+                }
+              </p>
+            </div>
+          )}
+
+          {gstr2bData && (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="rounded-2xl bg-teal-50 border border-teal-100 p-4">
+                  <p className="text-xs font-bold text-teal-600 uppercase tracking-wide mb-1">Suppliers</p>
+                  <p className="text-2xl font-bold text-teal-700">{gstr2bData.suppliers.length}</p>
+                </div>
+                <div className="rounded-2xl bg-blue-50 border border-blue-100 p-4">
+                  <p className="text-xs font-bold text-blue-600 uppercase tracking-wide mb-1">Invoices</p>
+                  <p className="text-2xl font-bold text-blue-700">{gstr2bData.invoiceCount}</p>
+                </div>
+                <div className="rounded-2xl bg-indigo-50 border border-indigo-100 p-4">
+                  <p className="text-xs font-bold text-indigo-600 uppercase tracking-wide mb-1">Taxable Value</p>
+                  <p className="text-lg font-bold text-indigo-700">{inr(gstr2bData.totalTaxableValue)}</p>
+                </div>
+                <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
+                  <p className="text-xs font-bold text-emerald-600 uppercase tracking-wide mb-1">Total ITC</p>
+                  <p className="text-lg font-bold text-emerald-700">{inr(gstr2bData.totalIGST + gstr2bData.totalCGST + gstr2bData.totalSGST)}</p>
+                </div>
+              </div>
+
+              {/* ITC Breakdown */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-center">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">IGST Credit</p>
+                  <p className="text-xl font-bold text-slate-800">{inr(gstr2bData.totalIGST)}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-center">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">CGST Credit</p>
+                  <p className="text-xl font-bold text-slate-800">{inr(gstr2bData.totalCGST)}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-center">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">SGST Credit</p>
+                  <p className="text-xl font-bold text-slate-800">{inr(gstr2bData.totalSGST)}</p>
+                </div>
+              </div>
+
+              {/* Supplier-wise table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      {['#', 'Supplier GSTIN', 'Supplier Name', 'Invoices', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total ITC'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gstr2bData.suppliers.map((s, i) => (
+                      <tr key={i} className="border-b border-slate-100 hover:bg-teal-50/30 transition-colors">
+                        <td className="px-4 py-3 text-xs text-slate-400">{i + 1}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-slate-600">{s.gstin}</td>
+                        <td className="px-4 py-3 text-xs font-semibold text-slate-800">{s.tradeName || s.legalName || '—'}</td>
+                        <td className="px-4 py-3 text-xs text-center"><span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full font-bold">{s.invoices.length}</span></td>
+                        <td className="px-4 py-3 text-xs text-right">{inr(s.totalTaxable)}</td>
+                        <td className="px-4 py-3 text-xs text-right">{s.totalIGST > 0 ? inr(s.totalIGST) : '—'}</td>
+                        <td className="px-4 py-3 text-xs text-right">{s.totalCGST > 0 ? inr(s.totalCGST) : '—'}</td>
+                        <td className="px-4 py-3 text-xs text-right">{s.totalSGST > 0 ? inr(s.totalSGST) : '—'}</td>
+                        <td className="px-4 py-3 text-xs text-right font-bold text-teal-600">{inr(s.totalIGST + s.totalCGST + s.totalSGST)}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-slate-800 text-white font-bold">
+                      <td className="px-4 py-3 text-xs" colSpan={4}>TOTAL ({gstr2bData.suppliers.length} suppliers, {gstr2bData.invoiceCount} invoices)</td>
+                      <td className="px-4 py-3 text-xs text-right">{inr(gstr2bData.totalTaxableValue)}</td>
+                      <td className="px-4 py-3 text-xs text-right">{inr(gstr2bData.totalIGST)}</td>
+                      <td className="px-4 py-3 text-xs text-right">{inr(gstr2bData.totalCGST)}</td>
+                      <td className="px-4 py-3 text-xs text-right">{inr(gstr2bData.totalSGST)}</td>
+                      <td className="px-4 py-3 text-xs text-right">{inr(gstr2bData.totalIGST + gstr2bData.totalCGST + gstr2bData.totalSGST)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
     return null;
   };
 
@@ -985,6 +1346,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     gstr3b: 'GSTR-3B — Summary Return',
     taxsummary: 'Tax Summary',
     salesregister: 'Sales Register',
+    gstr2b: 'GSTR-2B — Portal Data',
   };
 
   // ─── Main render ─────────────────────────────────────────────────────────────
@@ -1077,6 +1439,35 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
         />
       </div>
 
+      {/* ── GST Portal Session Status ── */}
+      <div className={`rounded-2xl border p-4 flex items-center justify-between gap-4 ${isSessionActive() ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
+        <div className="flex items-center gap-3">
+          {isSessionActive()
+            ? <ShieldCheck size={18} className="text-emerald-500 shrink-0" />
+            : <WifiOff size={18} className="text-slate-400 shrink-0" />
+          }
+          <div>
+            <p className={`text-sm font-bold ${isSessionActive() ? 'text-emerald-700' : 'text-slate-600'}`}>
+              {isSessionActive() ? `GST Portal Connected (${gstSession!.gstUsername})` : 'GST Portal Not Connected'}
+            </p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {isSessionActive()
+                ? `Session expires: ${new Date(gstSession!.expiresAt).toLocaleTimeString('en-IN')}`
+                : 'Connect to fetch GSTR-2B, compare GSTR-3B & GSTR-1 data from GST portal'
+              }
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setShowPortalLogin(true)}
+          disabled={!profile?.gstin}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-40 ${isSessionActive() ? 'bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'}`}
+        >
+          <Cloud size={15} />
+          {isSessionActive() ? 'Reconnect' : 'Connect to GST Portal'}
+        </button>
+      </div>
+
       {/* ── 4 Report cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* GSTR-1 */}
@@ -1141,6 +1532,22 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           ]}
           onClick={() => openDetail('salesregister')}
           active={activeDetail === 'salesregister'}
+        />
+
+        {/* GSTR-2B Portal */}
+        <ReportCard
+          color="bg-teal-500"
+          title="GSTR-2B"
+          desc="Input Tax Credit from GST Portal — fetch & compare"
+          status={gstr2bData ? 'Fetched' : isSessionActive() ? 'Ready' : 'Login Required'}
+          fields={[
+            gstr2bData ? `Suppliers: ${gstr2bData.suppliers.length}` : 'Connect to GST Portal',
+            gstr2bData ? `Invoices: ${gstr2bData.invoiceCount}` : 'Auto-fetch GSTR-2B data',
+            gstr2bData ? `ITC: ${inr(gstr2bData.totalIGST + gstr2bData.totalCGST + gstr2bData.totalSGST)}` : 'Download as PDF & Excel',
+            gstr2bData ? `Period: ${portalDataPeriod}` : 'Compare with your purchases',
+          ]}
+          onClick={() => openDetail('gstr2b')}
+          active={activeDetail === 'gstr2b'}
         />
       </div>
 
@@ -1285,6 +1692,26 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
             />
           }
           fileName={`GSTR-3B_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}
+        />
+      )}
+
+      {/* GST Portal Login Modal */}
+      {showPortalLogin && profile?.gstin && (
+        <GSTPortalLogin
+          gstin={profile.gstin}
+          userId={userId}
+          onSuccess={handlePortalLogin}
+          onClose={() => setShowPortalLogin(false)}
+        />
+      )}
+
+      {/* GSTR-2B PDF Modal */}
+      {gstr2bPdfOpen && gstr2bData && profile && (
+        <PDFPreviewModal
+          open={gstr2bPdfOpen}
+          onClose={() => setGstr2bPdfOpen(false)}
+          document={<GSTR2BPDF data={gstr2bData} businessName={profile.name} businessGSTIN={profile.gstin} />}
+          fileName={`GSTR-2B-${profile.gstin}-${gstr2bData.period}.pdf`}
         />
       )}
     </div>
