@@ -142,6 +142,9 @@ export interface BusinessProfile {
   signatureUrl?: string;
   // GSTR-1: determines minimum HSN digit requirement (4 for <5cr, 6 for ≥5cr)
   annualTurnover?: 'below5cr' | 'above5cr';
+  // GST Portal credentials (for fetching GSTR-2B/3B/1)
+  gstPortalUsername?: string;
+  gstPortalPassword?: string;
 }
 
 export interface InventoryItem {

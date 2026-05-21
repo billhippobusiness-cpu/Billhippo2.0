@@ -5,28 +5,36 @@ import { initiateGSTSession, verifyGSTOTP } from '../lib/whitebooksApi';
 interface GSTPortalLoginProps {
   gstin: string;
   userId: string;
+  prefilledUsername?: string;
   onSuccess: (authToken: string, expiresAt: number, gstUsername: string) => void;
   onClose: () => void;
 }
 
 type Step = 'credentials' | 'otp' | 'success';
 
-const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, onSuccess, onClose }) => {
+const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, prefilledUsername, onSuccess, onClose }) => {
   const [step, setStep] = useState<Step>('credentials');
-  const [gstUsername, setGstUsername] = useState('');
+  const [gstUsername, setGstUsername] = useState(prefilledUsername ?? '');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showApiAccessHelp, setShowApiAccessHelp] = useState(false);
 
   const handleRequestOTP = async () => {
     if (!gstUsername.trim()) { setError('Please enter your GST Portal Username'); return; }
     setLoading(true);
     setError(null);
+    setShowApiAccessHelp(false);
     try {
       await initiateGSTSession(gstin, gstUsername.trim());
       setStep('otp');
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to send OTP. Please check your credentials and try again.');
+      const msg = err?.message ?? 'Failed to send OTP. Please check your credentials and try again.';
+      setError(msg);
+      // AUTH4037 = API access not enabled on GST portal — show actionable help
+      if (/AUTH4037|API access is not available/i.test(msg)) {
+        setShowApiAccessHelp(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -85,7 +93,25 @@ const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, onSucces
         {error && (
           <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-sm text-rose-600 font-medium mb-6 flex items-start gap-3">
             <AlertCircle size={16} className="shrink-0 mt-0.5" />
-            {error}
+            <span className="break-all">{error}</span>
+          </div>
+        )}
+
+        {showApiAccessHelp && step === 'credentials' && (
+          <div className="p-5 bg-amber-50 border-2 border-amber-200 rounded-2xl text-sm mb-6 space-y-3">
+            <p className="font-bold text-amber-900 flex items-center gap-2">
+              <AlertCircle size={16} /> Enable API access on the GST portal
+            </p>
+            <p className="text-xs text-amber-800 leading-relaxed">
+              Before the first OTP request, the GST portal requires you to enable API access for your GSP (WhiteBooks). This is a one-time setup:
+            </p>
+            <ol className="text-xs text-amber-800 space-y-1 list-decimal list-inside leading-relaxed">
+              <li>Open <a href="https://gst.gov.in" target="_blank" rel="noreferrer" className="font-bold underline">gst.gov.in</a> and log in with this GSTIN's username & password</li>
+              <li>Click your profile icon (top-right) → <span className="font-bold">Manage API Access</span></li>
+              <li>Set <span className="font-bold">Enable API access</span> to <span className="font-bold">Yes</span></li>
+              <li>Set duration to <span className="font-bold">30 days</span> (maximum)</li>
+              <li>Save, then return here and click Request OTP again</li>
+            </ol>
           </div>
         )}
 

@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart, Plus, Pencil, Trash2, Check } from 'lucide-react';
+import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart, Plus, Pencil, Trash2, Check, Search, Eye, EyeOff } from 'lucide-react';
 import { BusinessProfile, BankAccount } from '../types';
 import { getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
+import { lookupGSTIN } from '../lib/whitebooksApi';
 import ProfessionalAccess from './ProfessionalAccess';
 
 const INDIAN_STATES = [
@@ -59,6 +60,37 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
   const [showBankForm, setShowBankForm] = useState(false);
   const [editingBankId, setEditingBankId] = useState<string | null>(null);
   const [bankForm, setBankForm] = useState({ bankName: '', accountNumber: '', ifscCode: '', upiId: '' });
+
+  // GSTIN fetch state
+  const [gstinFetching, setGstinFetching] = useState(false);
+  const [gstinFetchMsg, setGstinFetchMsg] = useState<string | null>(null);
+  const [showGstPassword, setShowGstPassword] = useState(false);
+
+  const handleFetchGstinDetails = async () => {
+    const g = (profile.gstin || '').trim().toUpperCase();
+    if (g.length !== 15) {
+      setGstinFetchMsg('Enter a valid 15-character GSTIN first');
+      return;
+    }
+    setGstinFetching(true);
+    setGstinFetchMsg(null);
+    try {
+      const r = await lookupGSTIN(g);
+      setProfile(prev => ({
+        ...prev,
+        name:    prev.name    || r.tradeName || r.legalName,
+        address: prev.address || r.address,
+        city:    prev.city    || r.city,
+        state:   r.state      || prev.state,
+        pincode: prev.pincode || r.pincode,
+      }));
+      setGstinFetchMsg(`✓ Fetched: ${r.tradeName || r.legalName} — ${r.status}`);
+    } catch (err: any) {
+      setGstinFetchMsg(err?.message ?? 'Failed to fetch GSTIN details');
+    } finally {
+      setGstinFetching(false);
+    }
+  };
 
   useEffect(() => {
     loadProfile();
@@ -258,13 +290,77 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
             <h3 className="text-xl font-bold font-poppins flex items-center gap-3">
               <Building2 className="text-profee-blue" size={22} /> Organization Details
             </h3>
+            {/* GSTIN with Fetch Details button (full width) */}
+            <div className="font-poppins space-y-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">GSTIN Number <span className="text-indigo-500 normal-case tracking-normal">(enter & click Fetch to auto-fill)</span></label>
+              <div className="flex gap-3">
+                <input
+                  className="flex-1 bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-100 font-mono uppercase"
+                  value={profile.gstin}
+                  onChange={e => { setProfile({...profile, gstin: e.target.value.toUpperCase()}); setGstinFetchMsg(null); }}
+                  placeholder="27AABCB1234A1Z1"
+                  maxLength={15}
+                />
+                <button
+                  type="button"
+                  onClick={handleFetchGstinDetails}
+                  disabled={gstinFetching || (profile.gstin || '').length !== 15}
+                  className="px-6 py-4 rounded-2xl font-bold bg-indigo-600 text-white flex items-center gap-2 shadow-xl shadow-indigo-100 hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100"
+                >
+                  {gstinFetching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                  {gstinFetching ? 'Fetching...' : 'Fetch Details'}
+                </button>
+              </div>
+              {gstinFetchMsg && (
+                <p className={`text-xs font-medium ml-2 ${gstinFetchMsg.startsWith('✓') ? 'text-emerald-600' : 'text-rose-500'}`}>{gstinFetchMsg}</p>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-poppins">
               <Input label="Legal Name" value={profile.name} onChange={v => setProfile({...profile, name: v})} placeholder="Your business name" />
               <Input label="Email Address" value={profile.email} onChange={v => setProfile({...profile, email: v})} placeholder="business@email.com" />
-              <Input label="GSTIN Number" value={profile.gstin} onChange={v => setProfile({...profile, gstin: v})} placeholder="27AABCB1234A1Z1" />
               <Input label="PAN Number" value={profile.pan} onChange={v => setProfile({...profile, pan: v})} placeholder="ABCDE1234F" />
               <Input label="Contact Number" value={profile.phone} onChange={v => setProfile({...profile, phone: v})} placeholder="+91 98765 43210" />
               <Input label="Business Tagline" value={profile.tagline || ''} onChange={v => setProfile({...profile, tagline: v})} placeholder="Your tagline" />
+            </div>
+
+            {/* GST Portal Credentials (used for fetching GSTR-2B/3B/1) */}
+            <div className="pt-2 border-t border-slate-50">
+              <p className="text-sm font-bold text-slate-700 font-poppins mb-1 flex items-center gap-2">
+                <ShieldCheck size={16} className="text-indigo-500" /> GST Portal Credentials
+                <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full ml-2">SECURE</span>
+              </p>
+              <p className="text-xs text-slate-400 font-poppins mb-4">
+                Saved for one-click GST Portal login when fetching GSTR-2B, GSTR-3B and GSTR-1. Authentication uses OTP — password is for your reference only.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-poppins">
+                <Input
+                  label="GST Portal Username"
+                  value={profile.gstPortalUsername || ''}
+                  onChange={v => setProfile({...profile, gstPortalUsername: v})}
+                  placeholder="Same username you use at gst.gov.in"
+                />
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-2">GST Portal Password</label>
+                  <div className="relative">
+                    <input
+                      type={showGstPassword ? 'text' : 'password'}
+                      className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-100 pr-14"
+                      value={profile.gstPortalPassword || ''}
+                      onChange={e => setProfile({...profile, gstPortalPassword: e.target.value})}
+                      placeholder="••••••••"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGstPassword(v => !v)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showGstPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             {/* ── Annual Turnover (GSTR-1 HSN digit compliance) ── */}
             <div className="pt-2 border-t border-slate-50">
