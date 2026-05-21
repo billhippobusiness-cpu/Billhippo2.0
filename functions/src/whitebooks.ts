@@ -103,6 +103,7 @@ export const wbInitSession = onCall(
     const txn =
       d.txn ?? d.auth_token ?? d.authToken ?? d.AuthToken ??
       d.app_key ?? d.appKey ?? d.AppKey ?? d.appkey ??
+      raw.header?.txn ??
       raw.txn ?? raw.auth_token ?? raw.authToken ?? raw.AuthToken ??
       raw.app_key ?? raw.appKey ?? raw.AppKey ?? raw.appkey ?? "";
 
