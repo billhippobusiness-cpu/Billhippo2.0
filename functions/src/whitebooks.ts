@@ -16,18 +16,18 @@ async function getAppToken(): Promise<string> {
   const clientSecret = wbClientSecret.value();
   const email        = wbEmail.value();
 
-  // Try multiple auth formats — different GSP APIs use different field names
+  // Try multiple auth formats — WhiteBooks dashboard says "use Email + Client ID + Client Secret ID"
   const authFormats = [
-    // Format 1: Standard OAuth2 client credentials
-    { client_id: clientId, client_secret: clientSecret },
-    // Format 2: With username (email) included
+    // Format 1: email field name variations with client_id + client_secret
+    { client_id: clientId, client_secret: clientSecret, email: email },
+    // Format 2: client_secret_id (as shown on WhiteBooks dashboard "Client Secret ID")
+    { client_id: clientId, client_secret_id: clientSecret, email: email },
+    // Format 3: username instead of email
     { client_id: clientId, client_secret: clientSecret, username: email },
-    // Format 3: app_key / secret_key naming
-    { app_key: clientId, secret_key: clientSecret },
-    // Format 4: username + password style (email as username, secret as password)
-    { username: email, password: clientSecret },
-    // Format 5: All fields
-    { username: email, password: clientSecret, client_id: clientId, client_secret: clientSecret },
+    // Format 4: without email (original attempt)
+    { client_id: clientId, client_secret: clientSecret },
+    // Format 5: all possible fields
+    { client_id: clientId, client_secret: clientSecret, client_secret_id: clientSecret, email: email, username: email },
   ];
 
   const responses: string[] = [];
