@@ -99,20 +99,20 @@ export async function lookupGSTIN(gstin: string): Promise<GSTINDetails> {
   return result.data;
 }
 
-export async function initiateGSTSession(gstin: string, gstUsername: string): Promise<{ message: string }> {
-  const fn = httpsCallable<{ gstin: string; gstUsername: string }, { message: string }>(functions, 'wbInitSession');
+export async function initiateGSTSession(gstin: string, gstUsername: string): Promise<{ txn: string; message: string }> {
+  const fn = httpsCallable<{ gstin: string; gstUsername: string }, { txn: string; message: string }>(functions, 'wbInitSession');
   const result = await fn({ gstin, gstUsername });
   return result.data;
 }
 
 export async function verifyGSTOTP(
-  gstin: string, otp: string, gstUsername: string, userId: string
+  gstin: string, otp: string, gstUsername: string, userId: string, txn: string
 ): Promise<{ authToken: string; expiresAt: number }> {
   const fn = httpsCallable<
-    { gstin: string; otp: string; gstUsername: string; userId: string },
+    { gstin: string; otp: string; gstUsername: string; userId: string; txn: string },
     { authToken: string; expiresAt: number }
   >(functions, 'wbVerifyOTP');
-  const result = await fn({ gstin, otp, gstUsername, userId });
+  const result = await fn({ gstin, otp, gstUsername, userId, txn });
   return result.data;
 }
 

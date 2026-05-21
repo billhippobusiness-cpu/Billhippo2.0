@@ -16,6 +16,7 @@ const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, prefille
   const [step, setStep] = useState<Step>('credentials');
   const [gstUsername, setGstUsername] = useState(prefilledUsername ?? '');
   const [otp, setOtp] = useState('');
+  const [sessionTxn, setSessionTxn] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showApiAccessHelp, setShowApiAccessHelp] = useState(false);
@@ -26,7 +27,8 @@ const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, prefille
     setError(null);
     setShowApiAccessHelp(false);
     try {
-      await initiateGSTSession(gstin, gstUsername.trim());
+      const result = await initiateGSTSession(gstin, gstUsername.trim());
+      setSessionTxn(result.txn);
       setStep('otp');
     } catch (err: any) {
       const msg = err?.message ?? 'Failed to send OTP. Please check your credentials and try again.';
@@ -45,7 +47,7 @@ const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, prefille
     setLoading(true);
     setError(null);
     try {
-      const { authToken, expiresAt } = await verifyGSTOTP(gstin, otp.trim(), gstUsername, userId);
+      const { authToken, expiresAt } = await verifyGSTOTP(gstin, otp.trim(), gstUsername, userId, sessionTxn);
       setStep('success');
       setTimeout(() => onSuccess(authToken, expiresAt, gstUsername), 1200);
     } catch (err: any) {
@@ -165,7 +167,7 @@ const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, prefille
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => { setStep('credentials'); setOtp(''); setError(null); }}
+                onClick={() => { setStep('credentials'); setOtp(''); setSessionTxn(''); setError(null); }}
                 className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100 flex items-center justify-center gap-2"
               >
                 <RefreshCw size={16} /> Resend
