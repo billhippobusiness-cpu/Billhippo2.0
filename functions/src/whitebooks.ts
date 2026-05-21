@@ -12,40 +12,60 @@ const wbEmail        = defineSecret("WHITEBOOKS_EMAIL"); // Your WhiteBooks regi
 
 // ─── Helper: get app-level auth token from WhiteBooks ────────────────────────
 async function getAppToken(): Promise<string> {
-  const res = await fetch(`${WB_BASE}/authenticate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id:     wbClientId.value(),
-      client_secret: wbClientSecret.value(),
-    }),
-  });
+  const clientId     = wbClientId.value();
+  const clientSecret = wbClientSecret.value();
+  const email        = wbEmail.value();
 
-  const raw = await res.json().catch(() => ({}));
+  // Try multiple auth formats — different GSP APIs use different field names
+  const authFormats = [
+    // Format 1: Standard OAuth2 client credentials
+    { client_id: clientId, client_secret: clientSecret },
+    // Format 2: With username (email) included
+    { client_id: clientId, client_secret: clientSecret, username: email },
+    // Format 3: app_key / secret_key naming
+    { app_key: clientId, secret_key: clientSecret },
+    // Format 4: username + password style (email as username, secret as password)
+    { username: email, password: clientSecret },
+    // Format 5: All fields
+    { username: email, password: clientSecret, client_id: clientId, client_secret: clientSecret },
+  ];
 
-  if (!res.ok) {
-    throw new HttpsError("unavailable", `WhiteBooks auth failed (${res.status}): ${JSON.stringify(raw)}`);
+  const responses: string[] = [];
+
+  for (let i = 0; i < authFormats.length; i++) {
+    const body = authFormats[i];
+    const res = await fetch(`${WB_BASE}/authenticate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const raw = await res.json().catch(() => ({}));
+    responses.push(`Format${i + 1}(${Object.keys(body).join(",")}): HTTP${res.status} => ${JSON.stringify(raw)}`);
+
+    // Check for explicit API-level error (status_cd "0" = failure, "1" = success)
+    if (raw?.status_cd === "0" || raw?.status === "0") continue;
+
+    if (!res.ok) continue;
+
+    const token =
+      raw?.data?.AuthToken ??
+      raw?.data?.auth_token ??
+      raw?.data?.token ??
+      raw?.data?.access_token ??
+      raw?.AuthToken ??
+      raw?.auth_token ??
+      raw?.token ??
+      raw?.access_token;
+
+    if (token) return token as string;
   }
 
-  // WhiteBooks returns: { status_cd: "1", data: { AuthToken: "..." } }
-  // Try all known field locations
-  const token =
-    raw?.data?.AuthToken ??
-    raw?.data?.auth_token ??
-    raw?.data?.token ??
-    raw?.AuthToken ??
-    raw?.auth_token ??
-    raw?.token ??
-    raw?.access_token;
-
-  if (!token) {
-    // Surface the full response so the exact field name can be identified
-    throw new HttpsError(
-      "unavailable",
-      `WhiteBooks auth token not found. Full response: ${JSON.stringify(raw)}`
-    );
-  }
-  return token as string;
+  // None worked — return all responses for diagnosis
+  throw new HttpsError(
+    "unavailable",
+    `WhiteBooks auth failed. Tried ${authFormats.length} formats. Results: ${responses.join(" | ")}`
+  );
 }
 
 // ─── 1. GSTIN Lookup (Public taxpayer search — no user OTP required) ─────────
