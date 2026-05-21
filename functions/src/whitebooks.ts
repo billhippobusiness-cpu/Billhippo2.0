@@ -30,16 +30,10 @@ export const wbLookupGSTIN = onCall(
 
     const url = `${WB_BASE}/public/search?gstin=${encodeURIComponent(gstin.toUpperCase())}`;
     const res = await fetch(url, { method: "GET", headers: credHeaders() });
-    const raw = await res.json().catch(() => ({}));
+    const bodyText = await res.text();
 
-    if (!res.ok || raw?.status_cd === "0") {
-      throw new HttpsError("not-found", `GSTIN lookup failed: ${JSON.stringify(raw)}`);
-    }
-
-    const d = raw.data ?? raw;
-
-    // TEMPORARY DEBUG — remove after confirming field names
-    throw new HttpsError("not-found", `DEBUG raw response: ${JSON.stringify(raw).substring(0, 1000)}`);
+    // TEMPORARY DEBUG — shows HTTP status + raw body text
+    throw new HttpsError("not-found", `DEBUG: HTTP ${res.status} | URL: ${url} | Body: ${bodyText.substring(0, 800)}`);
 
     return {
       gstin:                  gstin.toUpperCase(),
