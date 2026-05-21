@@ -2,24 +2,24 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { getFirestore } from "firebase-admin/firestore";
 
-// Base URL — no /api/v1.0, just the root
 const WB_BASE = "https://api.whitebooks.in";
 
 const wbClientId     = defineSecret("WHITEBOOKS_CLIENT_ID");
 const wbClientSecret = defineSecret("WHITEBOOKS_CLIENT_SECRET");
 const wbEmail        = defineSecret("WHITEBOOKS_EMAIL");
 
-// Credentials go as headers on every call (not in a POST body)
-function credHeaders(extra?: Record<string, string>): Record<string, string> {
+// Base headers — only client_id and client_secret (per Postman collection)
+function baseHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
-    "Accept": "application/json",
+    "Accept":        "application/json",
     "client_id":     wbClientId.value(),
     "client_secret": wbClientSecret.value(),
     ...(extra ?? {}),
   };
 }
 
-// ─── 1. GSTIN Lookup — GET /public/search ────────────────────────────────────
+// ─── 1. GSTIN Lookup — GET /public/search?email=&gstin= ──────────────────────
+// Per Postman: email is query param (first), gstin query param. Headers: client_id, client_secret only.
 export const wbLookupGSTIN = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
@@ -29,40 +29,29 @@ export const wbLookupGSTIN = onCall(
     }
 
     const email = wbEmail.value();
-    const g = gstin.toUpperCase();
+    const g     = gstin.toUpperCase();
+    const url   = `${WB_BASE}/public/search?email=${encodeURIComponent(email)}&gstin=${encodeURIComponent(g)}`;
 
-    // Try multiple endpoint formats to find which one WhiteBooks uses
-    const attempts: { url: string; headers: Record<string, string> }[] = [
-      {
-        url: `${WB_BASE}/public/search/${g}`,
-        headers: credHeaders({ "email": email }),
-      },
-      {
-        url: `${WB_BASE}/public/search?gstin=${g}`,
-        headers: credHeaders({ "email": email, "gstin": g }),
-      },
-      {
-        url: `${WB_BASE}/taxpayerprofile/tp/${g}`,
-        headers: credHeaders({ "email": email }),
-      },
-      {
-        url: `${WB_BASE}/public/search?tin=${g}`,
-        headers: credHeaders({ "email": email }),
-      },
-    ];
+    const res  = await fetch(url, { method: "GET", headers: baseHeaders() });
+    const body = await res.text();
 
-    const debugResults: string[] = [];
-    for (const attempt of attempts) {
-      const r = await fetch(attempt.url, { method: "GET", headers: attempt.headers });
-      const body = await r.text();
-      debugResults.push(`[${r.status}] ${attempt.url} => ${body.substring(0, 200) || "(empty)"}`);
-      if (r.ok && body && body !== "null" && body.length > 2) break;
+    if (!res.ok) {
+      throw new HttpsError("not-found", `GSTIN lookup HTTP error ${res.status}: ${body.substring(0, 300)}`);
     }
 
-    throw new HttpsError("not-found", `DEBUG multi-attempt: ${debugResults.join(" ||| ")}`);
+    if (!body || body.trim() === "" || body.trim() === "null" || body.trim() === "{}") {
+      throw new HttpsError("not-found", `GSTIN ${g} not found in GSTN database`);
+    }
 
+    const raw = JSON.parse(body);
+
+    if (raw?.status_cd === "0") {
+      throw new HttpsError("not-found", `GSTIN lookup failed: ${raw?.error?.message ?? body}`);
+    }
+
+    const d = raw.data ?? raw;
     return {
-      gstin:                  gstin.toUpperCase(),
+      gstin:                  g,
       legalName:              d.lgnm     ?? d.legal_name  ?? d.legalName  ?? "",
       tradeName:              d.tradeNam ?? d.trade_name  ?? d.tradeName  ?? "",
       address:                d.pradr?.addr?.bnm
@@ -74,14 +63,15 @@ export const wbLookupGSTIN = onCall(
       stateCode:              d.pradr?.addr?.stcd ?? d.stateCode ?? "",
       registrationDate:       d.rgdt  ?? d.registration_date ?? "",
       taxpayerType:           d.dty   ?? d.taxpayer_type     ?? "",
-      status:                 d.sts   ?? d.status            ?? "Active",
+      status:                 d.sts   ?? d.status            ?? "",
       constitutionOfBusiness: d.ctb   ?? d.constitution_of_business ?? "",
       filingStatus:           d.filingstatus ?? "",
     };
   }
 );
 
-// ─── 2. Initiate GST Portal Session — GET /authentication/otprequest ──────────
+// ─── 2. Initiate GST Portal Session — GET /authentication/otprequest?email= ───
+// Per Postman: email query param. Headers: gst_username, state_cd, ip_address, client_id, client_secret
 export const wbInitSession = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
@@ -90,12 +80,13 @@ export const wbInitSession = onCall(
       throw new HttpsError("invalid-argument", "GSTIN and GST username are required");
     }
 
+    const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
-    const url = `${WB_BASE}/authentication/otprequest?email=${encodeURIComponent(wbEmail.value())}`;
+    const url       = `${WB_BASE}/authentication/otprequest?email=${encodeURIComponent(email)}`;
 
     const res = await fetch(url, {
       method: "GET",
-      headers: credHeaders({
+      headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
         "ip_address":   "1.1.1.1",
@@ -112,7 +103,8 @@ export const wbInitSession = onCall(
   }
 );
 
-// ─── 3. Verify OTP → store auth token — GET /authentication/authtoken ─────────
+// ─── 3. Verify OTP → store txn for subsequent calls ──────────────────────────
+// Per Postman: email + otp in query params. txn in header. Returns AuthToken stored as txn.
 export const wbVerifyOTP = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
@@ -120,17 +112,17 @@ export const wbVerifyOTP = onCall(
       gstin: string; gstUsername: string; txn: string; otp: string; userId: string;
     };
 
+    const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
-    const url = `${WB_BASE}/authentication/authtoken`;
+    const url       = `${WB_BASE}/authentication/authtoken?email=${encodeURIComponent(email)}&otp=${encodeURIComponent(otp)}`;
 
     const res = await fetch(url, {
       method: "GET",
-      headers: credHeaders({
+      headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
         "ip_address":   "1.1.1.1",
         "txn":          txn,
-        "otp":          otp,
       }),
     });
 
@@ -139,11 +131,12 @@ export const wbVerifyOTP = onCall(
       throw new HttpsError("unauthenticated", `OTP verification failed: ${JSON.stringify(raw)}`);
     }
 
+    // Auth token — WhiteBooks may return it as AuthToken, authToken, txn etc.
     const authToken =
       raw?.data?.AuthToken ?? raw?.data?.authToken ?? raw?.data?.auth_token ??
-      raw?.AuthToken ?? raw?.authToken ?? "";
+      raw?.data?.txn ?? raw?.AuthToken ?? raw?.txn ?? "";
     if (!authToken) {
-      throw new HttpsError("unavailable", `Auth token missing in response: ${JSON.stringify(raw)}`);
+      throw new HttpsError("unavailable", `Auth token missing: ${JSON.stringify(raw)}`);
     }
 
     const expiresAt = Date.now() + 6 * 60 * 60 * 1000;
@@ -159,7 +152,8 @@ export const wbVerifyOTP = onCall(
   }
 );
 
-// ─── 4. Fetch GSTR-2B ────────────────────────────────────────────────────────
+// ─── 4. Fetch GSTR-2B — GET /gstr2b/all ──────────────────────────────────────
+// Per Postman: gstin, rtnprd, filenum, email in query. txn (AuthToken) in header.
 export const wbFetchGSTR2B = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
@@ -167,32 +161,36 @@ export const wbFetchGSTR2B = onCall(
       gstin: string; period: string; authToken: string; gstUsername: string;
     };
 
+    const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
-    const url = `${WB_BASE}/gstr2b/get?gstin=${gstin.toUpperCase()}&ret_period=${period}`;
+    const g         = gstin.toUpperCase();
+    const url       = `${WB_BASE}/gstr2b/all?gstin=${g}&rtnprd=${period}&filenum=1&email=${encodeURIComponent(email)}`;
 
     const res = await fetch(url, {
       method: "GET",
-      headers: credHeaders({
+      headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
         "ip_address":   "1.1.1.1",
-        "authtoken":    authToken,
-        "gstin":        gstin.toUpperCase(),
-        "ret_period":   period,
+        "txn":          authToken,
       }),
     });
 
     if (!res.ok) {
       const txt = await res.text();
-      throw new HttpsError("unavailable", `GSTR-2B fetch failed: ${txt}`);
+      throw new HttpsError("unavailable", `GSTR-2B fetch failed (${res.status}): ${txt.substring(0, 300)}`);
     }
 
     const raw = await res.json();
+    if (raw?.status_cd === "0") {
+      throw new HttpsError("unavailable", `GSTR-2B error: ${raw?.error?.message ?? JSON.stringify(raw)}`);
+    }
     return normalizeGSTR2B(gstin, period, raw);
   }
 );
 
-// ─── 5. Fetch GSTR-3B ────────────────────────────────────────────────────────
+// ─── 5. Fetch GSTR-3B — GET /gstr3b/retsum ───────────────────────────────────
+// Per Postman: gstin, retperiod, email in query. txn in header.
 export const wbFetchGSTR3B = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
@@ -200,32 +198,36 @@ export const wbFetchGSTR3B = onCall(
       gstin: string; period: string; authToken: string; gstUsername: string;
     };
 
+    const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
-    const url = `${WB_BASE}/gstr3b/get?gstin=${gstin.toUpperCase()}&ret_period=${period}`;
+    const g         = gstin.toUpperCase();
+    const url       = `${WB_BASE}/gstr3b/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`;
 
     const res = await fetch(url, {
       method: "GET",
-      headers: credHeaders({
+      headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
         "ip_address":   "1.1.1.1",
-        "authtoken":    authToken,
-        "gstin":        gstin.toUpperCase(),
-        "ret_period":   period,
+        "txn":          authToken,
       }),
     });
 
     if (!res.ok) {
       const txt = await res.text();
-      throw new HttpsError("unavailable", `GSTR-3B fetch failed: ${txt}`);
+      throw new HttpsError("unavailable", `GSTR-3B fetch failed (${res.status}): ${txt.substring(0, 300)}`);
     }
 
     const raw = await res.json();
+    if (raw?.status_cd === "0") {
+      throw new HttpsError("unavailable", `GSTR-3B error: ${raw?.error?.message ?? JSON.stringify(raw)}`);
+    }
     return normalizeGSTR3B(gstin, period, raw);
   }
 );
 
-// ─── 6. Fetch GSTR-1 ─────────────────────────────────────────────────────────
+// ─── 6. Fetch GSTR-1 — GET /gstr1/retsum ─────────────────────────────────────
+// Per Postman: gstin, retperiod, email, smrytyp in query. txn in header.
 export const wbFetchGSTR1 = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
@@ -233,27 +235,30 @@ export const wbFetchGSTR1 = onCall(
       gstin: string; period: string; authToken: string; gstUsername: string;
     };
 
+    const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
-    const url = `${WB_BASE}/gstr1/b2b?gstin=${gstin.toUpperCase()}&ret_period=${period}`;
+    const g         = gstin.toUpperCase();
+    const url       = `${WB_BASE}/gstr1/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}&smrytyp=E`;
 
     const res = await fetch(url, {
       method: "GET",
-      headers: credHeaders({
+      headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
         "ip_address":   "1.1.1.1",
-        "authtoken":    authToken,
-        "gstin":        gstin.toUpperCase(),
-        "ret_period":   period,
+        "txn":          authToken,
       }),
     });
 
     if (!res.ok) {
       const txt = await res.text();
-      throw new HttpsError("unavailable", `GSTR-1 fetch failed: ${txt}`);
+      throw new HttpsError("unavailable", `GSTR-1 fetch failed (${res.status}): ${txt.substring(0, 300)}`);
     }
 
     const raw = await res.json();
+    if (raw?.status_cd === "0") {
+      throw new HttpsError("unavailable", `GSTR-1 error: ${raw?.error?.message ?? JSON.stringify(raw)}`);
+    }
     return normalizeGSTR1(gstin, period, raw);
   }
 );
@@ -289,29 +294,16 @@ function normalizeGSTR2B(gstin: string, period: string, raw: any) {
       };
     });
     const sTotal = invoices.reduce(
-      (acc: any, i: any) => ({
-        taxable: acc.taxable + i.taxableValue,
-        igst:    acc.igst    + i.igst,
-        cgst:    acc.cgst    + i.cgst,
-        sgst:    acc.sgst    + i.sgst,
-      }),
+      (acc: any, i: any) => ({ taxable: acc.taxable + i.taxableValue, igst: acc.igst + i.igst, cgst: acc.cgst + i.cgst, sgst: acc.sgst + i.sgst }),
       { taxable: 0, igst: 0, cgst: 0, sgst: 0 }
     );
     suppliers.push({
-      gstin:        supplier.ctin  ?? supplier.gstin      ?? "",
-      tradeName:    supplier.trdnm ?? supplier.trade_name ?? "",
-      legalName:    supplier.lgnm  ?? supplier.legal_name ?? "",
-      invoices,
-      totalTaxable: sTotal.taxable,
-      totalIGST:    sTotal.igst,
-      totalCGST:    sTotal.cgst,
-      totalSGST:    sTotal.sgst,
+      gstin: supplier.ctin ?? supplier.gstin ?? "", tradeName: supplier.trdnm ?? supplier.trade_name ?? "",
+      legalName: supplier.lgnm ?? supplier.legal_name ?? "", invoices,
+      totalTaxable: sTotal.taxable, totalIGST: sTotal.igst, totalCGST: sTotal.cgst, totalSGST: sTotal.sgst,
     });
-    totalTaxable += sTotal.taxable;
-    totalIGST    += sTotal.igst;
-    totalCGST    += sTotal.cgst;
-    totalSGST    += sTotal.sgst;
-    invoiceCount += invoices.length;
+    totalTaxable += sTotal.taxable; totalIGST += sTotal.igst; totalCGST += sTotal.cgst;
+    totalSGST += sTotal.sgst; invoiceCount += invoices.length;
   }
   return { gstin, period, suppliers, totalTaxableValue: totalTaxable, totalIGST, totalCGST, totalSGST, invoiceCount, generationDate: d.gendt ?? "" };
 }
@@ -323,7 +315,7 @@ function normalizeGSTR3B(gstin: string, period: string, raw: any) {
   const intr = d.intr_ltfee  ?? d.intrLtfee  ?? {};
   return {
     gstin, period,
-    filedDate:      d.filed_date    ?? d.filedDate    ?? "",
+    filedDate:      d.filed_date ?? d.filedDate ?? "",
     outwardTaxable: sup?.osup_det?.txval ?? 0,
     outwardIGST:    sup?.osup_det?.iamt  ?? 0,
     outwardCGST:    sup?.osup_det?.camt  ?? 0,
@@ -344,31 +336,22 @@ function normalizeGSTR1(gstin: string, period: string, raw: any) {
       let taxable = 0, igst = 0, cgst = 0, sgst = 0;
       for (const itm of items) {
         const dt = itm.itm_det ?? itm;
-        taxable += dt.txval ?? 0;
-        igst    += dt.iamt  ?? 0;
-        cgst    += dt.camt  ?? 0;
-        sgst    += dt.samt  ?? 0;
+        taxable += dt.txval ?? 0; igst += dt.iamt ?? 0; cgst += dt.camt ?? 0; sgst += dt.samt ?? 0;
       }
       return {
-        invoiceNumber: inv.inum ?? "",
-        invoiceDate:   inv.idt  ?? "",
-        receiverGSTIN: supplier.ctin  ?? "",
-        receiverName:  supplier.trdnm ?? supplier.lgnm ?? "",
-        placeOfSupply: inv.pos  ?? "",
-        taxableValue:  taxable,
-        igst, cgst, sgst,
-        invoiceValue:  taxable + igst + cgst + sgst,
+        invoiceNumber: inv.inum ?? "", invoiceDate: inv.idt ?? "",
+        receiverGSTIN: supplier.ctin ?? "", receiverName: supplier.trdnm ?? supplier.lgnm ?? "",
+        placeOfSupply: inv.pos ?? "", taxableValue: taxable, igst, cgst, sgst,
+        invoiceValue: taxable + igst + cgst + sgst,
       };
     })
   );
   return {
-    gstin, period,
-    filedDate:         d.filed_date ?? d.filedDate ?? "",
-    b2bInvoices,
+    gstin, period, filedDate: d.filed_date ?? d.filedDate ?? "", b2bInvoices,
     totalTaxableValue: b2bInvoices.reduce((s: number, i: any) => s + i.taxableValue, 0),
-    totalIGST:         b2bInvoices.reduce((s: number, i: any) => s + i.igst, 0),
-    totalCGST:         b2bInvoices.reduce((s: number, i: any) => s + i.cgst, 0),
-    totalSGST:         b2bInvoices.reduce((s: number, i: any) => s + i.sgst, 0),
+    totalIGST: b2bInvoices.reduce((s: number, i: any) => s + i.igst, 0),
+    totalCGST: b2bInvoices.reduce((s: number, i: any) => s + i.cgst, 0),
+    totalSGST: b2bInvoices.reduce((s: number, i: any) => s + i.sgst, 0),
   };
 }
 
