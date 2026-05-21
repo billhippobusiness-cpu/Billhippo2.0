@@ -280,10 +280,10 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
       // Auto-fill form with fetched details
       setFormData(prev => ({
         ...prev,
-        name:    prev.name  || result.legalName || result.tradeName,
+        name:    prev.name  || result.tradeName || result.legalName,
         address: prev.address || result.address,
         city:    prev.city  || result.city,
-        state:   prev.state !== 'Maharashtra' ? prev.state : (result.state || prev.state),
+        state:   result.state || prev.state,
         pincode: prev.pincode || result.pincode,
       }));
     } catch (err: any) {
