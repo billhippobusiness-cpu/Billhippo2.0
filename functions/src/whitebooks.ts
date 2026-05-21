@@ -37,6 +37,10 @@ export const wbLookupGSTIN = onCall(
     }
 
     const d = raw.data ?? raw;
+
+    // TEMPORARY DEBUG — remove after confirming field names
+    throw new HttpsError("not-found", `DEBUG raw response: ${JSON.stringify(raw).substring(0, 1000)}`);
+
     return {
       gstin:                  gstin.toUpperCase(),
       legalName:              d.lgnm     ?? d.legal_name  ?? d.legalName  ?? "",
