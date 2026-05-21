@@ -16,7 +16,6 @@ async function getAppToken(): Promise<string> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      username:      wbEmail.value(),
       client_id:     wbClientId.value(),
       client_secret: wbClientSecret.value(),
     }),
