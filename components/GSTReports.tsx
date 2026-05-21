@@ -213,26 +213,6 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     load();
   }, [userId]);
 
-  // Load cached GSTR data whenever the period or GSTIN changes
-  useEffect(() => {
-    if (!profile?.gstin || !wbPeriod) return;
-    const gstin = profile.gstin;
-    (async () => {
-      const [c2b, c3b, c1] = await Promise.all([
-        loadGSTRCache(userId, '2b', gstin, wbPeriod),
-        loadGSTRCache(userId, '3b', gstin, wbPeriod),
-        loadGSTRCache(userId, '1', gstin, wbPeriod),
-      ]);
-      if (c2b) { setGstr2bData(c2b.data as GSTR2BData); setCacheFetchedAt(p => ({ ...p, '2b': c2b.fetchedAt })); }
-      else { setGstr2bData(null); setCacheFetchedAt(p => ({ ...p, '2b': undefined })); }
-      if (c3b) { setGstr3bOnline(c3b.data as GSTR3BOnlineData); setCacheFetchedAt(p => ({ ...p, '3b': c3b.fetchedAt })); }
-      else { setGstr3bOnline(null); setCacheFetchedAt(p => ({ ...p, '3b': undefined })); }
-      if (c1) { setGstr1Online(c1.data as GSTR1OnlineData); setCacheFetchedAt(p => ({ ...p, '1': c1.fetchedAt })); }
-      else { setGstr1Online(null); setCacheFetchedAt(p => ({ ...p, '1': undefined })); }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, profile?.gstin, wbPeriod]);
-
   // Customer map
   const custMap = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers]);
 
@@ -258,6 +238,26 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
   // MMYYYY format for WhiteBooks API (same as fp)
   const wbPeriod = fp; // Already in MMYYYY format
+
+  // Load cached GSTR data whenever the period or GSTIN changes
+  useEffect(() => {
+    if (!profile?.gstin || !wbPeriod) return;
+    const gstin = profile.gstin;
+    (async () => {
+      const [c2b, c3b, c1] = await Promise.all([
+        loadGSTRCache(userId, '2b', gstin, wbPeriod),
+        loadGSTRCache(userId, '3b', gstin, wbPeriod),
+        loadGSTRCache(userId, '1', gstin, wbPeriod),
+      ]);
+      if (c2b) { setGstr2bData(c2b.data as GSTR2BData); setCacheFetchedAt(p => ({ ...p, '2b': c2b.fetchedAt })); }
+      else { setGstr2bData(null); setCacheFetchedAt(p => ({ ...p, '2b': undefined })); }
+      if (c3b) { setGstr3bOnline(c3b.data as GSTR3BOnlineData); setCacheFetchedAt(p => ({ ...p, '3b': c3b.fetchedAt })); }
+      else { setGstr3bOnline(null); setCacheFetchedAt(p => ({ ...p, '3b': undefined })); }
+      if (c1) { setGstr1Online(c1.data as GSTR1OnlineData); setCacheFetchedAt(p => ({ ...p, '1': c1.fetchedAt })); }
+      else { setGstr1Online(null); setCacheFetchedAt(p => ({ ...p, '1': undefined })); }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, profile?.gstin, wbPeriod]);
 
   // Filtered data
   const filteredInvoices = useMemo(() => {
