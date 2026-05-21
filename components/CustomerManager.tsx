@@ -19,6 +19,7 @@ import LedgerPDF from './pdf/LedgerPDF';
 import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
 import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
+import { lookupGSTIN, GSTINDetails } from '../lib/whitebooksApi';
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -54,6 +55,11 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isInlineEditing, setIsInlineEditing] = useState(false);
+
+  // ── GSTIN Lookup state ──
+  const [gstinFetching, setGstinFetching] = useState(false);
+  const [gstinFetchResult, setGstinFetchResult] = useState<GSTINDetails | null>(null);
+  const [gstinFetchError, setGstinFetchError] = useState<string | null>(null);
 
   // ── Ledger / detail state ──
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -189,6 +195,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     setEditingId(null);
     setFormData(EMPTY_FORM);
     setError(null);
+    setGstinFetchResult(null);
+    setGstinFetchError(null);
   };
 
   // ── Open customer ledger ──
@@ -255,6 +263,34 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     });
     setIsInlineEditing(true);
     setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
+  };
+
+  const handleFetchGSTIN = async (gstin: string) => {
+    const g = gstin.trim().toUpperCase();
+    if (!g || g.length !== 15) {
+      setGstinFetchError('Please enter a valid 15-character GSTIN');
+      return;
+    }
+    setGstinFetching(true);
+    setGstinFetchResult(null);
+    setGstinFetchError(null);
+    try {
+      const result = await lookupGSTIN(g);
+      setGstinFetchResult(result);
+      // Auto-fill form with fetched details
+      setFormData(prev => ({
+        ...prev,
+        name:    prev.name  || result.legalName || result.tradeName,
+        address: prev.address || result.address,
+        city:    prev.city  || result.city,
+        state:   prev.state !== 'Maharashtra' ? prev.state : (result.state || prev.state),
+        pincode: prev.pincode || result.pincode,
+      }));
+    } catch (err: any) {
+      setGstinFetchError(err?.message ?? 'Could not fetch GSTIN details. Check GSTIN and try again.');
+    } finally {
+      setGstinFetching(false);
+    }
   };
 
   // ── Record payment: Credit ledger entry + receipt auto-open ──
@@ -479,8 +515,29 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">GSTIN</label>
-                      <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                        value={formData.gstin} onChange={e => setFormData({...formData, gstin: e.target.value})} placeholder="Optional" />
+                      <div className="flex gap-2">
+                        <input className="flex-1 bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50 font-mono tracking-wider uppercase"
+                          value={formData.gstin}
+                          onChange={e => { setFormData({...formData, gstin: e.target.value.toUpperCase()}); setGstinFetchResult(null); }}
+                          placeholder="Optional"
+                          maxLength={15}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleFetchGSTIN(formData.gstin)}
+                          disabled={gstinFetching || !formData.gstin || formData.gstin.length !== 15}
+                          className="px-4 py-4 rounded-2xl bg-indigo-50 text-indigo-600 font-bold hover:bg-indigo-600 hover:text-white transition-all disabled:opacity-50"
+                          title="Fetch GSTIN details"
+                        >
+                          {gstinFetching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                        </button>
+                      </div>
+                      {gstinFetchResult && (
+                        <p className="text-xs font-medium text-emerald-600 ml-4">✓ {gstinFetchResult.legalName} — {gstinFetchResult.status}</p>
+                      )}
+                      {gstinFetchError && (
+                        <p className="text-xs font-medium text-rose-500 ml-4">{gstinFetchError}</p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Phone</label>
@@ -1207,15 +1264,59 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
           {error && <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm font-bold text-rose-600 font-poppins">{error}</div>}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-poppins">
+            {/* GSTIN first with Fetch button */}
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">GSTIN <span className="text-slate-300">(Optional — enter to auto-fill details)</span></label>
+              <div className="flex gap-3">
+                <input
+                  className="flex-1 bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50 font-mono tracking-wider uppercase"
+                  value={formData.gstin}
+                  onChange={e => { setFormData({...formData, gstin: e.target.value.toUpperCase()}); setGstinFetchResult(null); setGstinFetchError(null); }}
+                  placeholder="15-CHAR GSTIN (Optional)"
+                  maxLength={15}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleFetchGSTIN(formData.gstin)}
+                  disabled={gstinFetching || !formData.gstin || formData.gstin.length !== 15}
+                  className="flex items-center gap-2 px-6 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-xl shadow-indigo-100 whitespace-nowrap"
+                >
+                  {gstinFetching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                  {gstinFetching ? 'Fetching...' : 'Fetch Details'}
+                </button>
+              </div>
+              {gstinFetchError && (
+                <p className="text-xs text-rose-500 font-medium ml-4 mt-1">{gstinFetchError}</p>
+              )}
+              {gstinFetchResult && (
+                <div className="mt-3 p-5 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-2">
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Details Fetched — Form auto-filled below</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <div><span className="text-slate-400 text-xs">Legal Name:</span> <span className="font-bold text-slate-700">{gstinFetchResult.legalName}</span></div>
+                    {gstinFetchResult.tradeName && gstinFetchResult.tradeName !== gstinFetchResult.legalName && (
+                      <div><span className="text-slate-400 text-xs">Trade Name:</span> <span className="font-bold text-slate-700">{gstinFetchResult.tradeName}</span></div>
+                    )}
+                    <div><span className="text-slate-400 text-xs">Type:</span> <span className="font-bold text-slate-700">{gstinFetchResult.taxpayerType || '—'}</span></div>
+                    <div>
+                      <span className="text-slate-400 text-xs">Status:</span>{' '}
+                      <span className={`font-bold text-xs px-2 py-0.5 rounded-full ${gstinFetchResult.status?.toLowerCase() === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'}`}>
+                        {gstinFetchResult.status || '—'}
+                      </span>
+                    </div>
+                    {gstinFetchResult.constitutionOfBusiness && (
+                      <div className="col-span-2"><span className="text-slate-400 text-xs">Business Type:</span> <span className="font-bold text-slate-700">{gstinFetchResult.constitutionOfBusiness}</span></div>
+                    )}
+                    {gstinFetchResult.registrationDate && (
+                      <div><span className="text-slate-400 text-xs">Registered:</span> <span className="font-bold text-slate-700">{gstinFetchResult.registrationDate}</span></div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Customer Name *</label>
               <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
                 value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Business or person name" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">GSTIN</label>
-              <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                value={formData.gstin} onChange={e => setFormData({...formData, gstin: e.target.value})} placeholder="Optional" />
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Phone</label>

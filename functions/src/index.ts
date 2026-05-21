@@ -464,9 +464,6 @@ function buildProfessionalWelcomeEmail(p: {
   );
 }
 
-// ─── WhiteBooks GST API Functions ─────────────────────────────────────────────
-export { wbLookupGSTIN, wbInitSession, wbVerifyOTP, wbFetchGSTR2B, wbFetchGSTR3B, wbFetchGSTR1 } from "./whitebooks";
-
 function buildInvoiceEmail(p: {
   customerName: string;
   businessName: string;
@@ -558,3 +555,6 @@ function buildInvoiceEmail(p: {
     body
   );
 }
+
+// ─── WhiteBooks GST API Functions ─────────────────────────────────────────────
+export { wbLookupGSTIN, wbInitSession, wbVerifyOTP, wbFetchGSTR2B, wbFetchGSTR3B, wbFetchGSTR1 } from "./whitebooks";
