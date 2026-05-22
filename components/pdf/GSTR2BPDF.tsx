@@ -1,33 +1,43 @@
 import React from 'react';
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer';
 import { GSTR2BData, GSTR2BSupplier } from '../../lib/whitebooksApi';
 
+Font.register({
+  family: 'Poppins',
+  fonts: [
+    { src: '/fonts/Poppins-Regular.ttf',  fontWeight: 400 },
+    { src: '/fonts/Poppins-Medium.ttf',   fontWeight: 500 },
+    { src: '/fonts/Poppins-SemiBold.ttf', fontWeight: 600 },
+    { src: '/fonts/Poppins-Bold.ttf',     fontWeight: 700 },
+  ],
+});
+Font.registerHyphenationCallback(word => [word]);
+
 const S = StyleSheet.create({
-  page:        { fontFamily: 'Helvetica', backgroundColor: '#ffffff', padding: '30 40' },
+  page:        { fontFamily: 'Poppins', fontWeight: 400, backgroundColor: '#ffffff', padding: '30 40' },
   header:      { backgroundColor: '#0f172a', padding: '16 20', borderRadius: 8, marginBottom: 6 },
-  headerTitle: { color: '#ffffff', fontSize: 16, fontFamily: 'Helvetica-Bold', letterSpacing: 0.5 },
-  headerSub:   { color: '#94a3b8', fontSize: 9, marginTop: 3 },
+  headerTitle: { color: '#ffffff', fontSize: 15, fontWeight: 700, letterSpacing: 0.3 },
+  headerSub:   { color: '#94a3b8', fontSize: 8, marginTop: 3 },
   accentBar:   { height: 3, backgroundColor: '#6366f1', borderRadius: 2, marginBottom: 14 },
-  sectionTitle:{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#6366f1', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 12 },
+  sectionTitle:{ fontSize: 8, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, marginTop: 12 },
   summaryBox:  { backgroundColor: '#eff6ff', borderRadius: 8, padding: '10 14', marginBottom: 14 },
-  summaryGrid: { flexDirection: 'row', gap: 0 },
+  summaryGrid: { flexDirection: 'row' },
   summaryItem: { flex: 1, alignItems: 'center' },
-  summaryLabel:{ fontSize: 7, color: '#64748b', fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', letterSpacing: 0.5 },
-  summaryValue:{ fontSize: 13, color: '#1e40af', fontFamily: 'Helvetica-Bold', marginTop: 2 },
-  divider:     { height: 1, backgroundColor: '#bfdbfe', marginVertical: 10 },
+  summaryLabel:{ fontSize: 6.5, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryValue:{ fontSize: 12, color: '#1e40af', fontWeight: 700, marginTop: 2 },
   tableHeader: { flexDirection: 'row', backgroundColor: '#1e40af', padding: '5 4', borderRadius: 4, marginBottom: 2 },
-  thCell:      { color: '#ffffff', fontSize: 7, fontFamily: 'Helvetica-Bold' },
+  thCell:      { color: '#ffffff', fontSize: 6.5, fontWeight: 700 },
   tableRow:    { flexDirection: 'row', padding: '4 4', borderBottomWidth: 1, borderBottomColor: '#dbeafe', borderBottomStyle: 'solid' },
   tableRowAlt: { flexDirection: 'row', padding: '4 4', backgroundColor: '#f8faff', borderBottomWidth: 1, borderBottomColor: '#dbeafe', borderBottomStyle: 'solid' },
-  tdCell:      { fontSize: 7, color: '#374151' },
+  tdCell:      { fontSize: 6.5, color: '#374151', fontWeight: 400 },
   totalRow:    { flexDirection: 'row', backgroundColor: '#1e3a8a', padding: '6 4', borderRadius: 4, marginTop: 2 },
-  totalCell:   { fontSize: 7, color: '#ffffff', fontFamily: 'Helvetica-Bold' },
+  totalCell:   { fontSize: 6.5, color: '#ffffff', fontWeight: 700 },
   supplierHeader: { backgroundColor: '#eff6ff', padding: '5 8', borderRadius: 4, marginBottom: 3, marginTop: 8 },
-  supplierName:   { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#1e40af' },
-  supplierGSTIN:  { fontSize: 7, color: '#64748b', fontFamily: 'Helvetica', marginTop: 1 },
+  supplierName:   { fontSize: 8, fontWeight: 700, color: '#1e40af' },
+  supplierGSTIN:  { fontSize: 6.5, color: '#64748b', fontWeight: 400, marginTop: 1 },
   footer:      { position: 'absolute', bottom: 20, left: 40, right: 40, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  footerText:  { fontSize: 7, color: '#94a3b8' },
-  footerBrand: { fontSize: 7, color: '#6366f1', fontFamily: 'Helvetica-Bold' },
+  footerText:  { fontSize: 6.5, color: '#94a3b8' },
+  footerBrand: { fontSize: 6.5, color: '#6366f1', fontWeight: 700 },
 });
 
 function inr(n: number) {
@@ -132,12 +142,12 @@ const GSTR2BPDF: React.FC<GSTR2BPDFProps> = ({ data, businessName, businessGSTIN
                   <Text style={[S.tdCell, { width: 90 }]}>{inv.invoiceNumber}</Text>
                   <Text style={[S.tdCell, { width: 55 }]}>{inv.invoiceDate}</Text>
                   <Text style={[S.tdCell, { width: 35 }]}>{inv.invoiceType}</Text>
-                  <Text style={[S.tdCell, { width: 30, textAlign: 'center', color: '#6366f1' }]}>{rate ? `${rate}%` : '—'}</Text>
+                  <Text style={[S.tdCell, { width: 30, textAlign: 'center', color: '#6366f1', fontWeight: 600 }]}>{rate ? `${rate}%` : '—'}</Text>
                   <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inr(inv.taxableValue)}</Text>
                   <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inv.igst > 0 ? inr(inv.igst) : '—'}</Text>
                   <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inv.cgst > 0 ? inr(inv.cgst) : '—'}</Text>
                   <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inv.sgst > 0 ? inr(inv.sgst) : '—'}</Text>
-                  <Text style={[S.tdCell, { width: 65, textAlign: 'right', fontFamily: 'Helvetica-Bold', color: '#1e40af' }]}>{inr(inv.igst + inv.cgst + inv.sgst)}</Text>
+                  <Text style={[S.tdCell, { width: 65, textAlign: 'right', fontWeight: 700, color: '#1e40af' }]}>{inr(inv.igst + inv.cgst + inv.sgst)}</Text>
                   <Text style={[S.tdCell, { width: 30, textAlign: 'center', color: inv.itcAvailability === 'Yes' ? '#059669' : '#dc2626' }]}>{inv.itcAvailability}</Text>
                 </View>
               );
