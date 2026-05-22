@@ -371,6 +371,13 @@ function normalizeGSTR2B(gstin: string, period: string, raw: any) {
         }
       }
 
+      // Step 5: derive rate from tax amounts (when API doesn't return rt field)
+      if (!gstRate && taxable > 0 && (igst + cgst + sgst) > 0) {
+        const totalTax = igst + cgst + sgst;
+        const rawRate = totalTax / taxable * 100;
+        gstRate = ([5, 12, 18, 28] as number[]).reduce((a, b) => Math.abs(b - rawRate) < Math.abs(a - rawRate) ? b : a);
+      }
+
       const itcRaw = inv.itcavl ?? "";
       const itcAvailability = itcRaw === "Y" ? "Yes" : itcRaw === "N" ? "No" : (itcRaw || "Yes");
 

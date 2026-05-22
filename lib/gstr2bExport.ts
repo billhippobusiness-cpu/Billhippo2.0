@@ -70,9 +70,20 @@ export function downloadGSTR2BExcel(data: GSTR2BData, businessName: string, busi
     cell("ITC", true, HEADER_FILL, HEADER_FONT),
   ]);
 
+  function deriveRate(inv: any): number {
+    if (inv.gstRate) return inv.gstRate;
+    const totalTax = (inv.igst ?? 0) + (inv.cgst ?? 0) + (inv.sgst ?? 0);
+    if (totalTax > 0 && inv.taxableValue > 0) {
+      const raw = totalTax / inv.taxableValue * 100;
+      return [5, 12, 18, 28].reduce((a: number, b: number) => Math.abs(b - raw) < Math.abs(a - raw) ? b : a);
+    }
+    return 0;
+  }
+
   let rowNum = 1;
   for (const supplier of data.suppliers) {
     for (const inv of supplier.invoices) {
+      const rate = deriveRate(inv);
       const altFill = rowNum % 2 === 0 ? { fgColor: { rgb: "F8FAFF" } } : { fgColor: { rgb: "FFFFFF" } };
       rows.push([
         cell(rowNum, false, altFill),
@@ -81,7 +92,7 @@ export function downloadGSTR2BExcel(data: GSTR2BData, businessName: string, busi
         cell(inv.invoiceNumber, false, altFill),
         cell(inv.invoiceDate, false, altFill),
         cell(inv.invoiceType, false, altFill),
-        cell(inv.gstRate ? `${inv.gstRate}%` : '—', false, altFill),
+        cell(rate ? `${rate}%` : '—', false, altFill),
         numCell(inv.taxableValue, altFill),
         numCell(inv.igst, altFill),
         numCell(inv.cgst, altFill),
