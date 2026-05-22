@@ -34,6 +34,16 @@ function inr(n: number) {
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function deriveRate(inv: any): number {
+  if (inv.gstRate) return inv.gstRate;
+  const totalTax = (inv.igst ?? 0) + (inv.cgst ?? 0) + (inv.sgst ?? 0);
+  if (totalTax > 0 && inv.taxableValue > 0) {
+    const raw = totalTax / inv.taxableValue * 100;
+    return [5, 12, 18, 28].reduce((a: number, b: number) => Math.abs(b - raw) < Math.abs(a - raw) ? b : a);
+  }
+  return 0;
+}
+
 interface GSTR2BPDFProps {
   data: GSTR2BData;
   businessName: string;
@@ -115,13 +125,14 @@ const GSTR2BPDF: React.FC<GSTR2BPDFProps> = ({ data, businessName, businessGSTIN
             </View>
             {supplier.invoices.map((inv, ii) => {
               const rowStyle = ii % 2 === 0 ? S.tableRow : S.tableRowAlt;
+              const rate = deriveRate(inv);
               return (
                 <View key={ii} style={rowStyle} wrap={false}>
                   <Text style={[S.tdCell, { width: 20 }]}>{ii + 1}</Text>
                   <Text style={[S.tdCell, { width: 90 }]}>{inv.invoiceNumber}</Text>
                   <Text style={[S.tdCell, { width: 55 }]}>{inv.invoiceDate}</Text>
                   <Text style={[S.tdCell, { width: 35 }]}>{inv.invoiceType}</Text>
-                  <Text style={[S.tdCell, { width: 30, textAlign: 'center', color: '#6366f1' }]}>{inv.gstRate ? `${inv.gstRate}%` : '—'}</Text>
+                  <Text style={[S.tdCell, { width: 30, textAlign: 'center', color: '#6366f1' }]}>{rate ? `${rate}%` : '—'}</Text>
                   <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inr(inv.taxableValue)}</Text>
                   <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inv.igst > 0 ? inr(inv.igst) : '—'}</Text>
                   <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inv.cgst > 0 ? inr(inv.cgst) : '—'}</Text>

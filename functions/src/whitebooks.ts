@@ -294,7 +294,6 @@ export const wbFetchGSTR1 = onCall(
 // ─── Normalization helpers ────────────────────────────────────────────────────
 
 function normalizeGSTR2B(gstin: string, period: string, raw: any) {
-  // Try multiple response nesting levels WhiteBooks may use
   const d = raw.data?.data ?? raw.data ?? raw;
   const suppliers: any[] = [];
   let totalTaxable = 0, totalIGST = 0, totalCGST = 0, totalSGST = 0, invoiceCount = 0;
@@ -303,31 +302,51 @@ function normalizeGSTR2B(gstin: string, period: string, raw: any) {
   const b2bList: any[] =
     d?.docdata?.b2b ?? d?.data?.docdata?.b2b ??
     d?.b2b ?? d?.data?.b2b ?? [];
+
+  // Log first invoice structure for debugging
+  if (b2bList.length > 0 && b2bList[0].inv?.length > 0) {
+    const firstInv = b2bList[0].inv[0];
+    const firstItm = firstInv.itms?.[0] ?? firstInv.items?.[0];
+    console.info(`GSTR-2B first invoice keys: ${JSON.stringify(Object.keys(firstInv))}`);
+    console.info(`GSTR-2B first invoice sample: inum=${firstInv.inum} idt=${firstInv.idt} inv_dt=${firstInv.inv_dt} dt=${firstInv.dt} val=${firstInv.val} txval=${firstInv.txval} iamt=${firstInv.iamt} camt=${firstInv.camt} samt=${firstInv.samt} rt=${firstInv.rt}`);
+    if (firstItm) {
+      const det = firstItm.itm_det ?? firstItm;
+      console.info(`GSTR-2B first itm_det keys: ${JSON.stringify(Object.keys(firstItm))} | det keys: ${JSON.stringify(Object.keys(det))}`);
+      console.info(`GSTR-2B first itm_det: txval=${det.txval} rt=${det.rt} iamt=${det.iamt} camt=${det.camt} samt=${det.samt} igst=${det.igst} cgst=${det.cgst} sgst=${det.sgst}`);
+    }
+  }
+
   for (const supplier of b2bList) {
     const supplierState = (supplier.ctin ?? "").substring(0, 2);
+    const isInterState = supplierState !== "" && buyerState !== "" && supplierState !== buyerState;
+
     const invoices = (supplier.inv ?? supplier.invoices ?? []).map((inv: any) => {
       const items = inv.itms ?? inv.items ?? [];
+
+      // Step 1: collect from itm_det line items
       let taxable = 0, igst = 0, cgst = 0, sgst = 0, gstRate = 0;
       for (const itm of items) {
         const detail = itm.itm_det ?? itm;
         taxable += Number(detail.txval ?? 0);
-        // Try both iamt/camt/samt (NIC format) and igst/cgst/sgst (alternative naming)
         igst    += Number(detail.iamt ?? detail.igst ?? 0);
         cgst    += Number(detail.camt ?? detail.cgst ?? 0);
         sgst    += Number(detail.samt ?? detail.sgst ?? 0);
         if (!gstRate) gstRate = Number(detail.rt ?? detail.rate ?? 0);
       }
-      // Fallback: amounts directly on invoice
+
+      // Step 2: invoice-level amounts fallback when itm_det is empty
+      const invTxval = Number(inv.txval ?? 0);
+      const invVal   = Number(inv.val   ?? 0);
       if (taxable === 0 && igst === 0 && cgst === 0 && sgst === 0) {
-        taxable = Number(inv.txval ?? inv.val ?? 0);
+        taxable = invTxval > 0 ? invTxval : invVal;
         igst    = Number(inv.iamt ?? inv.igst ?? 0);
         cgst    = Number(inv.camt ?? inv.cgst ?? 0);
         sgst    = Number(inv.samt ?? inv.sgst ?? 0);
         if (!gstRate) gstRate = Number(inv.rt ?? inv.rate ?? 0);
       }
-      // Rate-based fallback: when taxable is known but all tax amounts are 0
+
+      // Step 3: rate-based fallback (when GST rate field IS present but tax amounts are 0)
       if (taxable > 0 && igst === 0 && cgst === 0 && sgst === 0 && gstRate > 0) {
-        const isInterState = supplierState !== buyerState;
         if (isInterState) {
           igst = Math.round(taxable * gstRate) / 100;
         } else {
@@ -335,15 +354,42 @@ function normalizeGSTR2B(gstin: string, period: string, raw: any) {
           sgst = Math.round(taxable * gstRate / 2) / 100;
         }
       }
+
+      // Step 4: val-minus-txval fallback (derive tax when txval and val are both present)
+      // invTxval = taxable, invVal = total invoice value including tax
+      if (taxable > 0 && igst === 0 && cgst === 0 && sgst === 0 && invTxval > 0 && invVal > invTxval + 0.01) {
+        const derivedTax = invVal - invTxval;
+        if (isInterState) {
+          igst = Math.round(derivedTax * 100) / 100;
+        } else {
+          cgst = Math.round(derivedTax / 2 * 100) / 100;
+          sgst = Math.round(derivedTax / 2 * 100) / 100;
+        }
+        if (!gstRate) {
+          const rawRate = derivedTax / invTxval * 100;
+          gstRate = ([5, 12, 18, 28] as number[]).reduce((a, b) => Math.abs(b - rawRate) < Math.abs(a - rawRate) ? b : a);
+        }
+      }
+
+      // Step 5: derive rate from tax amounts (when API doesn't return rt field)
+      if (!gstRate && taxable > 0 && (igst + cgst + sgst) > 0) {
+        const totalTax = igst + cgst + sgst;
+        const rawRate = totalTax / taxable * 100;
+        gstRate = ([5, 12, 18, 28] as number[]).reduce((a, b) => Math.abs(b - rawRate) < Math.abs(a - rawRate) ? b : a);
+      }
+
+      const itcRaw = inv.itcavl ?? "";
+      const itcAvailability = itcRaw === "Y" ? "Yes" : itcRaw === "N" ? "No" : (itcRaw || "Yes");
+
       return {
-        invoiceNumber:   inv.inum ?? inv.invoice_number ?? "",
-        invoiceDate:     inv.idt  ?? inv.invoice_date   ?? "",
-        invoiceType:     inv.typ  ?? "B2B",
-        placeOfSupply:   inv.pos  ?? "",
-        reverseCharge:   inv.rchrg === "Y",
-        taxableValue:    taxable,
+        invoiceNumber:  inv.inum ?? inv.invoice_number ?? "",
+        invoiceDate:    inv.idt  ?? inv.inv_dt ?? inv.dt ?? inv.date ?? inv.invoice_date ?? "",
+        invoiceType:    inv.typ  ?? inv.inv_typ ?? "B2B",
+        placeOfSupply:  inv.pos  ?? "",
+        reverseCharge:  inv.rchrg === "Y",
+        taxableValue:   taxable,
         igst, cgst, sgst, cess: 0,
-        itcAvailability: inv.itcavl ?? "Yes",
+        itcAvailability,
         gstRate,
       };
     });
