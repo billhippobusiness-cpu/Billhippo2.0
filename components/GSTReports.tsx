@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   WifiOff,
 } from 'lucide-react';
-import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes } from '../lib/firestore';
+import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes, saveGSTRCache, loadGSTRCache, loadGSTSession } from '../lib/firestore';
 import { downloadGSTR1Excel, downloadGSTR1JSON } from '../lib/gstr1Generator';
 import { downloadSalesRegisterExcel, downloadNotesRegisterExcel, downloadHSNExcel, aggregateHSN } from '../lib/salesRegisterExport';
 import { Invoice, GSTType, Customer, BusinessProfile, CreditNote, DebitNote } from '../types';
@@ -116,14 +116,23 @@ function monthEndDate(ym: string): string {
   return `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 }
 
-function inr(n: number): string {
-  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function inr(n: number | undefined | null): string {
+  return `₹${(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtDate(d: string): string {
   if (!d) return '';
   const [y, m, day] = d.split('-');
   return `${day}-${m}-${y}`;
+}
+
+function fmtFetchedAt(ms: number): string {
+  const mins = Math.floor((Date.now() - ms) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -175,6 +184,16 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const [portalFetching, setPortalFetching] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const [gstr2bPdfOpen, setGstr2bPdfOpen] = useState(false);
+  // Cache fetch timestamps keyed by type
+  const [cacheFetchedAt, setCacheFetchedAt] = useState<{ '2b'?: number; '3b'?: number; '1'?: number }>({});
+  // Bulk / FY fetch
+  const [showBulkFetch, setShowBulkFetch] = useState(false);
+  const [bulkFetchYear, setBulkFetchYear] = useState(() => {
+    const now = new Date();
+    return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1; // Indian FY start April
+  });
+  const [bulkProgress, setBulkProgress] = useState<Record<string, 'idle' | 'fetching' | 'done' | 'error'>>({});
+  const [bulkFetching, setBulkFetching] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -227,6 +246,26 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
   // MMYYYY format for WhiteBooks API (same as fp)
   const wbPeriod = fp; // Already in MMYYYY format
+
+  // Load cached GSTR data whenever the period or GSTIN changes
+  useEffect(() => {
+    if (!profile?.gstin || !wbPeriod) return;
+    const gstin = profile.gstin;
+    (async () => {
+      const [c2b, c3b, c1] = await Promise.all([
+        loadGSTRCache(userId, '2b', gstin, wbPeriod),
+        loadGSTRCache(userId, '3b', gstin, wbPeriod),
+        loadGSTRCache(userId, '1', gstin, wbPeriod),
+      ]);
+      if (c2b) { setGstr2bData(c2b.data as GSTR2BData); setCacheFetchedAt(p => ({ ...p, '2b': c2b.fetchedAt })); }
+      else { setGstr2bData(null); setCacheFetchedAt(p => ({ ...p, '2b': undefined })); }
+      if (c3b) { setGstr3bOnline(c3b.data as GSTR3BOnlineData); setCacheFetchedAt(p => ({ ...p, '3b': c3b.fetchedAt })); }
+      else { setGstr3bOnline(null); setCacheFetchedAt(p => ({ ...p, '3b': undefined })); }
+      if (c1) { setGstr1Online(c1.data as GSTR1OnlineData); setCacheFetchedAt(p => ({ ...p, '1': c1.fetchedAt })); }
+      else { setGstr1Online(null); setCacheFetchedAt(p => ({ ...p, '1': undefined })); }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, profile?.gstin, wbPeriod]);
 
   // Filtered data
   const filteredInvoices = useMemo(() => {
@@ -403,9 +442,44 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
   const isSessionActive = () => gstSession && gstSession.expiresAt > Date.now();
 
+  // Restore GST session from Firestore so user doesn't re-login on every page refresh
+  useEffect(() => {
+    if (!profile?.gstin) return;
+    loadGSTSession(userId, profile.gstin).then(saved => {
+      if (saved) setGstSession(saved);
+    });
+  }, [userId, profile?.gstin]);
+
   const handlePortalLogin = (authToken: string, expiresAt: number, gstUsername: string) => {
     setGstSession({ authToken, expiresAt, gstUsername });
     setShowPortalLogin(false);
+  };
+
+  // Bulk fetch all months for a financial year (Apr–Mar)
+  const handleBulkFetch = async () => {
+    if (!profile?.gstin || !gstSession) return;
+    setBulkFetching(true);
+    const months: string[] = [];
+    for (let m = 4; m <= 12; m++) months.push(`${String(m).padStart(2, '0')}${bulkFetchYear}`);
+    for (let m = 1; m <= 3; m++) months.push(`${String(m).padStart(2, '0')}${bulkFetchYear + 1}`);
+
+    for (const period of months) {
+      setBulkProgress(p => ({ ...p, [period]: 'fetching' }));
+      try {
+        const [d2b, d3b, d1] = await Promise.allSettled([
+          fetchGSTR2B(profile.gstin, period, gstSession.authToken, gstSession.gstUsername),
+          fetchGSTR3BOnline(profile.gstin, period, gstSession.authToken, gstSession.gstUsername),
+          fetchGSTR1Online(profile.gstin, period, gstSession.authToken, gstSession.gstUsername),
+        ]);
+        if (d2b.status === 'fulfilled') await saveGSTRCache(userId, '2b', profile.gstin, period, d2b.value as unknown as Record<string, any>);
+        if (d3b.status === 'fulfilled') await saveGSTRCache(userId, '3b', profile.gstin, period, d3b.value as unknown as Record<string, any>);
+        if (d1.status === 'fulfilled') await saveGSTRCache(userId, '1', profile.gstin, period, d1.value as unknown as Record<string, any>);
+        setBulkProgress(p => ({ ...p, [period]: 'done' }));
+      } catch {
+        setBulkProgress(p => ({ ...p, [period]: 'error' }));
+      }
+    }
+    setBulkFetching(false);
   };
 
   const handleFetchGSTR2B = async () => {
@@ -413,9 +487,12 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     setPortalFetching(true);
     setPortalError(null);
     try {
-      const data = await fetchGSTR2B(profile.gstin, wbPeriod, gstSession.authToken);
+      const data = await fetchGSTR2B(profile.gstin, wbPeriod, gstSession.authToken, gstSession.gstUsername);
       setGstr2bData(data);
       setPortalDataPeriod(periodLabel);
+      const now = Date.now();
+      setCacheFetchedAt(p => ({ ...p, '2b': now }));
+      await saveGSTRCache(userId, '2b', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
       setPortalError(err?.message ?? 'Failed to fetch GSTR-2B. Session may have expired.');
     } finally {
@@ -428,8 +505,11 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     setPortalFetching(true);
     setPortalError(null);
     try {
-      const data = await fetchGSTR3BOnline(profile.gstin, wbPeriod, gstSession.authToken);
+      const data = await fetchGSTR3BOnline(profile.gstin, wbPeriod, gstSession.authToken, gstSession.gstUsername);
       setGstr3bOnline(data);
+      const now = Date.now();
+      setCacheFetchedAt(p => ({ ...p, '3b': now }));
+      await saveGSTRCache(userId, '3b', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
       setPortalError(err?.message ?? 'Failed to fetch GSTR-3B online data.');
     } finally {
@@ -442,8 +522,11 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     setPortalFetching(true);
     setPortalError(null);
     try {
-      const data = await fetchGSTR1Online(profile.gstin, wbPeriod, gstSession.authToken);
+      const data = await fetchGSTR1Online(profile.gstin, wbPeriod, gstSession.authToken, gstSession.gstUsername);
       setGstr1Online(data);
+      const now = Date.now();
+      setCacheFetchedAt(p => ({ ...p, '1': now }));
+      await saveGSTRCache(userId, '1', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
       setPortalError(err?.message ?? 'Failed to fetch GSTR-1 online data.');
     } finally {
@@ -689,14 +772,17 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                 <Cloud size={15} className="text-indigo-500" /> Compare with Filed GSTR-1 on Portal
               </h4>
               {isSessionActive() ? (
-                <button
-                  onClick={handleFetchGSTR1Online}
-                  disabled={portalFetching}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
-                >
-                  {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                  Fetch Filed GSTR-1
-                </button>
+                <div className="flex items-center gap-2">
+                  {cacheFetchedAt['1'] && <span className="text-xs text-slate-400">Cached · {fmtFetchedAt(cacheFetchedAt['1'])}</span>}
+                  <button
+                    onClick={handleFetchGSTR1Online}
+                    disabled={portalFetching}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
+                  >
+                    {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    {cacheFetchedAt['1'] ? 'Refresh Filed GSTR-1' : 'Fetch Filed GSTR-1'}
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={() => setShowPortalLogin(true)}
@@ -783,6 +869,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     <thead className="bg-slate-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">Description</th>
+                        <th className="px-6 py-3 text-left text-slate-400 text-xs font-bold uppercase tracking-wide">Source</th>
                         <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">Taxable Value</th>
                         <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">IGST</th>
                         <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">CGST</th>
@@ -791,43 +878,71 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                       </tr>
                     </thead>
                     <tbody>
+                      {/* 3.1(a) — Your App row */}
                       <tr className="border-b border-slate-100">
-                        <td className="px-6 py-4 text-sm text-slate-700 font-medium">3.1(a) Outward taxable supplies</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-700">{inr(totalTaxable)}</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-600">{inr(totalIGST)}</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-600">{inr(totalCGST)}</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-600">{inr(totalSGST)}</td>
-                        <td className="px-6 py-4 text-sm text-right font-bold text-slate-800">{inr(totalTax)}</td>
+                        <td className="px-6 py-3 text-sm text-slate-700 font-medium" rowSpan={gstr3bOnline ? 2 : 1}>3.1(a) Outward taxable supplies</td>
+                        <td className="px-6 py-3 text-xs font-bold text-indigo-500">BillHippo</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-700">{inr(totalTaxable)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(totalIGST)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(totalCGST)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(totalSGST)}</td>
+                        <td className="px-6 py-3 text-sm text-right font-bold text-slate-800">{inr(totalTax)}</td>
                       </tr>
+                      {/* 3.1(a) — Portal filed row (when available) */}
+                      {gstr3bOnline && (
+                        <tr className="border-b border-slate-200 bg-teal-50/60">
+                          <td className="px-6 py-3 text-xs font-bold text-teal-600 flex items-center gap-1"><Cloud size={11} /> Filed (Portal)</td>
+                          <td className="px-6 py-3 text-sm text-right font-semibold text-teal-700">{inr(gstr3bOnline.outwardTaxable)}</td>
+                          <td className="px-6 py-3 text-sm text-right font-semibold text-teal-700">{inr(gstr3bOnline.outwardIGST)}</td>
+                          <td className="px-6 py-3 text-sm text-right font-semibold text-teal-700">{inr(gstr3bOnline.outwardCGST)}</td>
+                          <td className="px-6 py-3 text-sm text-right font-semibold text-teal-700">{inr(gstr3bOnline.outwardSGST)}</td>
+                          <td className="px-6 py-3 text-sm text-right font-bold text-teal-800">{inr(gstr3bOnline.outwardTax ?? (gstr3bOnline.outwardIGST + gstr3bOnline.outwardCGST + gstr3bOnline.outwardSGST))}</td>
+                        </tr>
+                      )}
                       <tr className="border-b border-slate-100 bg-slate-50/50">
-                        <td className="px-6 py-4 text-sm text-slate-500">3.1(b) Outward taxable (zero rated)</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-slate-500">3.1(b) Outward taxable (zero rated)</td>
+                        <td className="px-6 py-3 text-xs text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
                       </tr>
                       <tr className="border-b border-slate-100">
-                        <td className="px-6 py-4 text-sm text-slate-500">3.1(c) Other outward supplies (nil, exempt)</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-slate-500">3.1(c) Other outward supplies (nil, exempt)</td>
+                        <td className="px-6 py-3 text-xs text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
                       </tr>
                       <tr className="bg-indigo-600 text-white font-bold">
                         <td className="px-6 py-4 text-sm">Total Liability (3.1)</td>
+                        <td className="px-6 py-4 text-xs">BillHippo</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalTaxable)}</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalIGST)}</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalCGST)}</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalSGST)}</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalTax)}</td>
                       </tr>
+                      {gstr3bOnline && (
+                        <tr className="bg-teal-600 text-white font-bold">
+                          <td className="px-6 py-4 text-sm">Total Liability (3.1)</td>
+                          <td className="px-6 py-4 text-xs">Filed (Portal)</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardTaxable)}</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardIGST)}</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardCGST)}</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardSGST)}</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardTax ?? (gstr3bOnline.outwardIGST + gstr3bOnline.outwardCGST + gstr3bOnline.outwardSGST))}</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
                 <p className="text-xs text-slate-400 font-poppins">
                   Note: ITC (input tax credit) details must be filled manually in the GST portal.
+                  {gstr3bOnline && <span className="text-teal-600 font-bold ml-2">· Teal rows = filed data from GST portal</span>}
                 </p>
               </div>
             )}
@@ -855,14 +970,17 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     <Cloud size={15} className="text-indigo-500" /> Compare with GST Portal (Filed GSTR-3B)
                   </h4>
                   {isSessionActive() ? (
-                    <button
-                      onClick={handleFetchGSTR3BOnline}
-                      disabled={portalFetching}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
-                    >
-                      {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                      Fetch Filed Data
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {cacheFetchedAt['3b'] && <span className="text-xs text-slate-400">Cached · {fmtFetchedAt(cacheFetchedAt['3b'])}</span>}
+                      <button
+                        onClick={handleFetchGSTR3BOnline}
+                        disabled={portalFetching}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
+                      >
+                        {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                        {cacheFetchedAt['3b'] ? 'Refresh' : 'Fetch Filed Data'}
+                      </button>
+                    </div>
                   ) : (
                     <button
                       onClick={() => setShowPortalLogin(true)}
@@ -889,7 +1007,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                           { label: 'IGST', app: totalIGST, portal: gstr3bOnline.outwardIGST },
                           { label: 'CGST', app: totalCGST, portal: gstr3bOnline.outwardCGST },
                           { label: 'SGST', app: totalSGST, portal: gstr3bOnline.outwardSGST },
-                          { label: 'Total Tax', app: totalTax, portal: gstr3bOnline.outwardTax },
+                          { label: 'Total Tax', app: totalTax, portal: gstr3bOnline.outwardTax ?? (gstr3bOnline.outwardIGST + gstr3bOnline.outwardCGST + gstr3bOnline.outwardSGST) },
                         ].map(row => {
                           const diff = row.app - row.portal;
                           const diffColor = Math.abs(diff) < 1 ? 'text-emerald-600' : diff > 0 ? 'text-amber-600' : 'text-rose-600';
@@ -1206,14 +1324,19 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                   <Lock size={14} /> Connect GST Portal
                 </button>
               ) : (
-                <button
-                  onClick={handleFetchGSTR2B}
-                  disabled={portalFetching}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-all shadow-lg shadow-teal-100 disabled:opacity-50"
-                >
-                  {portalFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                  {portalFetching ? 'Fetching...' : 'Fetch GSTR-2B'}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleFetchGSTR2B}
+                    disabled={portalFetching}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-all shadow-lg shadow-teal-100 disabled:opacity-50"
+                  >
+                    {portalFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {portalFetching ? 'Fetching...' : (cacheFetchedAt['2b'] ? 'Refresh GSTR-2B' : 'Fetch GSTR-2B')}
+                  </button>
+                  {cacheFetchedAt['2b'] && (
+                    <span className="text-xs text-slate-400">Cached · {fmtFetchedAt(cacheFetchedAt['2b'])}</span>
+                  )}
+                </div>
               )}
               {gstr2bData && (
                 <>
@@ -1458,17 +1581,28 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setShowPortalLogin(true)}
-          disabled={!profile?.gstin}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-40 ${isSessionActive() ? 'bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'}`}
-        >
-          <Cloud size={15} />
-          {isSessionActive() ? 'Reconnect' : 'Connect to GST Portal'}
-        </button>
+        <div className="flex items-center gap-2">
+          {isSessionActive() && (
+            <button
+              onClick={() => setShowBulkFetch(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-all"
+            >
+              <Calendar size={14} />
+              Fetch Year Data
+            </button>
+          )}
+          <button
+            onClick={() => setShowPortalLogin(true)}
+            disabled={!profile?.gstin}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-40 ${isSessionActive() ? 'bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'}`}
+          >
+            <Cloud size={15} />
+            {isSessionActive() ? 'Reconnect' : 'Connect to GST Portal'}
+          </button>
+        </div>
       </div>
 
-      {/* ── 4 Report cards ── */}
+      {/* ── Report cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* GSTR-1 */}
         <ReportCard
@@ -1500,22 +1634,6 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           ]}
           onClick={() => openDetail('gstr3b')}
           active={activeDetail === 'gstr3b'}
-        />
-
-        {/* Tax Summary */}
-        <ReportCard
-          color="bg-amber-500"
-          title="Tax Summary"
-          desc="Rate-wise tax collected this period"
-          status={totalTax > 0 ? 'Ready' : 'No Data'}
-          fields={[
-            `Total Tax: ${inr(totalTax)}`,
-            `Total Sales: ${inr(totalTaxable + totalTax)}`,
-            `Invoices: ${filteredInvoices.length}`,
-            `GST Rates: ${rateBreakdown.length}`,
-          ]}
-          onClick={() => openDetail('taxsummary')}
-          active={activeDetail === 'taxsummary'}
         />
 
         {/* Sales Register */}
@@ -1693,6 +1811,69 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           }
           fileName={`GSTR-3B_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}
         />
+      )}
+
+      {/* Bulk FY Fetch Modal */}
+      {showBulkFetch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="bg-white rounded-[2rem] p-8 w-full max-w-lg shadow-2xl font-poppins">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-slate-900">Fetch Year Data</h3>
+              <button onClick={() => { setShowBulkFetch(false); setBulkProgress({}); }} className="p-2 hover:bg-slate-50 rounded-xl">
+                <X size={18} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="flex items-center gap-3 mb-6">
+              <label className="text-sm font-bold text-slate-600">Financial Year:</label>
+              <select
+                value={bulkFetchYear}
+                onChange={e => setBulkFetchYear(Number(e.target.value))}
+                className="bg-slate-50 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 border-none focus:ring-2 ring-indigo-100"
+              >
+                {[0, 1, 2, 3].map(i => {
+                  const y = new Date().getFullYear() - i;
+                  return <option key={y} value={y}>FY {y}-{String(y + 1).slice(2)}</option>;
+                })}
+              </select>
+            </div>
+            <div className="grid grid-cols-4 gap-2 mb-6">
+              {(() => {
+                const months: { label: string; period: string }[] = [];
+                const labels = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
+                for (let m = 4; m <= 12; m++) months.push({ label: labels[m - 4], period: `${String(m).padStart(2, '0')}${bulkFetchYear}` });
+                for (let m = 1; m <= 3; m++) months.push({ label: labels[9 + m - 1], period: `${String(m).padStart(2, '0')}${bulkFetchYear + 1}` });
+                return months.map(({ label, period }) => {
+                  const st = bulkProgress[period];
+                  return (
+                    <div key={period} className={`rounded-xl p-3 text-center text-xs font-bold border ${
+                      st === 'done' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                      st === 'fetching' ? 'bg-indigo-50 border-indigo-200 text-indigo-600 animate-pulse' :
+                      st === 'error' ? 'bg-rose-50 border-rose-200 text-rose-600' :
+                      'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}>
+                      {label}
+                      <div className="text-[9px] mt-1 font-normal opacity-70">{period}</div>
+                      {st === 'done' && <div className="text-[10px]">✓</div>}
+                      {st === 'error' && <div className="text-[10px]">✗</div>}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+            {!isSessionActive() ? (
+              <p className="text-sm text-amber-600 bg-amber-50 rounded-xl p-3 mb-4 font-medium">Connect to GST Portal first to fetch data.</p>
+            ) : null}
+            <button
+              onClick={handleBulkFetch}
+              disabled={bulkFetching || !isSessionActive()}
+              className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100"
+            >
+              {bulkFetching ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
+              {bulkFetching ? 'Fetching...' : `Fetch All Months for FY ${bulkFetchYear}-${String(bulkFetchYear + 1).slice(2)}`}
+            </button>
+            <p className="text-xs text-slate-400 text-center mt-3">Data is saved locally — you won't need to fetch again unless it changes.</p>
+          </div>
+        </div>
       )}
 
       {/* GST Portal Login Modal */}

@@ -53,7 +53,7 @@ export function downloadGSTR2BExcel(data: GSTR2BData, businessName: string, busi
   ]);
   rows.push([]);
 
-  // Invoice detail header
+  // Invoice detail header (13 columns: added GST Rate % between Type and Taxable Value)
   rows.push([
     cell("#", true, HEADER_FILL, HEADER_FONT),
     cell("Supplier GSTIN", true, HEADER_FILL, HEADER_FONT),
@@ -61,6 +61,7 @@ export function downloadGSTR2BExcel(data: GSTR2BData, businessName: string, busi
     cell("Invoice #", true, HEADER_FILL, HEADER_FONT),
     cell("Invoice Date", true, HEADER_FILL, HEADER_FONT),
     cell("Type", true, HEADER_FILL, HEADER_FONT),
+    cell("GST Rate %", true, HEADER_FILL, HEADER_FONT),
     cell("Taxable Value", true, HEADER_FILL, HEADER_FONT),
     cell("IGST", true, HEADER_FILL, HEADER_FONT),
     cell("CGST", true, HEADER_FILL, HEADER_FONT),
@@ -80,6 +81,7 @@ export function downloadGSTR2BExcel(data: GSTR2BData, businessName: string, busi
         cell(inv.invoiceNumber, false, altFill),
         cell(inv.invoiceDate, false, altFill),
         cell(inv.invoiceType, false, altFill),
+        cell(inv.gstRate ? `${inv.gstRate}%` : '—', false, altFill),
         numCell(inv.taxableValue, altFill),
         numCell(inv.igst, altFill),
         numCell(inv.cgst, altFill),
@@ -97,6 +99,7 @@ export function downloadGSTR2BExcel(data: GSTR2BData, businessName: string, busi
     cell(`TOTAL (${rowNum - 1} invoices)`, true, TOTAL_FILL, TOTAL_FONT),
     cell("", false, TOTAL_FILL), cell("", false, TOTAL_FILL),
     cell("", false, TOTAL_FILL), cell("", false, TOTAL_FILL), cell("", false, TOTAL_FILL),
+    cell("", false, TOTAL_FILL),
     numCell(tot.t, TOTAL_FILL),
     numCell(tot.i, TOTAL_FILL),
     numCell(tot.c, TOTAL_FILL),
@@ -108,11 +111,11 @@ export function downloadGSTR2BExcel(data: GSTR2BData, businessName: string, busi
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [
     {wch:5},{wch:18},{wch:28},{wch:20},{wch:14},{wch:8},
-    {wch:16},{wch:14},{wch:14},{wch:14},{wch:14},{wch:8}
+    {wch:10},{wch:16},{wch:14},{wch:14},{wch:14},{wch:14},{wch:8}
   ];
   ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 12 } },
   ];
   ws['!rows'] = [{ hpt: 30 }, { hpt: 20 }];
 

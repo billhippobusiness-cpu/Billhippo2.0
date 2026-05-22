@@ -623,3 +623,60 @@ export async function getPendingInvitesByEmail(
     } as PendingAssignment))
     .filter((a) => a.status === 'pending');
 }
+
+// ═══════════════════════════════════════════
+//  GST SESSION  (users/{userId}/gstSessions/{gstin})
+// Written by the wbVerifyOTP Cloud Function; read here on mount to restore
+// sessions across page refreshes without requiring re-authentication.
+
+export async function loadGSTSession(
+  userId: string,
+  gstin: string,
+): Promise<{ authToken: string; expiresAt: number; gstUsername: string } | null> {
+  const snap = await getDoc(userDoc(userId, 'gstSessions', gstin.toUpperCase()));
+  if (!snap.exists()) return null;
+  const d = snap.data() as { authToken: string; expiresAt: number; gstUsername: string };
+  if (!d.authToken || !d.expiresAt || d.expiresAt <= Date.now()) return null;
+  return { authToken: d.authToken, expiresAt: d.expiresAt, gstUsername: d.gstUsername ?? '' };
+}
+
+// ═══════════════════════════════════════════
+//  GSTR CACHE  (users/{userId}/gstrCache/{type}_{period})
+// Stores fetched GSTR data so the user doesn't need to re-fetch every visit.
+
+export interface GSTRCacheDoc {
+  type: '2b' | '3b' | '1';
+  gstin: string;
+  period: string;
+  data: Record<string, any>;
+  fetchedAt: number; // epoch ms
+}
+
+export async function saveGSTRCache(
+  userId: string,
+  type: '2b' | '3b' | '1',
+  gstin: string,
+  period: string,
+  data: Record<string, any>,
+): Promise<void> {
+  const docId = `${type}_${gstin}_${period}`;
+  await setDoc(userDoc(userId, 'gstrCache', docId), {
+    type,
+    gstin: gstin.toUpperCase(),
+    period,
+    data,
+    fetchedAt: Date.now(),
+  });
+}
+
+export async function loadGSTRCache(
+  userId: string,
+  type: '2b' | '3b' | '1',
+  gstin: string,
+  period: string,
+): Promise<GSTRCacheDoc | null> {
+  const docId = `${type}_${gstin}_${period}`;
+  const snap = await getDoc(userDoc(userId, 'gstrCache', docId));
+  if (!snap.exists()) return null;
+  return snap.data() as GSTRCacheDoc;
+}

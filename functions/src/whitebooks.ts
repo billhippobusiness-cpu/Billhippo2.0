@@ -99,7 +99,21 @@ export const wbInitSession = onCall(
       throw new HttpsError("unavailable", `OTP request failed: ${JSON.stringify(raw)}`);
     }
 
-    const txn = raw?.data?.txn ?? raw?.txn ?? "";
+    const d = raw?.data ?? {};
+    const txn =
+      d.txn ?? d.auth_token ?? d.authToken ?? d.AuthToken ??
+      d.app_key ?? d.appKey ?? d.AppKey ?? d.appkey ??
+      raw.header?.txn ??
+      raw.txn ?? raw.auth_token ?? raw.authToken ?? raw.AuthToken ??
+      raw.app_key ?? raw.appKey ?? raw.AppKey ?? raw.appkey ?? "";
+
+    if (!txn) {
+      throw new HttpsError(
+        "unavailable",
+        `OTP sent, but no transaction ID returned. Full response: ${JSON.stringify(raw)}`
+      );
+    }
+
     return { txn, message: "OTP sent to GST-registered mobile/email" };
   }
 );
@@ -132,10 +146,12 @@ export const wbVerifyOTP = onCall(
       throw new HttpsError("unauthenticated", `OTP verification failed: ${JSON.stringify(raw)}`);
     }
 
-    // Auth token — WhiteBooks may return it as AuthToken, authToken, txn etc.
+    // WhiteBooks GSP: on successful verify the API returns status_cd "1" and
+    // echoes the txn in raw.header.txn. The verified txn IS the AuthToken for
+    // subsequent API calls — there is no separate AuthToken field.
     const authToken =
       raw?.data?.AuthToken ?? raw?.data?.authToken ?? raw?.data?.auth_token ??
-      raw?.data?.txn ?? raw?.AuthToken ?? raw?.txn ?? "";
+      raw?.data?.txn ?? raw?.AuthToken ?? raw?.header?.txn ?? raw?.txn ?? txn;
     if (!authToken) {
       throw new HttpsError("unavailable", `Auth token missing: ${JSON.stringify(raw)}`);
     }
@@ -186,7 +202,13 @@ export const wbFetchGSTR2B = onCall(
     if (raw?.status_cd === "0") {
       throw new HttpsError("unavailable", `GSTR-2B error: ${raw?.error?.message ?? JSON.stringify(raw)}`);
     }
-    return normalizeGSTR2B(gstin, period, raw);
+    const result = normalizeGSTR2B(gstin, period, raw);
+    // If nothing found, surface the top-level keys so the client can see the raw shape
+    if (result.invoiceCount === 0) {
+      const topKeys = JSON.stringify(Object.keys(raw?.data ?? raw ?? {}));
+      console.info(`GSTR-2B: 0 invoices. Top keys: ${topKeys}. status_cd=${raw?.status_cd}`);
+    }
+    return result;
   }
 );
 
@@ -228,7 +250,7 @@ export const wbFetchGSTR3B = onCall(
 );
 
 // ─── 6. Fetch GSTR-1 — GET /gstr1/retsum ─────────────────────────────────────
-// Per Postman: gstin, retperiod, email, smrytyp in query. txn in header.
+// Per Postman: gstin, retperiod, email in query. txn in header.
 export const wbFetchGSTR1 = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
@@ -239,7 +261,8 @@ export const wbFetchGSTR1 = onCall(
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
     const g         = gstin.toUpperCase();
-    const url       = `${WB_BASE}/gstr1/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}&smrytyp=E`;
+    // smrytyp=E was incorrect (Export section only); use retsum without smrytyp for full summary
+    const url       = `${WB_BASE}/gstr1/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`;
 
     const res = await fetch(url, {
       method: "GET",
@@ -260,28 +283,57 @@ export const wbFetchGSTR1 = onCall(
     if (raw?.status_cd === "0") {
       throw new HttpsError("unavailable", `GSTR-1 error: ${raw?.error?.message ?? JSON.stringify(raw)}`);
     }
-    return normalizeGSTR1(gstin, period, raw);
+    const result = normalizeGSTR1(gstin, period, raw);
+    // Log structure so we can see the raw shape during debugging
+    const topKeys = JSON.stringify(Object.keys(raw?.data?.data ?? raw?.data ?? raw ?? {}));
+    console.info(`GSTR-1 raw top-keys: ${topKeys} | totals: txval=${result.totalTaxableValue} igst=${result.totalIGST} cgst=${result.totalCGST} sgst=${result.totalSGST}`);
+    return result;
   }
 );
 
 // ─── Normalization helpers ────────────────────────────────────────────────────
 
 function normalizeGSTR2B(gstin: string, period: string, raw: any) {
-  const d = raw.data ?? raw;
+  // Try multiple response nesting levels WhiteBooks may use
+  const d = raw.data?.data ?? raw.data ?? raw;
   const suppliers: any[] = [];
   let totalTaxable = 0, totalIGST = 0, totalCGST = 0, totalSGST = 0, invoiceCount = 0;
 
-  const b2bList: any[] = d?.docdata?.b2b ?? d?.b2b ?? [];
+  const buyerState = gstin.substring(0, 2);
+  const b2bList: any[] =
+    d?.docdata?.b2b ?? d?.data?.docdata?.b2b ??
+    d?.b2b ?? d?.data?.b2b ?? [];
   for (const supplier of b2bList) {
+    const supplierState = (supplier.ctin ?? "").substring(0, 2);
     const invoices = (supplier.inv ?? supplier.invoices ?? []).map((inv: any) => {
       const items = inv.itms ?? inv.items ?? [];
-      let taxable = 0, igst = 0, cgst = 0, sgst = 0;
+      let taxable = 0, igst = 0, cgst = 0, sgst = 0, gstRate = 0;
       for (const itm of items) {
         const detail = itm.itm_det ?? itm;
-        taxable += detail.txval ?? 0;
-        igst    += detail.iamt  ?? 0;
-        cgst    += detail.camt  ?? 0;
-        sgst    += detail.samt  ?? 0;
+        taxable += Number(detail.txval ?? 0);
+        // Try both iamt/camt/samt (NIC format) and igst/cgst/sgst (alternative naming)
+        igst    += Number(detail.iamt ?? detail.igst ?? 0);
+        cgst    += Number(detail.camt ?? detail.cgst ?? 0);
+        sgst    += Number(detail.samt ?? detail.sgst ?? 0);
+        if (!gstRate) gstRate = Number(detail.rt ?? detail.rate ?? 0);
+      }
+      // Fallback: amounts directly on invoice
+      if (taxable === 0 && igst === 0 && cgst === 0 && sgst === 0) {
+        taxable = Number(inv.txval ?? inv.val ?? 0);
+        igst    = Number(inv.iamt ?? inv.igst ?? 0);
+        cgst    = Number(inv.camt ?? inv.cgst ?? 0);
+        sgst    = Number(inv.samt ?? inv.sgst ?? 0);
+        if (!gstRate) gstRate = Number(inv.rt ?? inv.rate ?? 0);
+      }
+      // Rate-based fallback: when taxable is known but all tax amounts are 0
+      if (taxable > 0 && igst === 0 && cgst === 0 && sgst === 0 && gstRate > 0) {
+        const isInterState = supplierState !== buyerState;
+        if (isInterState) {
+          igst = Math.round(taxable * gstRate) / 100;
+        } else {
+          cgst = Math.round(taxable * gstRate / 2) / 100;
+          sgst = Math.round(taxable * gstRate / 2) / 100;
+        }
       }
       return {
         invoiceNumber:   inv.inum ?? inv.invoice_number ?? "",
@@ -292,6 +344,7 @@ function normalizeGSTR2B(gstin: string, period: string, raw: any) {
         taxableValue:    taxable,
         igst, cgst, sgst, cess: 0,
         itcAvailability: inv.itcavl ?? "Yes",
+        gstRate,
       };
     });
     const sTotal = invoices.reduce(
@@ -314,13 +367,17 @@ function normalizeGSTR3B(gstin: string, period: string, raw: any) {
   const sup  = d.sup_details ?? d.supDetails ?? {};
   const itc  = d.itc_elg     ?? d.itcElg     ?? {};
   const intr = d.intr_ltfee  ?? d.intrLtfee  ?? {};
+  const igst = sup?.osup_det?.iamt  ?? 0;
+  const cgst = sup?.osup_det?.camt  ?? 0;
+  const sgst = sup?.osup_det?.samt  ?? 0;
   return {
     gstin, period,
     filedDate:      d.filed_date ?? d.filedDate ?? "",
     outwardTaxable: sup?.osup_det?.txval ?? 0,
-    outwardIGST:    sup?.osup_det?.iamt  ?? 0,
-    outwardCGST:    sup?.osup_det?.camt  ?? 0,
-    outwardSGST:    sup?.osup_det?.samt  ?? 0,
+    outwardTax:     igst + cgst + sgst,
+    outwardIGST:    igst,
+    outwardCGST:    cgst,
+    outwardSGST:    sgst,
     itcIGST:        itc?.itc_avl?.find((x: any) => x.ty === "IMPG")?.iamt ?? 0,
     itcCGST:        itc?.itc_avl?.reduce((s: number, x: any) => s + (x.camt ?? 0), 0) ?? 0,
     itcSGST:        itc?.itc_avl?.reduce((s: number, x: any) => s + (x.samt ?? 0), 0) ?? 0,
@@ -329,8 +386,51 @@ function normalizeGSTR3B(gstin: string, period: string, raw: any) {
 }
 
 function normalizeGSTR1(gstin: string, period: string, raw: any) {
-  const d = raw.data ?? raw;
-  const b2bList: any[] = d?.b2b ?? [];
+  const d = raw.data?.data ?? raw.data ?? raw;
+  const filedDate = d.filed_date ?? d.filedDate ?? d.dt ?? "";
+
+  // Format 1: sec_sum array (full return summary — most common from /gstr1/retsum)
+  const secSum: any[] = d.sec_sum ?? d.secSum ?? [];
+  if (secSum.length > 0) {
+    const b2b = secSum.find((s: any) => (s.sec_nm ?? s.secNm ?? "").toUpperCase() === "B2B");
+    const igst = Number(b2b?.iamt ?? 0);
+    const cgst = Number(b2b?.camt ?? 0);
+    const sgst = Number(b2b?.samt ?? 0);
+    return {
+      gstin, period, filedDate,
+      b2bInvoices: [],
+      totalTaxableValue: Number(b2b?.txval ?? 0),
+      totalIGST: igst, totalCGST: cgst, totalSGST: sgst,
+    };
+  }
+
+  // Format 2: sup_details object (GSTR-3B-style aggregate)
+  const sup = d.sup_details ?? d.supDetails ?? null;
+  if (sup) {
+    const igst = Number(sup?.osup_det?.iamt ?? 0);
+    const cgst = Number(sup?.osup_det?.camt ?? 0);
+    const sgst = Number(sup?.osup_det?.samt ?? 0);
+    return {
+      gstin, period, filedDate,
+      b2bInvoices: [],
+      totalTaxableValue: Number(sup?.osup_det?.txval ?? 0),
+      totalIGST: igst, totalCGST: cgst, totalSGST: sgst,
+    };
+  }
+
+  // Format 3: top-level aggregate fields (gt = grand total)
+  if (d.gt !== undefined || d.cur_gt !== undefined) {
+    const totalGT = Number(d.gt ?? d.cur_gt ?? 0);
+    return {
+      gstin, period, filedDate,
+      b2bInvoices: [],
+      totalTaxableValue: totalGT,
+      totalIGST: 0, totalCGST: 0, totalSGST: 0,
+    };
+  }
+
+  // Format 4: b2b invoice array
+  const b2bList: any[] = d?.b2b ?? d?.data?.b2b ?? [];
   const b2bInvoices = b2bList.flatMap((supplier: any) =>
     (supplier.inv ?? []).map((inv: any) => {
       const items = inv.itms ?? [];
@@ -338,6 +438,9 @@ function normalizeGSTR1(gstin: string, period: string, raw: any) {
       for (const itm of items) {
         const dt = itm.itm_det ?? itm;
         taxable += dt.txval ?? 0; igst += dt.iamt ?? 0; cgst += dt.camt ?? 0; sgst += dt.samt ?? 0;
+      }
+      if (taxable === 0 && igst === 0 && cgst === 0 && sgst === 0) {
+        taxable = inv.txval ?? 0; igst = inv.iamt ?? 0; cgst = inv.camt ?? 0; sgst = inv.samt ?? 0;
       }
       return {
         invoiceNumber: inv.inum ?? "", invoiceDate: inv.idt ?? "",
