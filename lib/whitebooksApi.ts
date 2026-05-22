@@ -119,6 +119,7 @@ export interface GSTR1OnlineData {
   totalIGST: number;
   totalCGST: number;
   totalSGST: number;
+  _fetchStatus?: Record<string, string>;
 }
 
 export async function lookupGSTIN(gstin: string): Promise<GSTINDetails> {

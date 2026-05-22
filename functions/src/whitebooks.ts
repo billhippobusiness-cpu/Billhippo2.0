@@ -267,36 +267,58 @@ export const wbFetchGSTR1 = onCall(
       "txn":          authToken,
     });
 
-    const fetchSection = async (path: string): Promise<any> => {
+    // Returns { data, note } — data is null on error, note explains what happened
+    const fetchSection = async (label: string, path: string): Promise<{ data: any; note: string }> => {
       try {
         const res = await fetch(`${WB_BASE}${path}`, { method: "GET", headers: hdrs });
-        if (!res.ok) { console.warn(`GSTR-1 ${path} HTTP ${res.status}`); return null; }
-        const raw = await res.json();
-        if (raw?.status_cd === "0") { console.warn(`GSTR-1 ${path} API error: ${raw?.error?.message ?? raw?.status_cd}`); return null; }
-        return raw;
+        const bodyText = await res.text();
+        if (!res.ok) {
+          const note = `HTTP ${res.status}: ${bodyText.substring(0, 400)}`;
+          console.warn(`GSTR-1 [${label}] ${note}`);
+          return { data: null, note };
+        }
+        let raw: any;
+        try { raw = JSON.parse(bodyText); } catch { return { data: null, note: "JSON parse error" }; }
+        // Log first 2000 chars of every successful response for debugging
+        console.info(`GSTR-1 [${label}] raw: ${JSON.stringify(raw).substring(0, 2000)}`);
+        if (raw?.status_cd === "0" || (raw?.status_cd && raw.status_cd !== "1")) {
+          const errMsg = raw?.error?.message ?? raw?.error?.error_cd ?? raw?.message ?? `status_cd=${raw.status_cd}`;
+          console.warn(`GSTR-1 [${label}] API error: ${errMsg}`);
+          return { data: null, note: `API error: ${errMsg}` };
+        }
+        return { data: raw, note: "ok" };
       } catch (e) {
-        console.warn(`GSTR-1 ${path} exception: ${e}`);
-        return null;
+        const note = `Exception: ${String(e).substring(0, 200)}`;
+        console.warn(`GSTR-1 [${label}] ${note}`);
+        return { data: null, note };
       }
     };
 
     // Parallel fetch: summary + three invoice sections
-    const [rsRaw, b2bRaw, b2csRaw, cdnrRaw] = await Promise.all([
-      fetchSection(`/gstr1/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`),
-      fetchSection(`/gstr1/b2b?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}&actionrequired=R`),
-      fetchSection(`/gstr1/b2cs?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`),
-      fetchSection(`/gstr1/cdnr?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}&actionrequired=R`),
+    // NOTE: no actionrequired param — NIC GSTR-1 read endpoints don't require it
+    const [rsRes, b2bRes, b2csRes, cdnrRes] = await Promise.all([
+      fetchSection("retsum", `/gstr1/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`),
+      fetchSection("b2b",    `/gstr1/b2b?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`),
+      fetchSection("b2cs",   `/gstr1/b2cs?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`),
+      fetchSection("cdnr",   `/gstr1/cdnr?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`),
     ]);
 
+    const rsRaw = rsRes.data, b2bRaw = b2bRes.data, b2csRaw = b2csRes.data, cdnrRaw = cdnrRes.data;
+
     if (!rsRaw && !b2bRaw && !b2csRaw && !cdnrRaw) {
-      throw new HttpsError("unavailable", "GSTR-1: All section fetches failed. Please check your GST portal session.");
+      const diag = `retsum: ${rsRes.note} | b2b: ${b2bRes.note} | b2cs: ${b2csRes.note} | cdnr: ${cdnrRes.note}`;
+      throw new HttpsError("unavailable", `GSTR-1: All section fetches failed. ${diag}`);
     }
 
-    if (rsRaw) console.info(`GSTR-1 retsum (first 1500): ${JSON.stringify(rsRaw).substring(0, 1500)}`);
-    if (b2bRaw) console.info(`GSTR-1 b2b (first 1500): ${JSON.stringify(b2bRaw).substring(0, 1500)}`);
-
     const result = normalizeGSTR1Full(gstin, period, rsRaw, b2bRaw, b2csRaw, cdnrRaw);
+    result._fetchStatus = {
+      retsum: rsRes.note,
+      b2b:    b2bRes.note,
+      b2cs:   b2csRes.note,
+      cdnr:   cdnrRes.note,
+    };
     console.info(`GSTR-1 result: b2b=${result.b2bInvoices.length} b2cs=${result.b2csEntries.length} cdnr=${result.cdnrNotes.length} txval=${result.totalTaxableValue}`);
+    console.info(`GSTR-1 fetch status: ${JSON.stringify(result._fetchStatus)}`);
     return result;
   }
 );
@@ -561,6 +583,7 @@ function normalizeGSTR1Full(gstin: string, period: string, rsRaw: any, b2bRaw: a
     b2bInvoices, b2csEntries, cdnrNotes,
     totalTaxableValue: totalTaxable,
     totalIGST, totalCGST, totalSGST,
+    _fetchStatus: {} as Record<string, string>, // filled by caller
   };
 }
 

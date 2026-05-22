@@ -1016,6 +1016,26 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     </div>
                   )}
 
+                  {/* API Diagnostics — always visible so user can check endpoint status */}
+                  {gstr1Online._fetchStatus && (
+                    <details className="text-xs border border-slate-200 rounded-xl overflow-hidden">
+                      <summary className="px-4 py-2 bg-slate-50 cursor-pointer font-semibold text-slate-500 select-none flex items-center gap-2">
+                        <span>API Diagnostics</span>
+                        {Object.values(gstr1Online._fetchStatus).every(v => v === 'ok')
+                          ? <span className="text-emerald-600 font-bold">✓ All OK</span>
+                          : <span className="text-amber-600 font-bold">⚠ Check details</span>}
+                      </summary>
+                      <div className="px-4 py-3 space-y-1 bg-white">
+                        {Object.entries(gstr1Online._fetchStatus).map(([k, v]) => (
+                          <div key={k} className="flex items-start gap-2">
+                            <span className="font-bold text-slate-600 w-14 shrink-0">{k}:</span>
+                            <span className={v === 'ok' ? 'text-emerald-600' : 'text-red-500 break-all'}>{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
                   <p className="text-xs text-slate-400 flex items-center gap-1">
                     <ShieldCheck size={12} className="text-teal-500" />
                     Portal data fetched from GST portal via WhiteBooks GSP. Switch to <strong>App Data</strong> to see invoices created in this app.
