@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   WifiOff,
 } from 'lucide-react';
-import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes, saveGSTRCache, loadGSTRCache } from '../lib/firestore';
+import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes, saveGSTRCache, loadGSTRCache, loadGSTSession } from '../lib/firestore';
 import { downloadGSTR1Excel, downloadGSTR1JSON } from '../lib/gstr1Generator';
 import { downloadSalesRegisterExcel, downloadNotesRegisterExcel, downloadHSNExcel, aggregateHSN } from '../lib/salesRegisterExport';
 import { Invoice, GSTType, Customer, BusinessProfile, CreditNote, DebitNote } from '../types';
@@ -186,6 +186,14 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const [gstr2bPdfOpen, setGstr2bPdfOpen] = useState(false);
   // Cache fetch timestamps keyed by type
   const [cacheFetchedAt, setCacheFetchedAt] = useState<{ '2b'?: number; '3b'?: number; '1'?: number }>({});
+  // Bulk / FY fetch
+  const [showBulkFetch, setShowBulkFetch] = useState(false);
+  const [bulkFetchYear, setBulkFetchYear] = useState(() => {
+    const now = new Date();
+    return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1; // Indian FY start April
+  });
+  const [bulkProgress, setBulkProgress] = useState<Record<string, 'idle' | 'fetching' | 'done' | 'error'>>({});
+  const [bulkFetching, setBulkFetching] = useState(false);
 
   // Load data
   useEffect(() => {
@@ -434,9 +442,44 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
   const isSessionActive = () => gstSession && gstSession.expiresAt > Date.now();
 
+  // Restore GST session from Firestore so user doesn't re-login on every page refresh
+  useEffect(() => {
+    if (!profile?.gstin) return;
+    loadGSTSession(userId, profile.gstin).then(saved => {
+      if (saved) setGstSession(saved);
+    });
+  }, [userId, profile?.gstin]);
+
   const handlePortalLogin = (authToken: string, expiresAt: number, gstUsername: string) => {
     setGstSession({ authToken, expiresAt, gstUsername });
     setShowPortalLogin(false);
+  };
+
+  // Bulk fetch all months for a financial year (Apr–Mar)
+  const handleBulkFetch = async () => {
+    if (!profile?.gstin || !gstSession) return;
+    setBulkFetching(true);
+    const months: string[] = [];
+    for (let m = 4; m <= 12; m++) months.push(`${String(m).padStart(2, '0')}${bulkFetchYear}`);
+    for (let m = 1; m <= 3; m++) months.push(`${String(m).padStart(2, '0')}${bulkFetchYear + 1}`);
+
+    for (const period of months) {
+      setBulkProgress(p => ({ ...p, [period]: 'fetching' }));
+      try {
+        const [d2b, d3b, d1] = await Promise.allSettled([
+          fetchGSTR2B(profile.gstin, period, gstSession.authToken, gstSession.gstUsername),
+          fetchGSTR3BOnline(profile.gstin, period, gstSession.authToken, gstSession.gstUsername),
+          fetchGSTR1Online(profile.gstin, period, gstSession.authToken, gstSession.gstUsername),
+        ]);
+        if (d2b.status === 'fulfilled') await saveGSTRCache(userId, '2b', profile.gstin, period, d2b.value as unknown as Record<string, any>);
+        if (d3b.status === 'fulfilled') await saveGSTRCache(userId, '3b', profile.gstin, period, d3b.value as unknown as Record<string, any>);
+        if (d1.status === 'fulfilled') await saveGSTRCache(userId, '1', profile.gstin, period, d1.value as unknown as Record<string, any>);
+        setBulkProgress(p => ({ ...p, [period]: 'done' }));
+      } catch {
+        setBulkProgress(p => ({ ...p, [period]: 'error' }));
+      }
+    }
+    setBulkFetching(false);
   };
 
   const handleFetchGSTR2B = async () => {
@@ -826,6 +869,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     <thead className="bg-slate-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">Description</th>
+                        <th className="px-6 py-3 text-left text-slate-400 text-xs font-bold uppercase tracking-wide">Source</th>
                         <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">Taxable Value</th>
                         <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">IGST</th>
                         <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">CGST</th>
@@ -834,43 +878,71 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                       </tr>
                     </thead>
                     <tbody>
+                      {/* 3.1(a) — Your App row */}
                       <tr className="border-b border-slate-100">
-                        <td className="px-6 py-4 text-sm text-slate-700 font-medium">3.1(a) Outward taxable supplies</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-700">{inr(totalTaxable)}</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-600">{inr(totalIGST)}</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-600">{inr(totalCGST)}</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-600">{inr(totalSGST)}</td>
-                        <td className="px-6 py-4 text-sm text-right font-bold text-slate-800">{inr(totalTax)}</td>
+                        <td className="px-6 py-3 text-sm text-slate-700 font-medium" rowSpan={gstr3bOnline ? 2 : 1}>3.1(a) Outward taxable supplies</td>
+                        <td className="px-6 py-3 text-xs font-bold text-indigo-500">BillHippo</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-700">{inr(totalTaxable)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(totalIGST)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(totalCGST)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(totalSGST)}</td>
+                        <td className="px-6 py-3 text-sm text-right font-bold text-slate-800">{inr(totalTax)}</td>
                       </tr>
+                      {/* 3.1(a) — Portal filed row (when available) */}
+                      {gstr3bOnline && (
+                        <tr className="border-b border-slate-200 bg-teal-50/60">
+                          <td className="px-6 py-3 text-xs font-bold text-teal-600 flex items-center gap-1"><Cloud size={11} /> Filed (Portal)</td>
+                          <td className="px-6 py-3 text-sm text-right font-semibold text-teal-700">{inr(gstr3bOnline.outwardTaxable)}</td>
+                          <td className="px-6 py-3 text-sm text-right font-semibold text-teal-700">{inr(gstr3bOnline.outwardIGST)}</td>
+                          <td className="px-6 py-3 text-sm text-right font-semibold text-teal-700">{inr(gstr3bOnline.outwardCGST)}</td>
+                          <td className="px-6 py-3 text-sm text-right font-semibold text-teal-700">{inr(gstr3bOnline.outwardSGST)}</td>
+                          <td className="px-6 py-3 text-sm text-right font-bold text-teal-800">{inr(gstr3bOnline.outwardTax ?? (gstr3bOnline.outwardIGST + gstr3bOnline.outwardCGST + gstr3bOnline.outwardSGST))}</td>
+                        </tr>
+                      )}
                       <tr className="border-b border-slate-100 bg-slate-50/50">
-                        <td className="px-6 py-4 text-sm text-slate-500">3.1(b) Outward taxable (zero rated)</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-slate-500">3.1(b) Outward taxable (zero rated)</td>
+                        <td className="px-6 py-3 text-xs text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
                       </tr>
                       <tr className="border-b border-slate-100">
-                        <td className="px-6 py-4 text-sm text-slate-500">3.1(c) Other outward supplies (nil, exempt)</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
-                        <td className="px-6 py-4 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-slate-500">3.1(c) Other outward supplies (nil, exempt)</td>
+                        <td className="px-6 py-3 text-xs text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-400">—</td>
                       </tr>
                       <tr className="bg-indigo-600 text-white font-bold">
                         <td className="px-6 py-4 text-sm">Total Liability (3.1)</td>
+                        <td className="px-6 py-4 text-xs">BillHippo</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalTaxable)}</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalIGST)}</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalCGST)}</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalSGST)}</td>
                         <td className="px-6 py-4 text-sm text-right">{inr(totalTax)}</td>
                       </tr>
+                      {gstr3bOnline && (
+                        <tr className="bg-teal-600 text-white font-bold">
+                          <td className="px-6 py-4 text-sm">Total Liability (3.1)</td>
+                          <td className="px-6 py-4 text-xs">Filed (Portal)</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardTaxable)}</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardIGST)}</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardCGST)}</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardSGST)}</td>
+                          <td className="px-6 py-4 text-sm text-right">{inr(gstr3bOnline.outwardTax ?? (gstr3bOnline.outwardIGST + gstr3bOnline.outwardCGST + gstr3bOnline.outwardSGST))}</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
                 <p className="text-xs text-slate-400 font-poppins">
                   Note: ITC (input tax credit) details must be filled manually in the GST portal.
+                  {gstr3bOnline && <span className="text-teal-600 font-bold ml-2">· Teal rows = filed data from GST portal</span>}
                 </p>
               </div>
             )}
@@ -1509,14 +1581,25 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setShowPortalLogin(true)}
-          disabled={!profile?.gstin}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-40 ${isSessionActive() ? 'bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'}`}
-        >
-          <Cloud size={15} />
-          {isSessionActive() ? 'Reconnect' : 'Connect to GST Portal'}
-        </button>
+        <div className="flex items-center gap-2">
+          {isSessionActive() && (
+            <button
+              onClick={() => setShowBulkFetch(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-all"
+            >
+              <Calendar size={14} />
+              Fetch Year Data
+            </button>
+          )}
+          <button
+            onClick={() => setShowPortalLogin(true)}
+            disabled={!profile?.gstin}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-40 ${isSessionActive() ? 'bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-50' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'}`}
+          >
+            <Cloud size={15} />
+            {isSessionActive() ? 'Reconnect' : 'Connect to GST Portal'}
+          </button>
+        </div>
       </div>
 
       {/* ── 4 Report cards ── */}
@@ -1744,6 +1827,69 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           }
           fileName={`GSTR-3B_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}
         />
+      )}
+
+      {/* Bulk FY Fetch Modal */}
+      {showBulkFetch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="bg-white rounded-[2rem] p-8 w-full max-w-lg shadow-2xl font-poppins">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-slate-900">Fetch Year Data</h3>
+              <button onClick={() => { setShowBulkFetch(false); setBulkProgress({}); }} className="p-2 hover:bg-slate-50 rounded-xl">
+                <X size={18} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="flex items-center gap-3 mb-6">
+              <label className="text-sm font-bold text-slate-600">Financial Year:</label>
+              <select
+                value={bulkFetchYear}
+                onChange={e => setBulkFetchYear(Number(e.target.value))}
+                className="bg-slate-50 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 border-none focus:ring-2 ring-indigo-100"
+              >
+                {[0, 1, 2, 3].map(i => {
+                  const y = new Date().getFullYear() - i;
+                  return <option key={y} value={y}>FY {y}-{String(y + 1).slice(2)}</option>;
+                })}
+              </select>
+            </div>
+            <div className="grid grid-cols-4 gap-2 mb-6">
+              {(() => {
+                const months: { label: string; period: string }[] = [];
+                const labels = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
+                for (let m = 4; m <= 12; m++) months.push({ label: labels[m - 4], period: `${String(m).padStart(2, '0')}${bulkFetchYear}` });
+                for (let m = 1; m <= 3; m++) months.push({ label: labels[9 + m - 1], period: `${String(m).padStart(2, '0')}${bulkFetchYear + 1}` });
+                return months.map(({ label, period }) => {
+                  const st = bulkProgress[period];
+                  return (
+                    <div key={period} className={`rounded-xl p-3 text-center text-xs font-bold border ${
+                      st === 'done' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                      st === 'fetching' ? 'bg-indigo-50 border-indigo-200 text-indigo-600 animate-pulse' :
+                      st === 'error' ? 'bg-rose-50 border-rose-200 text-rose-600' :
+                      'bg-slate-50 border-slate-200 text-slate-500'
+                    }`}>
+                      {label}
+                      <div className="text-[9px] mt-1 font-normal opacity-70">{period}</div>
+                      {st === 'done' && <div className="text-[10px]">✓</div>}
+                      {st === 'error' && <div className="text-[10px]">✗</div>}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+            {!isSessionActive() ? (
+              <p className="text-sm text-amber-600 bg-amber-50 rounded-xl p-3 mb-4 font-medium">Connect to GST Portal first to fetch data.</p>
+            ) : null}
+            <button
+              onClick={handleBulkFetch}
+              disabled={bulkFetching || !isSessionActive()}
+              className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100"
+            >
+              {bulkFetching ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
+              {bulkFetching ? 'Fetching...' : `Fetch All Months for FY ${bulkFetchYear}-${String(bulkFetchYear + 1).slice(2)}`}
+            </button>
+            <p className="text-xs text-slate-400 text-center mt-3">Data is saved locally — you won't need to fetch again unless it changes.</p>
+          </div>
+        </div>
       )}
 
       {/* GST Portal Login Modal */}

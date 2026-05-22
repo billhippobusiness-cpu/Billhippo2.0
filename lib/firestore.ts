@@ -625,6 +625,22 @@ export async function getPendingInvitesByEmail(
 }
 
 // ═══════════════════════════════════════════
+//  GST SESSION  (users/{userId}/gstSessions/{gstin})
+// Written by the wbVerifyOTP Cloud Function; read here on mount to restore
+// sessions across page refreshes without requiring re-authentication.
+
+export async function loadGSTSession(
+  userId: string,
+  gstin: string,
+): Promise<{ authToken: string; expiresAt: number; gstUsername: string } | null> {
+  const snap = await getDoc(userDoc(userId, 'gstSessions', gstin.toUpperCase()));
+  if (!snap.exists()) return null;
+  const d = snap.data() as { authToken: string; expiresAt: number; gstUsername: string };
+  if (!d.authToken || !d.expiresAt || d.expiresAt <= Date.now()) return null;
+  return { authToken: d.authToken, expiresAt: d.expiresAt, gstUsername: d.gstUsername ?? '' };
+}
+
+// ═══════════════════════════════════════════
 //  GSTR CACHE  (users/{userId}/gstrCache/{type}_{period})
 // Stores fetched GSTR data so the user doesn't need to re-fetch every visit.
 

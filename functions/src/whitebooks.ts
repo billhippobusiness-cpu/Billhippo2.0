@@ -308,6 +308,13 @@ function normalizeGSTR2B(gstin: string, period: string, raw: any) {
         cgst    += detail.camt  ?? 0;
         sgst    += detail.samt  ?? 0;
       }
+      // WhiteBooks sometimes puts amounts directly on the invoice (no itm_det nesting)
+      if (taxable === 0 && igst === 0 && cgst === 0 && sgst === 0) {
+        taxable = inv.txval ?? inv.val ?? 0;
+        igst    = inv.iamt  ?? 0;
+        cgst    = inv.camt  ?? 0;
+        sgst    = inv.samt  ?? 0;
+      }
       return {
         invoiceNumber:   inv.inum ?? inv.invoice_number ?? "",
         invoiceDate:     inv.idt  ?? inv.invoice_date   ?? "",
@@ -358,8 +365,23 @@ function normalizeGSTR3B(gstin: string, period: string, raw: any) {
 }
 
 function normalizeGSTR1(gstin: string, period: string, raw: any) {
-  const d = raw.data ?? raw;
-  const b2bList: any[] = d?.b2b ?? [];
+  const d = raw.data?.data ?? raw.data ?? raw;
+
+  // smrytyp=E returns aggregate section totals — extract from sup_details if present
+  const sup = d.sup_details ?? d.supDetails ?? null;
+  if (sup) {
+    const igst = sup?.osup_det?.iamt ?? 0;
+    const cgst = sup?.osup_det?.camt ?? 0;
+    const sgst = sup?.osup_det?.samt ?? 0;
+    return {
+      gstin, period, filedDate: d.filed_date ?? d.filedDate ?? "",
+      b2bInvoices: [],
+      totalTaxableValue: sup?.osup_det?.txval ?? 0,
+      totalIGST: igst, totalCGST: cgst, totalSGST: sgst,
+    };
+  }
+
+  const b2bList: any[] = d?.b2b ?? d?.data?.b2b ?? [];
   const b2bInvoices = b2bList.flatMap((supplier: any) =>
     (supplier.inv ?? []).map((inv: any) => {
       const items = inv.itms ?? [];
@@ -367,6 +389,9 @@ function normalizeGSTR1(gstin: string, period: string, raw: any) {
       for (const itm of items) {
         const dt = itm.itm_det ?? itm;
         taxable += dt.txval ?? 0; igst += dt.iamt ?? 0; cgst += dt.camt ?? 0; sgst += dt.samt ?? 0;
+      }
+      if (taxable === 0 && igst === 0 && cgst === 0 && sgst === 0) {
+        taxable = inv.txval ?? 0; igst = inv.iamt ?? 0; cgst = inv.camt ?? 0; sgst = inv.samt ?? 0;
       }
       return {
         invoiceNumber: inv.inum ?? "", invoiceDate: inv.idt ?? "",
