@@ -174,6 +174,9 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [gstr3bPdfOpen, setGstr3bPdfOpen] = useState(false);
 
+  // GSTR-1 view toggle: 'app' = invoices from this app, 'portal' = fetched portal data
+  const [gstr1View, setGstr1View] = useState<'app' | 'portal'>('app');
+
   // ── WhiteBooks / GST Portal state ──
   const [gstSession, setGstSession] = useState<{ authToken: string; expiresAt: number; gstUsername: string } | null>(null);
   const [showPortalLogin, setShowPortalLogin] = useState(false);
@@ -262,7 +265,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       if (c3b) { setGstr3bOnline(c3b.data as GSTR3BOnlineData); setCacheFetchedAt(p => ({ ...p, '3b': c3b.fetchedAt })); }
       else { setGstr3bOnline(null); setCacheFetchedAt(p => ({ ...p, '3b': undefined })); }
       if (c1) { setGstr1Online(c1.data as GSTR1OnlineData); setCacheFetchedAt(p => ({ ...p, '1': c1.fetchedAt })); }
-      else { setGstr1Online(null); setCacheFetchedAt(p => ({ ...p, '1': undefined })); }
+      else { setGstr1Online(null); setCacheFetchedAt(p => ({ ...p, '1': undefined })); setGstr1View('app'); }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, profile?.gstin, wbPeriod]);
@@ -524,6 +527,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     try {
       const data = await fetchGSTR1Online(profile.gstin, wbPeriod, gstSession.authToken, gstSession.gstUsername);
       setGstr1Online(data);
+      setGstr1View('portal'); // auto-switch to portal view on successful fetch
       const now = Date.now();
       setCacheFetchedAt(p => ({ ...p, '1': now }));
       await saveGSTRCache(userId, '1', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
@@ -668,177 +672,264 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
       return (
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <SubTabBar tabs={subTabs} active={activeSubTab} onChange={setActiveSubTab} />
-            {periodMode === 'monthly' && (
+          {/* ── View toggle: App Data ↔ Portal Data ── */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center bg-slate-100 rounded-2xl p-1 gap-1">
+              <button
+                onClick={() => setGstr1View('app')}
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all ${
+                  gstr1View === 'app'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <FileText size={13} /> App Data
+              </button>
+              <button
+                onClick={() => { setGstr1View('portal'); }}
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold transition-all ${
+                  gstr1View === 'portal'
+                    ? 'bg-teal-600 text-white shadow'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Cloud size={13} /> Portal Data
+                {gstr1Online && <span className="ml-1 w-2 h-2 rounded-full bg-emerald-400 inline-block" />}
+              </button>
+            </div>
+
+            {/* Right-side actions depend on active view */}
+            {gstr1View === 'app' && (
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleDownloadJson}
-                  disabled={!hasGSTR1Data || generatingJson}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed font-poppins"
-                >
-                  {generatingJson ? <Loader2 size={13} className="animate-spin" /> : <FileJson size={13} />}
-                  JSON
-                </button>
-                <button
-                  onClick={handleDownloadExcel}
-                  disabled={!hasGSTR1Data || generatingExcel}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed font-poppins"
-                >
-                  {generatingExcel ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
-                  Excel
-                </button>
+                {periodMode === 'monthly' && (
+                  <>
+                    <button
+                      onClick={handleDownloadJson}
+                      disabled={!hasGSTR1Data || generatingJson}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed font-poppins"
+                    >
+                      {generatingJson ? <Loader2 size={13} className="animate-spin" /> : <FileJson size={13} />}
+                      JSON
+                    </button>
+                    <button
+                      onClick={handleDownloadExcel}
+                      disabled={!hasGSTR1Data || generatingExcel}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed font-poppins"
+                    >
+                      {generatingExcel ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
+                      Excel
+                    </button>
+                  </>
+                )}
+                {periodMode === 'quarterly' && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 font-poppins">
+                    JSON/Excel available in monthly mode only
+                  </p>
+                )}
               </div>
             )}
-            {periodMode === 'quarterly' && (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 font-poppins">
-                GSTR-1 JSON/Excel available in monthly mode only
-              </p>
-            )}
-          </div>
 
-          {activeSubTab === 'b2b' && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    {['#', 'Date', 'Invoice #', 'Party', 'GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax', 'Total Amt', 'Status', ''].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <InvoiceTableRows invList={b2bInvoices} emptyMsg="No B2B invoices for this period." />
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {activeSubTab === 'b2cs' && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    {['#', 'Date', 'Invoice #', 'Party', 'GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax', 'Total Amt', 'Status', ''].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <InvoiceTableRows invList={b2csInvoices} emptyMsg="No B2CS / B2CL invoices for this period." />
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {activeSubTab === 'creditnotes' && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    {['#', 'Date', 'Note #', 'Party', 'Linked Invoice', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Amt', ''].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <NoteTableRows noteList={filteredCreditNotes} emptyMsg="No credit notes for this period." />
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {activeSubTab === 'debitnotes' && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    {['#', 'Date', 'Note #', 'Party', 'Linked Invoice', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Amt', ''].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <NoteTableRows noteList={filteredDebitNotes} emptyMsg="No debit notes for this period." />
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Portal comparison for GSTR-1 */}
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                <Cloud size={15} className="text-indigo-500" /> Compare with Filed GSTR-1 on Portal
-              </h4>
-              {isSessionActive() ? (
-                <div className="flex items-center gap-2">
-                  {cacheFetchedAt['1'] && <span className="text-xs text-slate-400">Cached · {fmtFetchedAt(cacheFetchedAt['1'])}</span>}
+            {gstr1View === 'portal' && (
+              <div className="flex items-center gap-2">
+                {cacheFetchedAt['1'] && <span className="text-xs text-slate-400">Cached · {fmtFetchedAt(cacheFetchedAt['1'])}</span>}
+                {isSessionActive() ? (
                   <button
                     onClick={handleFetchGSTR1Online}
                     disabled={portalFetching}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all disabled:opacity-50"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 text-white font-bold text-xs hover:bg-teal-700 transition-all disabled:opacity-50"
                   >
                     {portalFetching ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    {cacheFetchedAt['1'] ? 'Refresh Filed GSTR-1' : 'Fetch Filed GSTR-1'}
+                    {cacheFetchedAt['1'] ? 'Refresh GSTR-1' : 'Fetch Filed GSTR-1'}
                   </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowPortalLogin(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-200 text-slate-600 font-bold text-xs hover:bg-indigo-600 hover:text-white transition-all"
-                >
-                  <Lock size={12} /> Connect Portal
-                </button>
-              )}
-            </div>
-            {gstr1Online ? (
-              <div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="py-2 px-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wide">Field</th>
-                        <th className="py-2 px-3 text-right text-xs font-bold text-indigo-600 uppercase tracking-wide">Your App</th>
-                        <th className="py-2 px-3 text-right text-xs font-bold text-teal-600 uppercase tracking-wide">Filed on Portal</th>
-                        <th className="py-2 px-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wide">Difference</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {[
-                        { label: 'Taxable Value (B2B)', app: filteredInvoices.filter(i => custMap.get(i.customerId)?.gstin).reduce((s, i) => s + i.totalBeforeTax, 0), portal: gstr1Online.totalTaxableValue },
-                        { label: 'IGST', app: totalIGST, portal: gstr1Online.totalIGST },
-                        { label: 'CGST', app: totalCGST, portal: gstr1Online.totalCGST },
-                        { label: 'SGST', app: totalSGST, portal: gstr1Online.totalSGST },
-                        { label: 'B2B Invoice Count', app: filteredInvoices.filter(i => custMap.get(i.customerId)?.gstin).length, portal: gstr1Online.b2bInvoices.length },
-                      ].map(row => {
-                        const diff = row.app - row.portal;
-                        const isCount = row.label.includes('Count');
-                        const diffColor = Math.abs(diff) < (isCount ? 1 : 1) ? 'text-emerald-600' : 'text-amber-600';
-                        return (
-                          <tr key={row.label} className="hover:bg-white transition-colors">
-                            <td className="py-2.5 px-3 text-xs font-medium text-slate-700">{row.label}</td>
-                            <td className="py-2.5 px-3 text-xs font-bold text-indigo-700 text-right">{isCount ? row.app : inr(row.app as number)}</td>
-                            <td className="py-2.5 px-3 text-xs font-bold text-teal-700 text-right">{isCount ? row.portal : inr(row.portal as number)}</td>
-                            <td className={`py-2.5 px-3 text-xs font-bold text-right ${diffColor}`}>
-                              {Math.abs(diff) < 1 ? '✓ Match' : `${diff > 0 ? '+' : ''}${isCount ? diff : inr(diff as number)}`}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {gstr1Online.filedDate && (
-                  <p className="text-xs text-slate-400 mt-3 text-right">Filed on: {gstr1Online.filedDate}</p>
+                ) : (
+                  <button
+                    onClick={() => setShowPortalLogin(true)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition-all"
+                  >
+                    <Lock size={12} /> Connect Portal
+                  </button>
                 )}
               </div>
-            ) : (
-              <p className="text-sm text-slate-400 text-center py-4">
-                {isSessionActive() ? 'Click "Fetch Filed GSTR-1" to compare with your portal-filed data' : 'Connect to GST Portal to fetch and compare filed GSTR-1'}
-              </p>
             )}
           </div>
+
+          {/* ── APP DATA VIEW ── */}
+          {gstr1View === 'app' && (
+            <div>
+              <SubTabBar tabs={subTabs} active={activeSubTab} onChange={setActiveSubTab} />
+              <div className="mt-4">
+                {activeSubTab === 'b2b' && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          {['#', 'Date', 'Invoice #', 'Party', 'GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax', 'Total Amt', 'Status', ''].map(h => (
+                            <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <InvoiceTableRows invList={b2bInvoices} emptyMsg="No B2B invoices for this period." />
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {activeSubTab === 'b2cs' && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          {['#', 'Date', 'Invoice #', 'Party', 'GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax', 'Total Amt', 'Status', ''].map(h => (
+                            <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <InvoiceTableRows invList={b2csInvoices} emptyMsg="No B2CS / B2CL invoices for this period." />
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {activeSubTab === 'creditnotes' && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          {['#', 'Date', 'Note #', 'Party', 'Linked Invoice', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Amt', ''].map(h => (
+                            <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <NoteTableRows noteList={filteredCreditNotes} emptyMsg="No credit notes for this period." />
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {activeSubTab === 'debitnotes' && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          {['#', 'Date', 'Note #', 'Party', 'Linked Invoice', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Amt', ''].map(h => (
+                            <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <NoteTableRows noteList={filteredDebitNotes} emptyMsg="No debit notes for this period." />
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── PORTAL DATA VIEW ── */}
+          {gstr1View === 'portal' && (
+            <div>
+              {gstr1Online ? (
+                <div className="space-y-5">
+                  {/* Summary cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Taxable Value', value: inr(gstr1Online.totalTaxableValue), color: 'bg-indigo-50 border-indigo-100 text-indigo-700' },
+                      { label: 'IGST', value: inr(gstr1Online.totalIGST), color: 'bg-purple-50 border-purple-100 text-purple-700' },
+                      { label: 'CGST', value: inr(gstr1Online.totalCGST), color: 'bg-teal-50 border-teal-100 text-teal-700' },
+                      { label: 'SGST', value: inr(gstr1Online.totalSGST), color: 'bg-emerald-50 border-emerald-100 text-emerald-700' },
+                    ].map(card => (
+                      <div key={card.label} className={`rounded-2xl border p-4 ${card.color}`}>
+                        <p className="text-xs font-bold uppercase tracking-wide opacity-70 mb-1">{card.label}</p>
+                        <p className="text-lg font-bold">{card.value}</p>
+                        <p className="text-xs mt-0.5 opacity-60">Filed on GST Portal</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Comparison table */}
+                  <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wide">App vs Portal Comparison</h4>
+                      {gstr1Online.filedDate && (
+                        <span className="text-xs text-slate-400">Filed on portal: {gstr1Online.filedDate}</span>
+                      )}
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-100">
+                          <th className="py-2.5 px-5 text-left text-xs font-bold text-slate-500 uppercase tracking-wide">Field</th>
+                          <th className="py-2.5 px-5 text-right text-xs font-bold text-indigo-600 uppercase tracking-wide">Your App</th>
+                          <th className="py-2.5 px-5 text-right text-xs font-bold text-teal-600 uppercase tracking-wide">Filed on Portal</th>
+                          <th className="py-2.5 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-wide">Difference</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {[
+                          { label: 'Taxable Value (B2B)', app: filteredInvoices.filter(i => custMap.get(i.customerId)?.gstin).reduce((s, i) => s + i.totalBeforeTax, 0), portal: gstr1Online.totalTaxableValue },
+                          { label: 'IGST', app: totalIGST, portal: gstr1Online.totalIGST },
+                          { label: 'CGST', app: totalCGST, portal: gstr1Online.totalCGST },
+                          { label: 'SGST', app: totalSGST, portal: gstr1Online.totalSGST },
+                          { label: 'Total Tax', app: totalIGST + totalCGST + totalSGST, portal: gstr1Online.totalIGST + gstr1Online.totalCGST + gstr1Online.totalSGST },
+                        ].map(row => {
+                          const diff = row.app - row.portal;
+                          const isMatch = Math.abs(diff) < 1;
+                          return (
+                            <tr key={row.label} className="hover:bg-slate-50 transition-colors">
+                              <td className="py-3 px-5 text-xs font-medium text-slate-700">{row.label}</td>
+                              <td className="py-3 px-5 text-xs font-bold text-indigo-700 text-right">{inr(row.app as number)}</td>
+                              <td className="py-3 px-5 text-xs font-bold text-teal-700 text-right">{inr(row.portal as number)}</td>
+                              <td className={`py-3 px-5 text-xs font-bold text-right ${isMatch ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                {isMatch ? '✓ Match' : `${diff > 0 ? '+' : ''}${inr(diff as number)}`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Info note */}
+                  <p className="text-xs text-slate-400 flex items-center gap-1">
+                    <ShieldCheck size={12} className="text-teal-500" />
+                    Portal data fetched from GST portal via WhiteBooks GSP. Switch to <strong>App Data</strong> to see invoices created in this app.
+                  </p>
+                </div>
+              ) : (
+                /* Not yet fetched */
+                <div className="flex flex-col items-center justify-center py-16 gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-teal-50 flex items-center justify-center">
+                    <Cloud size={28} className="text-teal-500" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-bold text-slate-700 mb-1">No portal data fetched yet</p>
+                    <p className="text-xs text-slate-400 max-w-xs">
+                      {isSessionActive()
+                        ? 'Click "Fetch Filed GSTR-1" to download your filed return data from the GST portal.'
+                        : 'Connect to the GST portal first, then fetch your filed GSTR-1 data.'}
+                    </p>
+                  </div>
+                  {isSessionActive() ? (
+                    <button
+                      onClick={handleFetchGSTR1Online}
+                      disabled={portalFetching}
+                      className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-all disabled:opacity-50"
+                    >
+                      {portalFetching ? <Loader2 size={16} className="animate-spin" /> : <Cloud size={16} />}
+                      {portalFetching ? 'Fetching...' : 'Fetch Filed GSTR-1'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowPortalLogin(true)}
+                      className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all"
+                    >
+                      <Lock size={16} /> Connect GST Portal
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     }
