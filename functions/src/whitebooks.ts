@@ -283,10 +283,10 @@ export const wbFetchGSTR1 = onCall(
     if (raw?.status_cd === "0") {
       throw new HttpsError("unavailable", `GSTR-1 error: ${raw?.error?.message ?? JSON.stringify(raw)}`);
     }
+    // Full diagnostic log — truncated to avoid log limits
+    console.info(`GSTR-1 raw (first 3000): ${JSON.stringify(raw).substring(0, 3000)}`);
     const result = normalizeGSTR1(gstin, period, raw);
-    // Log structure so we can see the raw shape during debugging
-    const topKeys = JSON.stringify(Object.keys(raw?.data?.data ?? raw?.data ?? raw ?? {}));
-    console.info(`GSTR-1 raw top-keys: ${topKeys} | totals: txval=${result.totalTaxableValue} igst=${result.totalIGST} cgst=${result.totalCGST} sgst=${result.totalSGST}`);
+    console.info(`GSTR-1 normalized: txval=${result.totalTaxableValue} igst=${result.totalIGST} cgst=${result.totalCGST} sgst=${result.totalSGST}`);
     return result;
   }
 );
@@ -433,21 +433,48 @@ function normalizeGSTR3B(gstin: string, period: string, raw: any) {
 
 function normalizeGSTR1(gstin: string, period: string, raw: any) {
   const d = raw.data?.data ?? raw.data ?? raw;
-  const filedDate = d.filed_date ?? d.filedDate ?? d.dt ?? "";
+  const filedDate = d.filed_date ?? d.filedDate ?? d.filing_dt ?? d.dt ?? "";
 
-  // Format 1: sec_sum array (full return summary — most common from /gstr1/retsum)
+  // Format 1: sec_sum array (full return summary — from /gstr1/retsum)
   const secSum: any[] = d.sec_sum ?? d.secSum ?? [];
   if (secSum.length > 0) {
-    const b2b = secSum.find((s: any) => (s.sec_nm ?? s.secNm ?? "").toUpperCase() === "B2B");
-    const igst = Number(b2b?.iamt ?? 0);
-    const cgst = Number(b2b?.camt ?? 0);
-    const sgst = Number(b2b?.samt ?? 0);
-    return {
-      gstin, period, filedDate,
-      b2bInvoices: [],
-      totalTaxableValue: Number(b2b?.txval ?? 0),
-      totalIGST: igst, totalCGST: cgst, totalSGST: sgst,
-    };
+    // Log all section names so we can see exact API field shapes
+    console.info(`GSTR-1 sec_sum sections: ${JSON.stringify(secSum.map((s: any) => ({
+      nm: s.sec_nm ?? s.secNm,
+      txval: s.txval, iamt: s.iamt, camt: s.camt, samt: s.samt,
+    })))}`);
+
+    // Try exact "B2B" match first, then any section starting with "B2B"
+    let b2b = secSum.find((s: any) => (s.sec_nm ?? s.secNm ?? "").toUpperCase() === "B2B");
+    if (!b2b) {
+      b2b = secSum.find((s: any) => (s.sec_nm ?? s.secNm ?? "").toUpperCase().startsWith("B2B"));
+    }
+
+    if (b2b) {
+      console.info(`GSTR-1 B2B section found: ${JSON.stringify(b2b)}`);
+      return {
+        gstin, period, filedDate,
+        b2bInvoices: [],
+        totalTaxableValue: Number(b2b.txval ?? 0),
+        totalIGST: Number(b2b.iamt ?? 0),
+        totalCGST: Number(b2b.camt ?? 0),
+        totalSGST: Number(b2b.samt ?? 0),
+      };
+    }
+
+    // No B2B section — aggregate all sections as total outward supplies
+    let txval = 0, iamt = 0, camt = 0, samt = 0;
+    for (const s of secSum) {
+      txval += Number(s.txval ?? 0);
+      iamt  += Number(s.iamt  ?? 0);
+      camt  += Number(s.camt  ?? 0);
+      samt  += Number(s.samt  ?? 0);
+    }
+    console.info(`GSTR-1 no B2B section, summing all ${secSum.length} sections: txval=${txval} iamt=${iamt} camt=${camt} samt=${samt}`);
+    if (txval > 0 || iamt > 0 || camt > 0 || samt > 0) {
+      return { gstin, period, filedDate, b2bInvoices: [], totalTaxableValue: txval, totalIGST: iamt, totalCGST: camt, totalSGST: samt };
+    }
+    // sec_sum was present but empty-valued — fall through to other formats
   }
 
   // Format 2: sup_details object (GSTR-3B-style aggregate)
@@ -456,6 +483,7 @@ function normalizeGSTR1(gstin: string, period: string, raw: any) {
     const igst = Number(sup?.osup_det?.iamt ?? 0);
     const cgst = Number(sup?.osup_det?.camt ?? 0);
     const sgst = Number(sup?.osup_det?.samt ?? 0);
+    console.info(`GSTR-1 Format 2 sup_details: txval=${sup?.osup_det?.txval} igst=${igst}`);
     return {
       gstin, period, filedDate,
       b2bInvoices: [],
@@ -464,32 +492,42 @@ function normalizeGSTR1(gstin: string, period: string, raw: any) {
     };
   }
 
-  // Format 3: top-level aggregate fields (gt = grand total)
+  // Format 3: top-level aggregate fields (gt / cur_gt = grand total taxable)
   if (d.gt !== undefined || d.cur_gt !== undefined) {
     const totalGT = Number(d.gt ?? d.cur_gt ?? 0);
+    console.info(`GSTR-1 Format 3 gt field: ${totalGT}`);
     return {
       gstin, period, filedDate,
       b2bInvoices: [],
       totalTaxableValue: totalGT,
-      totalIGST: 0, totalCGST: 0, totalSGST: 0,
+      totalIGST: Number(d.iamt ?? d.igst ?? 0),
+      totalCGST: Number(d.camt ?? d.cgst ?? 0),
+      totalSGST: Number(d.samt ?? d.sgst ?? 0),
     };
   }
 
-  // Format 4: b2b invoice array
+  // Format 4: b2b invoice array (full filing data)
   const b2bList: any[] = d?.b2b ?? d?.data?.b2b ?? [];
+  console.info(`GSTR-1 Format 4 b2b invoices: ${b2bList.length} suppliers`);
   const b2bInvoices = b2bList.flatMap((supplier: any) =>
     (supplier.inv ?? []).map((inv: any) => {
       const items = inv.itms ?? [];
       let taxable = 0, igst = 0, cgst = 0, sgst = 0;
       for (const itm of items) {
         const dt = itm.itm_det ?? itm;
-        taxable += dt.txval ?? 0; igst += dt.iamt ?? 0; cgst += dt.camt ?? 0; sgst += dt.samt ?? 0;
+        taxable += Number(dt.txval ?? 0);
+        igst    += Number(dt.iamt  ?? 0);
+        cgst    += Number(dt.camt  ?? 0);
+        sgst    += Number(dt.samt  ?? 0);
       }
       if (taxable === 0 && igst === 0 && cgst === 0 && sgst === 0) {
-        taxable = inv.txval ?? 0; igst = inv.iamt ?? 0; cgst = inv.camt ?? 0; sgst = inv.samt ?? 0;
+        taxable = Number(inv.txval ?? 0);
+        igst    = Number(inv.iamt  ?? 0);
+        cgst    = Number(inv.camt  ?? 0);
+        sgst    = Number(inv.samt  ?? 0);
       }
       return {
-        invoiceNumber: inv.inum ?? "", invoiceDate: inv.idt ?? "",
+        invoiceNumber: inv.inum ?? "", invoiceDate: inv.idt ?? inv.inv_dt ?? "",
         receiverGSTIN: supplier.ctin ?? "", receiverName: supplier.trdnm ?? supplier.lgnm ?? "",
         placeOfSupply: inv.pos ?? "", taxableValue: taxable, igst, cgst, sgst,
         invoiceValue: taxable + igst + cgst + sgst,
@@ -497,11 +535,12 @@ function normalizeGSTR1(gstin: string, period: string, raw: any) {
     })
   );
   return {
-    gstin, period, filedDate: d.filed_date ?? d.filedDate ?? "", b2bInvoices,
+    gstin, period, filedDate,
+    b2bInvoices,
     totalTaxableValue: b2bInvoices.reduce((s: number, i: any) => s + i.taxableValue, 0),
-    totalIGST: b2bInvoices.reduce((s: number, i: any) => s + i.igst, 0),
-    totalCGST: b2bInvoices.reduce((s: number, i: any) => s + i.cgst, 0),
-    totalSGST: b2bInvoices.reduce((s: number, i: any) => s + i.sgst, 0),
+    totalIGST:         b2bInvoices.reduce((s: number, i: any) => s + i.igst, 0),
+    totalCGST:         b2bInvoices.reduce((s: number, i: any) => s + i.cgst, 0),
+    totalSGST:         b2bInvoices.reduce((s: number, i: any) => s + i.sgst, 0),
   };
 }
 
