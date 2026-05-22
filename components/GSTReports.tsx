@@ -186,6 +186,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const [gstr1Online, setGstr1Online] = useState<GSTR1OnlineData | null>(null);
   const [portalFetching, setPortalFetching] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
+  const [gstr1FetchError, setGstr1FetchError] = useState<string | null>(null);
   const [gstr2bPdfOpen, setGstr2bPdfOpen] = useState(false);
   // Cache fetch timestamps keyed by type
   const [cacheFetchedAt, setCacheFetchedAt] = useState<{ '2b'?: number; '3b'?: number; '1'?: number }>({});
@@ -523,7 +524,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const handleFetchGSTR1Online = async () => {
     if (!profile?.gstin || !gstSession) return;
     setPortalFetching(true);
-    setPortalError(null);
+    setGstr1FetchError(null);
     try {
       const data = await fetchGSTR1Online(profile.gstin, wbPeriod, gstSession.authToken, gstSession.gstUsername);
       setGstr1Online(data);
@@ -532,7 +533,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       setCacheFetchedAt(p => ({ ...p, '1': now }));
       await saveGSTRCache(userId, '1', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
-      setPortalError(err?.message ?? 'Failed to fetch GSTR-1 online data.');
+      setGstr1FetchError(err?.message ?? 'Failed to fetch GSTR-1 online data.');
     } finally {
       setPortalFetching(false);
     }
@@ -896,35 +897,59 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                   </p>
                 </div>
               ) : (
-                /* Not yet fetched */
+                /* Not yet fetched / loading / error */
                 <div className="flex flex-col items-center justify-center py-16 gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-teal-50 flex items-center justify-center">
-                    <Cloud size={28} className="text-teal-500" />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-bold text-slate-700 mb-1">No portal data fetched yet</p>
-                    <p className="text-xs text-slate-400 max-w-xs">
-                      {isSessionActive()
-                        ? 'Click "Fetch Filed GSTR-1" to download your filed return data from the GST portal.'
-                        : 'Connect to the GST portal first, then fetch your filed GSTR-1 data.'}
-                    </p>
-                  </div>
-                  {isSessionActive() ? (
-                    <button
-                      onClick={handleFetchGSTR1Online}
-                      disabled={portalFetching}
-                      className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-all disabled:opacity-50"
-                    >
-                      {portalFetching ? <Loader2 size={16} className="animate-spin" /> : <Cloud size={16} />}
-                      {portalFetching ? 'Fetching...' : 'Fetch Filed GSTR-1'}
-                    </button>
+                  {portalFetching ? (
+                    <>
+                      <Loader2 size={32} className="animate-spin text-teal-500" />
+                      <p className="text-sm font-bold text-slate-600">Fetching GSTR-1 from GST Portal…</p>
+                      <p className="text-xs text-slate-400">This may take a few seconds.</p>
+                    </>
                   ) : (
-                    <button
-                      onClick={() => setShowPortalLogin(true)}
-                      className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all"
-                    >
-                      <Lock size={16} /> Connect GST Portal
-                    </button>
+                    <>
+                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${gstr1FetchError ? 'bg-red-50' : 'bg-teal-50'}`}>
+                        {gstr1FetchError
+                          ? <span className="text-2xl">⚠️</span>
+                          : <Cloud size={28} className="text-teal-500" />}
+                      </div>
+                      <div className="text-center">
+                        {gstr1FetchError ? (
+                          <>
+                            <p className="text-sm font-bold text-red-600 mb-1">Fetch Failed</p>
+                            <p className="text-xs text-red-500 max-w-sm bg-red-50 border border-red-100 rounded-xl px-4 py-2">
+                              {gstr1FetchError}
+                            </p>
+                            <p className="text-xs text-slate-400 mt-2">Check that your GST portal session is active and the period is correct, then try again.</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm font-bold text-slate-700 mb-1">No portal data fetched yet</p>
+                            <p className="text-xs text-slate-400 max-w-xs">
+                              {isSessionActive()
+                                ? 'Click "Fetch Filed GSTR-1" to download your filed return data from the GST portal.'
+                                : 'Connect to the GST portal first, then fetch your filed GSTR-1 data.'}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      {isSessionActive() ? (
+                        <button
+                          onClick={handleFetchGSTR1Online}
+                          disabled={portalFetching}
+                          className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-all disabled:opacity-50"
+                        >
+                          <Cloud size={16} />
+                          {gstr1FetchError ? 'Retry Fetch' : 'Fetch Filed GSTR-1'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setShowPortalLogin(true)}
+                          className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all"
+                        >
+                          <Lock size={16} /> Connect GST Portal
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}
