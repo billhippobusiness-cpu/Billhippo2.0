@@ -29,6 +29,7 @@ export interface GSTR2BSupplierInvoice {
   sgst: number;
   cess: number;
   itcAvailability: string;
+  gstRate?: number;
 }
 
 export interface GSTR2BSupplier {

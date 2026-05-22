@@ -95,14 +95,15 @@ const GSTR2BPDF: React.FC<GSTR2BPDFProps> = ({ data, businessName, businessGSTIN
         <Text style={S.sectionTitle}>Invoice-wise Detail</Text>
         <View style={S.tableHeader}>
           <Text style={[S.thCell, { width: 20 }]}>#</Text>
-          <Text style={[S.thCell, { width: 100 }]}>Invoice No.</Text>
-          <Text style={[S.thCell, { width: 60 }]}>Date</Text>
-          <Text style={[S.thCell, { width: 40 }]}>Type</Text>
-          <Text style={[S.thCell, { width: 70, textAlign: 'right' }]}>Taxable</Text>
-          <Text style={[S.thCell, { width: 70, textAlign: 'right' }]}>IGST</Text>
-          <Text style={[S.thCell, { width: 70, textAlign: 'right' }]}>CGST</Text>
-          <Text style={[S.thCell, { width: 70, textAlign: 'right' }]}>SGST</Text>
-          <Text style={[S.thCell, { width: 70, textAlign: 'right' }]}>Total Tax</Text>
+          <Text style={[S.thCell, { width: 90 }]}>Invoice No.</Text>
+          <Text style={[S.thCell, { width: 55 }]}>Date</Text>
+          <Text style={[S.thCell, { width: 35 }]}>Type</Text>
+          <Text style={[S.thCell, { width: 30, textAlign: 'center' }]}>Rate%</Text>
+          <Text style={[S.thCell, { width: 65, textAlign: 'right' }]}>Taxable</Text>
+          <Text style={[S.thCell, { width: 65, textAlign: 'right' }]}>IGST</Text>
+          <Text style={[S.thCell, { width: 65, textAlign: 'right' }]}>CGST</Text>
+          <Text style={[S.thCell, { width: 65, textAlign: 'right' }]}>SGST</Text>
+          <Text style={[S.thCell, { width: 65, textAlign: 'right' }]}>Total Tax</Text>
           <Text style={[S.thCell, { width: 30, textAlign: 'center' }]}>ITC</Text>
         </View>
 
@@ -117,14 +118,15 @@ const GSTR2BPDF: React.FC<GSTR2BPDFProps> = ({ data, businessName, businessGSTIN
               return (
                 <View key={ii} style={rowStyle} wrap={false}>
                   <Text style={[S.tdCell, { width: 20 }]}>{ii + 1}</Text>
-                  <Text style={[S.tdCell, { width: 100 }]}>{inv.invoiceNumber}</Text>
-                  <Text style={[S.tdCell, { width: 60 }]}>{inv.invoiceDate}</Text>
-                  <Text style={[S.tdCell, { width: 40 }]}>{inv.invoiceType}</Text>
-                  <Text style={[S.tdCell, { width: 70, textAlign: 'right' }]}>{inr(inv.taxableValue)}</Text>
-                  <Text style={[S.tdCell, { width: 70, textAlign: 'right' }]}>{inv.igst > 0 ? inr(inv.igst) : '—'}</Text>
-                  <Text style={[S.tdCell, { width: 70, textAlign: 'right' }]}>{inv.cgst > 0 ? inr(inv.cgst) : '—'}</Text>
-                  <Text style={[S.tdCell, { width: 70, textAlign: 'right' }]}>{inv.sgst > 0 ? inr(inv.sgst) : '—'}</Text>
-                  <Text style={[S.tdCell, { width: 70, textAlign: 'right', fontFamily: 'Helvetica-Bold', color: '#1e40af' }]}>{inr(inv.igst + inv.cgst + inv.sgst)}</Text>
+                  <Text style={[S.tdCell, { width: 90 }]}>{inv.invoiceNumber}</Text>
+                  <Text style={[S.tdCell, { width: 55 }]}>{inv.invoiceDate}</Text>
+                  <Text style={[S.tdCell, { width: 35 }]}>{inv.invoiceType}</Text>
+                  <Text style={[S.tdCell, { width: 30, textAlign: 'center', color: '#6366f1' }]}>{inv.gstRate ? `${inv.gstRate}%` : '—'}</Text>
+                  <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inr(inv.taxableValue)}</Text>
+                  <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inv.igst > 0 ? inr(inv.igst) : '—'}</Text>
+                  <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inv.cgst > 0 ? inr(inv.cgst) : '—'}</Text>
+                  <Text style={[S.tdCell, { width: 65, textAlign: 'right' }]}>{inv.sgst > 0 ? inr(inv.sgst) : '—'}</Text>
+                  <Text style={[S.tdCell, { width: 65, textAlign: 'right', fontFamily: 'Helvetica-Bold', color: '#1e40af' }]}>{inr(inv.igst + inv.cgst + inv.sgst)}</Text>
                   <Text style={[S.tdCell, { width: 30, textAlign: 'center', color: inv.itcAvailability === 'Yes' ? '#059669' : '#dc2626' }]}>{inv.itcAvailability}</Text>
                 </View>
               );
@@ -134,12 +136,12 @@ const GSTR2BPDF: React.FC<GSTR2BPDFProps> = ({ data, businessName, businessGSTIN
 
         {/* Totals */}
         <View style={S.totalRow}>
-          <Text style={[S.totalCell, { width: 220 }]}>GRAND TOTAL ({data.invoiceCount} invoices from {data.suppliers.length} suppliers)</Text>
-          <Text style={[S.totalCell, { width: 70, textAlign: 'right' }]}>{inr(data.totalTaxableValue)}</Text>
-          <Text style={[S.totalCell, { width: 70, textAlign: 'right' }]}>{inr(data.totalIGST)}</Text>
-          <Text style={[S.totalCell, { width: 70, textAlign: 'right' }]}>{inr(data.totalCGST)}</Text>
-          <Text style={[S.totalCell, { width: 70, textAlign: 'right' }]}>{inr(data.totalSGST)}</Text>
-          <Text style={[S.totalCell, { width: 70, textAlign: 'right' }]}>{inr(totalTax)}</Text>
+          <Text style={[S.totalCell, { width: 230 }]}>GRAND TOTAL ({data.invoiceCount} invoices from {data.suppliers.length} suppliers)</Text>
+          <Text style={[S.totalCell, { width: 65, textAlign: 'right' }]}>{inr(data.totalTaxableValue)}</Text>
+          <Text style={[S.totalCell, { width: 65, textAlign: 'right' }]}>{inr(data.totalIGST)}</Text>
+          <Text style={[S.totalCell, { width: 65, textAlign: 'right' }]}>{inr(data.totalCGST)}</Text>
+          <Text style={[S.totalCell, { width: 65, textAlign: 'right' }]}>{inr(data.totalSGST)}</Text>
+          <Text style={[S.totalCell, { width: 65, textAlign: 'right' }]}>{inr(totalTax)}</Text>
           <Text style={[S.totalCell, { width: 30 }]}></Text>
         </View>
 

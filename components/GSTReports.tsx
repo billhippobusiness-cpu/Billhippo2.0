@@ -1602,7 +1602,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
         </div>
       </div>
 
-      {/* ── 4 Report cards ── */}
+      {/* ── Report cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* GSTR-1 */}
         <ReportCard
@@ -1634,22 +1634,6 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           ]}
           onClick={() => openDetail('gstr3b')}
           active={activeDetail === 'gstr3b'}
-        />
-
-        {/* Tax Summary */}
-        <ReportCard
-          color="bg-amber-500"
-          title="Tax Summary"
-          desc="Rate-wise tax collected this period"
-          status={totalTax > 0 ? 'Ready' : 'No Data'}
-          fields={[
-            `Total Tax: ${inr(totalTax)}`,
-            `Total Sales: ${inr(totalTaxable + totalTax)}`,
-            `Invoices: ${filteredInvoices.length}`,
-            `GST Rates: ${rateBreakdown.length}`,
-          ]}
-          onClick={() => openDetail('taxsummary')}
-          active={activeDetail === 'taxsummary'}
         />
 
         {/* Sales Register */}
