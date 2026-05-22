@@ -116,8 +116,8 @@ function monthEndDate(ym: string): string {
   return `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 }
 
-function inr(n: number): string {
-  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function inr(n: number | undefined | null): string {
+  return `₹${(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtDate(d: string): string {
@@ -935,7 +935,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                           { label: 'IGST', app: totalIGST, portal: gstr3bOnline.outwardIGST },
                           { label: 'CGST', app: totalCGST, portal: gstr3bOnline.outwardCGST },
                           { label: 'SGST', app: totalSGST, portal: gstr3bOnline.outwardSGST },
-                          { label: 'Total Tax', app: totalTax, portal: gstr3bOnline.outwardTax },
+                          { label: 'Total Tax', app: totalTax, portal: gstr3bOnline.outwardTax ?? (gstr3bOnline.outwardIGST + gstr3bOnline.outwardCGST + gstr3bOnline.outwardSGST) },
                         ].map(row => {
                           const diff = row.app - row.portal;
                           const diffColor = Math.abs(diff) < 1 ? 'text-emerald-600' : diff > 0 ? 'text-amber-600' : 'text-rose-600';

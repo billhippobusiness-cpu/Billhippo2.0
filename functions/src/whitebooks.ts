@@ -202,7 +202,13 @@ export const wbFetchGSTR2B = onCall(
     if (raw?.status_cd === "0") {
       throw new HttpsError("unavailable", `GSTR-2B error: ${raw?.error?.message ?? JSON.stringify(raw)}`);
     }
-    return normalizeGSTR2B(gstin, period, raw);
+    const result = normalizeGSTR2B(gstin, period, raw);
+    // If nothing found, surface the top-level keys so the client can see the raw shape
+    if (result.invoiceCount === 0) {
+      const topKeys = JSON.stringify(Object.keys(raw?.data ?? raw ?? {}));
+      console.info(`GSTR-2B: 0 invoices. Top keys: ${topKeys}. status_cd=${raw?.status_cd}`);
+    }
+    return result;
   }
 );
 
@@ -283,11 +289,14 @@ export const wbFetchGSTR1 = onCall(
 // ─── Normalization helpers ────────────────────────────────────────────────────
 
 function normalizeGSTR2B(gstin: string, period: string, raw: any) {
-  const d = raw.data ?? raw;
+  // Try multiple response nesting levels WhiteBooks may use
+  const d = raw.data?.data ?? raw.data ?? raw;
   const suppliers: any[] = [];
   let totalTaxable = 0, totalIGST = 0, totalCGST = 0, totalSGST = 0, invoiceCount = 0;
 
-  const b2bList: any[] = d?.docdata?.b2b ?? d?.b2b ?? [];
+  const b2bList: any[] =
+    d?.docdata?.b2b ?? d?.data?.docdata?.b2b ??
+    d?.b2b ?? d?.data?.b2b ?? [];
   for (const supplier of b2bList) {
     const invoices = (supplier.inv ?? supplier.invoices ?? []).map((inv: any) => {
       const items = inv.itms ?? inv.items ?? [];
@@ -330,13 +339,17 @@ function normalizeGSTR3B(gstin: string, period: string, raw: any) {
   const sup  = d.sup_details ?? d.supDetails ?? {};
   const itc  = d.itc_elg     ?? d.itcElg     ?? {};
   const intr = d.intr_ltfee  ?? d.intrLtfee  ?? {};
+  const igst = sup?.osup_det?.iamt  ?? 0;
+  const cgst = sup?.osup_det?.camt  ?? 0;
+  const sgst = sup?.osup_det?.samt  ?? 0;
   return {
     gstin, period,
     filedDate:      d.filed_date ?? d.filedDate ?? "",
     outwardTaxable: sup?.osup_det?.txval ?? 0,
-    outwardIGST:    sup?.osup_det?.iamt  ?? 0,
-    outwardCGST:    sup?.osup_det?.camt  ?? 0,
-    outwardSGST:    sup?.osup_det?.samt  ?? 0,
+    outwardTax:     igst + cgst + sgst,
+    outwardIGST:    igst,
+    outwardCGST:    cgst,
+    outwardSGST:    sgst,
     itcIGST:        itc?.itc_avl?.find((x: any) => x.ty === "IMPG")?.iamt ?? 0,
     itcCGST:        itc?.itc_avl?.reduce((s: number, x: any) => s + (x.camt ?? 0), 0) ?? 0,
     itcSGST:        itc?.itc_avl?.reduce((s: number, x: any) => s + (x.samt ?? 0), 0) ?? 0,
