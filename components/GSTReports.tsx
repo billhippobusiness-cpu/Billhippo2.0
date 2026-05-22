@@ -176,6 +176,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
   // GSTR-1 view toggle: 'app' = invoices from this app, 'portal' = fetched portal data
   const [gstr1View, setGstr1View] = useState<'app' | 'portal'>('app');
+  const [gstr1PortalTab, setGstr1PortalTab] = useState<'b2b' | 'b2cs' | 'cdnr' | 'comparison'>('b2b');
 
   // ── WhiteBooks / GST Portal state ──
   const [gstSession, setGstSession] = useState<{ authToken: string; expiresAt: number; gstUsername: string } | null>(null);
@@ -831,7 +832,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           {gstr1View === 'portal' && (
             <div>
               {gstr1Online ? (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   {/* Summary cards */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
@@ -848,49 +849,173 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     ))}
                   </div>
 
-                  {/* Comparison table */}
-                  <div className="rounded-2xl border border-slate-200 overflow-hidden">
-                    <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wide">App vs Portal Comparison</h4>
-                      {gstr1Online.filedDate && (
-                        <span className="text-xs text-slate-400">Filed on portal: {gstr1Online.filedDate}</span>
+                  {/* Sub-tab bar */}
+                  <SubTabBar
+                    tabs={[
+                      { id: 'b2b', label: `B2B Invoices (${(gstr1Online.b2bInvoices ?? []).length})` },
+                      { id: 'b2cs', label: `B2CS / B2CL (${(gstr1Online.b2csEntries ?? []).length})` },
+                      { id: 'cdnr', label: `Credit/Debit Notes (${(gstr1Online.cdnrNotes ?? []).length})` },
+                      { id: 'comparison', label: 'App vs Portal' },
+                    ]}
+                    active={gstr1PortalTab}
+                    onChange={(t) => setGstr1PortalTab(t as any)}
+                  />
+
+                  {/* B2B tab */}
+                  {gstr1PortalTab === 'b2b' && (
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                      {(gstr1Online.b2bInvoices ?? []).length === 0 ? (
+                        <p className="text-center py-10 text-slate-400 text-sm">No B2B invoices found for this period.</p>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              {['#', 'Invoice #', 'Date', 'Supplier Name', 'Supplier GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax', 'GST%', 'RC'].map(h => (
+                                <th key={h} className="px-3 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(gstr1Online.b2bInvoices ?? []).map((inv, i) => (
+                              <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                                <td className="px-3 py-2.5 text-xs text-slate-400">{i + 1}</td>
+                                <td className="px-3 py-2.5 text-xs font-semibold text-slate-800">{inv.invoiceNumber}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{inv.invoiceDate}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-700 max-w-[140px] truncate">{inv.supplierName}</td>
+                                <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{inv.supplierGSTIN}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-700">{inr(inv.taxableValue)}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{inv.igst > 0 ? inr(inv.igst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{inv.cgst > 0 ? inr(inv.cgst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{inv.sgst > 0 ? inr(inv.sgst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right font-bold text-indigo-700">{inr(inv.igst + inv.cgst + inv.sgst)}</td>
+                                <td className="px-3 py-2.5 text-xs text-center text-indigo-600 font-semibold">{inv.gstRate ? `${inv.gstRate}%` : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-center">{inv.reverseCharge ? <span className="text-amber-600 font-bold">Y</span> : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       )}
                     </div>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-100">
-                          <th className="py-2.5 px-5 text-left text-xs font-bold text-slate-500 uppercase tracking-wide">Field</th>
-                          <th className="py-2.5 px-5 text-right text-xs font-bold text-indigo-600 uppercase tracking-wide">Your App</th>
-                          <th className="py-2.5 px-5 text-right text-xs font-bold text-teal-600 uppercase tracking-wide">Filed on Portal</th>
-                          <th className="py-2.5 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-wide">Difference</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {[
-                          { label: 'Taxable Value (B2B)', app: filteredInvoices.filter(i => custMap.get(i.customerId)?.gstin).reduce((s, i) => s + i.totalBeforeTax, 0), portal: gstr1Online.totalTaxableValue },
-                          { label: 'IGST', app: totalIGST, portal: gstr1Online.totalIGST },
-                          { label: 'CGST', app: totalCGST, portal: gstr1Online.totalCGST },
-                          { label: 'SGST', app: totalSGST, portal: gstr1Online.totalSGST },
-                          { label: 'Total Tax', app: totalIGST + totalCGST + totalSGST, portal: gstr1Online.totalIGST + gstr1Online.totalCGST + gstr1Online.totalSGST },
-                        ].map(row => {
-                          const diff = row.app - row.portal;
-                          const isMatch = Math.abs(diff) < 1;
-                          return (
-                            <tr key={row.label} className="hover:bg-slate-50 transition-colors">
-                              <td className="py-3 px-5 text-xs font-medium text-slate-700">{row.label}</td>
-                              <td className="py-3 px-5 text-xs font-bold text-indigo-700 text-right">{inr(row.app as number)}</td>
-                              <td className="py-3 px-5 text-xs font-bold text-teal-700 text-right">{inr(row.portal as number)}</td>
-                              <td className={`py-3 px-5 text-xs font-bold text-right ${isMatch ? 'text-emerald-600' : 'text-amber-600'}`}>
-                                {isMatch ? '✓ Match' : `${diff > 0 ? '+' : ''}${inr(diff as number)}`}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  )}
 
-                  {/* Info note */}
+                  {/* B2CS tab */}
+                  {gstr1PortalTab === 'b2cs' && (
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                      {(gstr1Online.b2csEntries ?? []).length === 0 ? (
+                        <p className="text-center py-10 text-slate-400 text-sm">No B2CS / B2CL supplies found for this period.</p>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              {['#', 'Supply Type', 'Place of Supply', 'GST Rate', 'Taxable Value', 'IGST', 'CGST', 'SGST', 'Total Tax'].map(h => (
+                                <th key={h} className="px-3 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(gstr1Online.b2csEntries ?? []).map((entry, i) => (
+                              <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                                <td className="px-3 py-2.5 text-xs text-slate-400">{i + 1}</td>
+                                <td className="px-3 py-2.5 text-xs font-semibold text-slate-700">{entry.supplyType}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-600">{entry.placeOfSupply}</td>
+                                <td className="px-3 py-2.5 text-xs text-center text-indigo-600 font-semibold">{entry.gstRate ? `${entry.gstRate}%` : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-700">{inr(entry.taxableValue)}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{entry.igst > 0 ? inr(entry.igst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{entry.cgst > 0 ? inr(entry.cgst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{entry.sgst > 0 ? inr(entry.sgst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right font-bold text-indigo-700">{inr(entry.igst + entry.cgst + entry.sgst)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CDNR tab */}
+                  {gstr1PortalTab === 'cdnr' && (
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                      {(gstr1Online.cdnrNotes ?? []).length === 0 ? (
+                        <p className="text-center py-10 text-slate-400 text-sm">No credit/debit notes found for this period.</p>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              {['#', 'Type', 'Note #', 'Date', 'Receiver Name', 'Receiver GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax'].map(h => (
+                                <th key={h} className="px-3 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(gstr1Online.cdnrNotes ?? []).map((note, i) => (
+                              <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                                <td className="px-3 py-2.5 text-xs text-slate-400">{i + 1}</td>
+                                <td className="px-3 py-2.5 text-xs">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${note.noteType === 'C' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    {note.noteType === 'C' ? 'Credit' : 'Debit'}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2.5 text-xs font-semibold text-slate-800">{note.noteNumber}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{note.noteDate}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-700 max-w-[140px] truncate">{note.receiverName}</td>
+                                <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{note.receiverGSTIN}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-700">{inr(note.taxableValue)}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{note.igst > 0 ? inr(note.igst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{note.cgst > 0 ? inr(note.cgst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right text-slate-600">{note.sgst > 0 ? inr(note.sgst) : '—'}</td>
+                                <td className="px-3 py-2.5 text-xs text-right font-bold text-indigo-700">{inr(note.igst + note.cgst + note.sgst)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Comparison tab */}
+                  {gstr1PortalTab === 'comparison' && (
+                    <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                      <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wide">App vs Portal Comparison</h4>
+                        {gstr1Online.filedDate && (
+                          <span className="text-xs text-slate-400">Filed: {gstr1Online.filedDate}</span>
+                        )}
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-100">
+                            <th className="py-2.5 px-5 text-left text-xs font-bold text-slate-500 uppercase tracking-wide">Field</th>
+                            <th className="py-2.5 px-5 text-right text-xs font-bold text-indigo-600 uppercase tracking-wide">Your App</th>
+                            <th className="py-2.5 px-5 text-right text-xs font-bold text-teal-600 uppercase tracking-wide">Filed on Portal</th>
+                            <th className="py-2.5 px-5 text-right text-xs font-bold text-slate-500 uppercase tracking-wide">Difference</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {[
+                            { label: 'Taxable Value (B2B)', app: filteredInvoices.filter(i => custMap.get(i.customerId)?.gstin).reduce((s, i) => s + i.totalBeforeTax, 0), portal: gstr1Online.totalTaxableValue },
+                            { label: 'IGST', app: totalIGST, portal: gstr1Online.totalIGST },
+                            { label: 'CGST', app: totalCGST, portal: gstr1Online.totalCGST },
+                            { label: 'SGST', app: totalSGST, portal: gstr1Online.totalSGST },
+                            { label: 'Total Tax', app: totalIGST + totalCGST + totalSGST, portal: gstr1Online.totalIGST + gstr1Online.totalCGST + gstr1Online.totalSGST },
+                          ].map(row => {
+                            const diff = row.app - row.portal;
+                            const isMatch = Math.abs(diff) < 1;
+                            return (
+                              <tr key={row.label} className="hover:bg-slate-50 transition-colors">
+                                <td className="py-3 px-5 text-xs font-medium text-slate-700">{row.label}</td>
+                                <td className="py-3 px-5 text-xs font-bold text-indigo-700 text-right">{inr(row.app as number)}</td>
+                                <td className="py-3 px-5 text-xs font-bold text-teal-700 text-right">{inr(row.portal as number)}</td>
+                                <td className={`py-3 px-5 text-xs font-bold text-right ${isMatch ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                  {isMatch ? '✓ Match' : `${diff > 0 ? '+' : ''}${inr(diff as number)}`}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
                   <p className="text-xs text-slate-400 flex items-center gap-1">
                     <ShieldCheck size={12} className="text-teal-500" />
                     Portal data fetched from GST portal via WhiteBooks GSP. Switch to <strong>App Data</strong> to see invoices created in this app.

@@ -70,24 +70,51 @@ export interface GSTR3BOnlineData {
   netTaxPayable: number;
 }
 
-export interface GSTR1OnlineInvoice {
+export interface GSTR1PortalB2BInvoice {
+  supplierGSTIN: string;
+  supplierName: string;
   invoiceNumber: string;
   invoiceDate: string;
-  receiverGSTIN: string;
-  receiverName: string;
+  invoiceValue: number;
   placeOfSupply: string;
+  reverseCharge: boolean;
   taxableValue: number;
   igst: number;
   cgst: number;
   sgst: number;
-  invoiceValue: number;
+  gstRate: number;
+}
+
+export interface GSTR1PortalB2CSEntry {
+  supplyType: string;
+  placeOfSupply: string;
+  gstRate: number;
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
+}
+
+export interface GSTR1PortalCDNRNote {
+  receiverGSTIN: string;
+  receiverName: string;
+  noteType: string;
+  noteNumber: string;
+  noteDate: string;
+  noteValue: number;
+  taxableValue: number;
+  igst: number;
+  cgst: number;
+  sgst: number;
 }
 
 export interface GSTR1OnlineData {
   gstin: string;
   period: string;
   filedDate: string;
-  b2bInvoices: GSTR1OnlineInvoice[];
+  b2bInvoices: GSTR1PortalB2BInvoice[];
+  b2csEntries: GSTR1PortalB2CSEntry[];
+  cdnrNotes: GSTR1PortalCDNRNote[];
   totalTaxableValue: number;
   totalIGST: number;
   totalCGST: number;

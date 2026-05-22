@@ -249,44 +249,54 @@ export const wbFetchGSTR3B = onCall(
   }
 );
 
-// ─── 6. Fetch GSTR-1 — GET /gstr1/retsum ─────────────────────────────────────
-// Per Postman: gstin, retperiod, email in query. txn in header.
+// ─── 6. Fetch GSTR-1 — GET /gstr1/retsum + /gstr1/b2b + /gstr1/b2cs + /gstr1/cdnr ──
 export const wbFetchGSTR1 = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
     const { gstin, period, authToken, gstUsername } = request.data as {
       gstin: string; period: string; authToken: string; gstUsername: string;
     };
-
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
     const g         = gstin.toUpperCase();
-    // smrytyp=E was incorrect (Export section only); use retsum without smrytyp for full summary
-    const url       = `${WB_BASE}/gstr1/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`;
 
-    const res = await fetch(url, {
-      method: "GET",
-      headers: baseHeaders({
-        "gst_username": gstUsername,
-        "state_cd":     stateCode,
-        "ip_address":   "1.1.1.1",
-        "txn":          authToken,
-      }),
+    const hdrs = baseHeaders({
+      "gst_username": gstUsername,
+      "state_cd":     stateCode,
+      "ip_address":   "1.1.1.1",
+      "txn":          authToken,
     });
 
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new HttpsError("unavailable", `GSTR-1 fetch failed (${res.status}): ${txt.substring(0, 300)}`);
+    const fetchSection = async (path: string): Promise<any> => {
+      try {
+        const res = await fetch(`${WB_BASE}${path}`, { method: "GET", headers: hdrs });
+        if (!res.ok) { console.warn(`GSTR-1 ${path} HTTP ${res.status}`); return null; }
+        const raw = await res.json();
+        if (raw?.status_cd === "0") { console.warn(`GSTR-1 ${path} API error: ${raw?.error?.message ?? raw?.status_cd}`); return null; }
+        return raw;
+      } catch (e) {
+        console.warn(`GSTR-1 ${path} exception: ${e}`);
+        return null;
+      }
+    };
+
+    // Parallel fetch: summary + three invoice sections
+    const [rsRaw, b2bRaw, b2csRaw, cdnrRaw] = await Promise.all([
+      fetchSection(`/gstr1/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`),
+      fetchSection(`/gstr1/b2b?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}&actionrequired=R`),
+      fetchSection(`/gstr1/b2cs?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`),
+      fetchSection(`/gstr1/cdnr?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}&actionrequired=R`),
+    ]);
+
+    if (!rsRaw && !b2bRaw && !b2csRaw && !cdnrRaw) {
+      throw new HttpsError("unavailable", "GSTR-1: All section fetches failed. Please check your GST portal session.");
     }
 
-    const raw = await res.json();
-    if (raw?.status_cd === "0") {
-      throw new HttpsError("unavailable", `GSTR-1 error: ${raw?.error?.message ?? JSON.stringify(raw)}`);
-    }
-    // Full diagnostic log — truncated to avoid log limits
-    console.info(`GSTR-1 raw (first 3000): ${JSON.stringify(raw).substring(0, 3000)}`);
-    const result = normalizeGSTR1(gstin, period, raw);
-    console.info(`GSTR-1 normalized: txval=${result.totalTaxableValue} igst=${result.totalIGST} cgst=${result.totalCGST} sgst=${result.totalSGST}`);
+    if (rsRaw) console.info(`GSTR-1 retsum (first 1500): ${JSON.stringify(rsRaw).substring(0, 1500)}`);
+    if (b2bRaw) console.info(`GSTR-1 b2b (first 1500): ${JSON.stringify(b2bRaw).substring(0, 1500)}`);
+
+    const result = normalizeGSTR1Full(gstin, period, rsRaw, b2bRaw, b2csRaw, cdnrRaw);
+    console.info(`GSTR-1 result: b2b=${result.b2bInvoices.length} b2cs=${result.b2csEntries.length} cdnr=${result.cdnrNotes.length} txval=${result.totalTaxableValue}`);
     return result;
   }
 );
@@ -431,116 +441,126 @@ function normalizeGSTR3B(gstin: string, period: string, raw: any) {
   };
 }
 
-function normalizeGSTR1(gstin: string, period: string, raw: any) {
-  const d = raw.data?.data ?? raw.data ?? raw;
-  const filedDate = d.filed_date ?? d.filedDate ?? d.filing_dt ?? d.dt ?? "";
+function normalizeGSTR1Full(gstin: string, period: string, rsRaw: any, b2bRaw: any, b2csRaw: any, cdnrRaw: any) {
+  // Filed date from retsum
+  const rsD = rsRaw?.data?.data ?? rsRaw?.data ?? rsRaw ?? {};
+  const filedDate = rsD.filed_date ?? rsD.filedDate ?? rsD.filing_dt ?? rsD.dt ?? "";
 
-  // Format 1: sec_sum array (full return summary — from /gstr1/retsum)
-  const secSum: any[] = d.sec_sum ?? d.secSum ?? [];
+  // ── B2B Invoices ──────────────────────────────────────────────────────────────
+  const b2bInvoices: any[] = [];
+  if (b2bRaw) {
+    const d = b2bRaw?.data?.data ?? b2bRaw?.data ?? b2bRaw;
+    for (const supplier of (d?.b2b ?? [])) {
+      for (const inv of (supplier.inv ?? [])) {
+        let taxable = 0, igst = 0, cgst = 0, sgst = 0, gstRate = 0;
+        for (const itm of (inv.itms ?? [])) {
+          const dt = itm.itm_det ?? itm;
+          taxable += Number(dt.txval ?? 0);
+          igst    += Number(dt.iamt  ?? 0);
+          cgst    += Number(dt.camt  ?? 0);
+          sgst    += Number(dt.samt  ?? 0);
+          if (!gstRate) gstRate = Number(dt.rt ?? 0);
+        }
+        if (taxable === 0 && igst === 0 && cgst === 0 && sgst === 0) {
+          taxable = Number(inv.txval ?? 0);
+          igst    = Number(inv.iamt  ?? 0);
+          cgst    = Number(inv.camt  ?? 0);
+          sgst    = Number(inv.samt  ?? 0);
+        }
+        b2bInvoices.push({
+          supplierGSTIN:  supplier.ctin ?? "",
+          supplierName:   supplier.trdnm ?? supplier.lgnm ?? "",
+          invoiceNumber:  inv.inum ?? "",
+          invoiceDate:    inv.idt ?? inv.inv_dt ?? "",
+          invoiceValue:   Number(inv.val ?? (taxable + igst + cgst + sgst)),
+          placeOfSupply:  inv.pos ?? "",
+          reverseCharge:  (inv.rchrg ?? "N") === "Y",
+          taxableValue:   taxable,
+          igst, cgst, sgst, gstRate,
+        });
+      }
+    }
+  }
+
+  // ── B2CS Entries ─────────────────────────────────────────────────────────────
+  const b2csEntries: any[] = [];
+  if (b2csRaw) {
+    const d = b2csRaw?.data?.data ?? b2csRaw?.data ?? b2csRaw;
+    for (const entry of (d?.b2cs ?? [])) {
+      b2csEntries.push({
+        supplyType:    entry.sply_ty ?? "INTRA",
+        placeOfSupply: entry.pos ?? "",
+        gstRate:       Number(entry.rt ?? 0),
+        taxableValue:  Number(entry.txval ?? 0),
+        igst:          Number(entry.iamt ?? 0),
+        cgst:          Number(entry.camt ?? 0),
+        sgst:          Number(entry.samt ?? 0),
+      });
+    }
+  }
+
+  // ── CDNR Notes ────────────────────────────────────────────────────────────────
+  const cdnrNotes: any[] = [];
+  if (cdnrRaw) {
+    const d = cdnrRaw?.data?.data ?? cdnrRaw?.data ?? cdnrRaw;
+    for (const receiver of (d?.cdnr ?? [])) {
+      for (const nt of (receiver.nt ?? [])) {
+        let taxable = 0, igst = 0, cgst = 0, sgst = 0;
+        for (const itm of (nt.itms ?? [])) {
+          const dt = itm.itm_det ?? itm;
+          taxable += Number(dt.txval ?? 0);
+          igst    += Number(dt.iamt  ?? 0);
+          cgst    += Number(dt.camt  ?? 0);
+          sgst    += Number(dt.samt  ?? 0);
+        }
+        cdnrNotes.push({
+          receiverGSTIN: receiver.ctin ?? "",
+          receiverName:  receiver.trdnm ?? receiver.lgnm ?? "",
+          noteType:      nt.ntty ?? "C",
+          noteNumber:    nt.nt_num ?? "",
+          noteDate:      nt.nt_dt ?? "",
+          noteValue:     Number(nt.val ?? 0),
+          taxableValue:  taxable,
+          igst, cgst, sgst,
+        });
+      }
+    }
+  }
+
+  // ── Section totals: prefer retsum B2B section, fallback to invoice data ──────
+  let totalTaxable = 0, totalIGST = 0, totalCGST = 0, totalSGST = 0;
+  const secSum: any[] = rsD.sec_sum ?? rsD.secSum ?? [];
   if (secSum.length > 0) {
-    // Log all section names so we can see exact API field shapes
-    console.info(`GSTR-1 sec_sum sections: ${JSON.stringify(secSum.map((s: any) => ({
-      nm: s.sec_nm ?? s.secNm,
-      txval: s.txval, iamt: s.iamt, camt: s.camt, samt: s.samt,
-    })))}`);
-
-    // Try exact "B2B" match first, then any section starting with "B2B"
-    let b2b = secSum.find((s: any) => (s.sec_nm ?? s.secNm ?? "").toUpperCase() === "B2B");
-    if (!b2b) {
-      b2b = secSum.find((s: any) => (s.sec_nm ?? s.secNm ?? "").toUpperCase().startsWith("B2B"));
-    }
-
-    if (b2b) {
-      console.info(`GSTR-1 B2B section found: ${JSON.stringify(b2b)}`);
-      return {
-        gstin, period, filedDate,
-        b2bInvoices: [],
-        totalTaxableValue: Number(b2b.txval ?? 0),
-        totalIGST: Number(b2b.iamt ?? 0),
-        totalCGST: Number(b2b.camt ?? 0),
-        totalSGST: Number(b2b.samt ?? 0),
-      };
-    }
-
-    // No B2B section — aggregate all sections as total outward supplies
-    let txval = 0, iamt = 0, camt = 0, samt = 0;
-    for (const s of secSum) {
-      txval += Number(s.txval ?? 0);
-      iamt  += Number(s.iamt  ?? 0);
-      camt  += Number(s.camt  ?? 0);
-      samt  += Number(s.samt  ?? 0);
-    }
-    console.info(`GSTR-1 no B2B section, summing all ${secSum.length} sections: txval=${txval} iamt=${iamt} camt=${camt} samt=${samt}`);
-    if (txval > 0 || iamt > 0 || camt > 0 || samt > 0) {
-      return { gstin, period, filedDate, b2bInvoices: [], totalTaxableValue: txval, totalIGST: iamt, totalCGST: camt, totalSGST: samt };
-    }
-    // sec_sum was present but empty-valued — fall through to other formats
-  }
-
-  // Format 2: sup_details object (GSTR-3B-style aggregate)
-  const sup = d.sup_details ?? d.supDetails ?? null;
-  if (sup) {
-    const igst = Number(sup?.osup_det?.iamt ?? 0);
-    const cgst = Number(sup?.osup_det?.camt ?? 0);
-    const sgst = Number(sup?.osup_det?.samt ?? 0);
-    console.info(`GSTR-1 Format 2 sup_details: txval=${sup?.osup_det?.txval} igst=${igst}`);
-    return {
-      gstin, period, filedDate,
-      b2bInvoices: [],
-      totalTaxableValue: Number(sup?.osup_det?.txval ?? 0),
-      totalIGST: igst, totalCGST: cgst, totalSGST: sgst,
-    };
-  }
-
-  // Format 3: top-level aggregate fields (gt / cur_gt = grand total taxable)
-  if (d.gt !== undefined || d.cur_gt !== undefined) {
-    const totalGT = Number(d.gt ?? d.cur_gt ?? 0);
-    console.info(`GSTR-1 Format 3 gt field: ${totalGT}`);
-    return {
-      gstin, period, filedDate,
-      b2bInvoices: [],
-      totalTaxableValue: totalGT,
-      totalIGST: Number(d.iamt ?? d.igst ?? 0),
-      totalCGST: Number(d.camt ?? d.cgst ?? 0),
-      totalSGST: Number(d.samt ?? d.sgst ?? 0),
-    };
-  }
-
-  // Format 4: b2b invoice array (full filing data)
-  const b2bList: any[] = d?.b2b ?? d?.data?.b2b ?? [];
-  console.info(`GSTR-1 Format 4 b2b invoices: ${b2bList.length} suppliers`);
-  const b2bInvoices = b2bList.flatMap((supplier: any) =>
-    (supplier.inv ?? []).map((inv: any) => {
-      const items = inv.itms ?? [];
-      let taxable = 0, igst = 0, cgst = 0, sgst = 0;
-      for (const itm of items) {
-        const dt = itm.itm_det ?? itm;
-        taxable += Number(dt.txval ?? 0);
-        igst    += Number(dt.iamt  ?? 0);
-        cgst    += Number(dt.camt  ?? 0);
-        sgst    += Number(dt.samt  ?? 0);
+    console.info(`GSTR-1 sec_sum: ${JSON.stringify(secSum.map((s: any) => ({ nm: s.sec_nm, txval: s.txval })))}`);
+    let b2bSec = secSum.find((s: any) => (s.sec_nm ?? "").toUpperCase() === "B2B");
+    if (!b2bSec) b2bSec = secSum.find((s: any) => (s.sec_nm ?? "").toUpperCase().startsWith("B2B"));
+    if (b2bSec) {
+      totalTaxable = Number(b2bSec.txval ?? 0);
+      totalIGST    = Number(b2bSec.iamt  ?? 0);
+      totalCGST    = Number(b2bSec.camt  ?? 0);
+      totalSGST    = Number(b2bSec.samt  ?? 0);
+    } else {
+      for (const s of secSum) {
+        totalTaxable += Number(s.txval ?? 0);
+        totalIGST    += Number(s.iamt  ?? 0);
+        totalCGST    += Number(s.camt  ?? 0);
+        totalSGST    += Number(s.samt  ?? 0);
       }
-      if (taxable === 0 && igst === 0 && cgst === 0 && sgst === 0) {
-        taxable = Number(inv.txval ?? 0);
-        igst    = Number(inv.iamt  ?? 0);
-        cgst    = Number(inv.camt  ?? 0);
-        sgst    = Number(inv.samt  ?? 0);
-      }
-      return {
-        invoiceNumber: inv.inum ?? "", invoiceDate: inv.idt ?? inv.inv_dt ?? "",
-        receiverGSTIN: supplier.ctin ?? "", receiverName: supplier.trdnm ?? supplier.lgnm ?? "",
-        placeOfSupply: inv.pos ?? "", taxableValue: taxable, igst, cgst, sgst,
-        invoiceValue: taxable + igst + cgst + sgst,
-      };
-    })
-  );
+    }
+  }
+  // Derive totals from B2B invoice data when retsum gave zeros
+  if (totalTaxable === 0 && b2bInvoices.length > 0) {
+    totalTaxable = b2bInvoices.reduce((s: number, i: any) => s + i.taxableValue, 0);
+    totalIGST    = b2bInvoices.reduce((s: number, i: any) => s + i.igst, 0);
+    totalCGST    = b2bInvoices.reduce((s: number, i: any) => s + i.cgst, 0);
+    totalSGST    = b2bInvoices.reduce((s: number, i: any) => s + i.sgst, 0);
+  }
+
   return {
     gstin, period, filedDate,
-    b2bInvoices,
-    totalTaxableValue: b2bInvoices.reduce((s: number, i: any) => s + i.taxableValue, 0),
-    totalIGST:         b2bInvoices.reduce((s: number, i: any) => s + i.igst, 0),
-    totalCGST:         b2bInvoices.reduce((s: number, i: any) => s + i.cgst, 0),
-    totalSGST:         b2bInvoices.reduce((s: number, i: any) => s + i.sgst, 0),
+    b2bInvoices, b2csEntries, cdnrNotes,
+    totalTaxableValue: totalTaxable,
+    totalIGST, totalCGST, totalSGST,
   };
 }
 
