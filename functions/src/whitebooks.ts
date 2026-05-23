@@ -555,33 +555,46 @@ function normalizeGSTR1Full(gstin: string, period: string, rsRaw: any, b2bRaw: a
     }
   }
 
-  // ── Section totals: prefer retsum B2B section, fallback to invoice data ──────
-  let totalTaxable = 0, totalIGST = 0, totalCGST = 0, totalSGST = 0;
-  const secSum: any[] = rsD.sec_sum ?? rsD.secSum ?? [];
-  if (secSum.length > 0) {
-    console.info(`GSTR-1 sec_sum: ${JSON.stringify(secSum.map((s: any) => ({ nm: s.sec_nm, txval: s.txval })))}`);
-    let b2bSec = secSum.find((s: any) => (s.sec_nm ?? "").toUpperCase() === "B2B");
-    if (!b2bSec) b2bSec = secSum.find((s: any) => (s.sec_nm ?? "").toUpperCase().startsWith("B2B"));
-    if (b2bSec) {
-      totalTaxable = Number(b2bSec.txval ?? 0);
-      totalIGST    = Number(b2bSec.iamt  ?? 0);
-      totalCGST    = Number(b2bSec.camt  ?? 0);
-      totalSGST    = Number(b2bSec.samt  ?? 0);
-    } else {
-      for (const s of secSum) {
-        totalTaxable += Number(s.txval ?? 0);
-        totalIGST    += Number(s.iamt  ?? 0);
-        totalCGST    += Number(s.camt  ?? 0);
-        totalSGST    += Number(s.samt  ?? 0);
-      }
+  // ── Section totals: sum across B2B + B2CS, adjusted by CDNR (credit −, debit +) ──
+  // This matches what the GST portal shows as the GSTR-1 grand total for outward supplies.
+  const sumSection = (arr: any[]) => arr.reduce(
+    (acc, x) => ({
+      taxable: acc.taxable + Number(x.taxableValue ?? 0),
+      igst:    acc.igst    + Number(x.igst ?? 0),
+      cgst:    acc.cgst    + Number(x.cgst ?? 0),
+      sgst:    acc.sgst    + Number(x.sgst ?? 0),
+    }),
+    { taxable: 0, igst: 0, cgst: 0, sgst: 0 }
+  );
+  const b2bTot  = sumSection(b2bInvoices);
+  const b2csTot = sumSection(b2csEntries);
+  const cdnrTot = cdnrNotes.reduce(
+    (acc, n: any) => {
+      const sign = (n.noteType ?? "C") === "C" ? -1 : 1; // Credit reduces, Debit increases
+      return {
+        taxable: acc.taxable + sign * Number(n.taxableValue ?? 0),
+        igst:    acc.igst    + sign * Number(n.igst ?? 0),
+        cgst:    acc.cgst    + sign * Number(n.cgst ?? 0),
+        sgst:    acc.sgst    + sign * Number(n.sgst ?? 0),
+      };
+    },
+    { taxable: 0, igst: 0, cgst: 0, sgst: 0 }
+  );
+  let totalTaxable = b2bTot.taxable + b2csTot.taxable + cdnrTot.taxable;
+  let totalIGST    = b2bTot.igst    + b2csTot.igst    + cdnrTot.igst;
+  let totalCGST    = b2bTot.cgst    + b2csTot.cgst    + cdnrTot.cgst;
+  let totalSGST    = b2bTot.sgst    + b2csTot.sgst    + cdnrTot.sgst;
+
+  // Fallback to retsum sec_sum totals if every section came back empty
+  if (totalTaxable === 0 && totalIGST === 0 && totalCGST === 0 && totalSGST === 0) {
+    const secSum: any[] = rsD.sec_sum ?? rsD.secSum ?? [];
+    console.info(`GSTR-1 sec_sum fallback: ${JSON.stringify(secSum.map((s: any) => ({ nm: s.sec_nm, txval: s.txval })))}`);
+    for (const s of secSum) {
+      totalTaxable += Number(s.txval ?? 0);
+      totalIGST    += Number(s.iamt  ?? 0);
+      totalCGST    += Number(s.camt  ?? 0);
+      totalSGST    += Number(s.samt  ?? 0);
     }
-  }
-  // Derive totals from B2B invoice data when retsum gave zeros
-  if (totalTaxable === 0 && b2bInvoices.length > 0) {
-    totalTaxable = b2bInvoices.reduce((s: number, i: any) => s + i.taxableValue, 0);
-    totalIGST    = b2bInvoices.reduce((s: number, i: any) => s + i.igst, 0);
-    totalCGST    = b2bInvoices.reduce((s: number, i: any) => s + i.cgst, 0);
-    totalSGST    = b2bInvoices.reduce((s: number, i: any) => s + i.sgst, 0);
   }
 
   return {
