@@ -833,6 +833,23 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
             <div>
               {gstr1Online ? (
                 <div className="space-y-4">
+                  {/* Refresh-failed error banner — visible even when old cache data is showing */}
+                  {gstr1FetchError && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
+                      <AlertTriangle size={14} className="text-red-500 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-red-700 mb-0.5">Refresh Failed — showing cached data</p>
+                        <p className="text-xs text-red-600 break-all">{gstr1FetchError}</p>
+                      </div>
+                    </div>
+                  )}
+                  {/* Stale cache notice when _fetchStatus is missing (old cached data without diagnostics) */}
+                  {!gstr1Online._fetchStatus && !gstr1FetchError && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 flex items-center gap-2">
+                      <AlertCircle size={13} className="text-amber-500 shrink-0" />
+                      <p className="text-xs text-amber-700">Showing cached data. Click <strong>Refresh GSTR-1</strong> to re-fetch from the portal.</p>
+                    </div>
+                  )}
                   {/* Summary cards */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
