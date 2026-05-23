@@ -283,6 +283,12 @@ export const wbFetchGSTR1 = onCall(
         console.info(`GSTR-1 [${label}] raw: ${JSON.stringify(raw).substring(0, 2000)}`);
         if (raw?.status_cd === "0" || (raw?.status_cd && raw.status_cd !== "1")) {
           const errMsg = raw?.error?.message ?? raw?.error?.error_cd ?? raw?.message ?? `status_cd=${raw.status_cd}`;
+          // Treat known "no data" responses as a successful empty fetch — common for CDNR/B2CS when
+          // the taxpayer has no records of that type in the period.
+          if (/no document found|no data|no record|return not found|not filed/i.test(errMsg)) {
+            console.info(`GSTR-1 [${label}] no data: ${errMsg}`);
+            return { data: null, note: "ok (no data)" };
+          }
           console.warn(`GSTR-1 [${label}] API error: ${errMsg}`);
           return { data: null, note: `API error: ${errMsg}` };
         }

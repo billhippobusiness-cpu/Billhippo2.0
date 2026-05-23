@@ -228,6 +228,12 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
   // Customer map
   const custMap = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers]);
+  // GSTIN → customer name map for resolving portal data receiver names
+  const custByGstin = useMemo(() => {
+    const m = new Map<string, string>();
+    customers.forEach(c => { if (c.gstin) m.set(c.gstin.toUpperCase(), c.name); });
+    return m;
+  }, [customers]);
 
   // Month options (last 12 months)
   const months = useMemo(() => {
@@ -887,7 +893,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                         <table className="w-full text-sm">
                           <thead className="bg-slate-50">
                             <tr>
-                              {['#', 'Invoice #', 'Date', 'Supplier Name', 'Supplier GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax', 'GST%', 'RC'].map(h => (
+                              {['#', 'Invoice #', 'Date', 'Customer Name', 'Customer GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax', 'GST%', 'RC'].map(h => (
                                 <th key={h} className="px-3 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                               ))}
                             </tr>
@@ -898,7 +904,9 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                                 <td className="px-3 py-2.5 text-xs text-slate-400">{i + 1}</td>
                                 <td className="px-3 py-2.5 text-xs font-semibold text-slate-800">{inv.invoiceNumber}</td>
                                 <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{inv.invoiceDate}</td>
-                                <td className="px-3 py-2.5 text-xs text-slate-700 max-w-[140px] truncate">{inv.supplierName}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-700 max-w-[140px] truncate">
+                                  {inv.supplierName || custByGstin.get((inv.supplierGSTIN ?? '').toUpperCase()) || <span className="text-slate-400">—</span>}
+                                </td>
                                 <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{inv.supplierGSTIN}</td>
                                 <td className="px-3 py-2.5 text-xs text-right text-slate-700">{inr(inv.taxableValue)}</td>
                                 <td className="px-3 py-2.5 text-xs text-right text-slate-600">{inv.igst > 0 ? inr(inv.igst) : '—'}</td>
@@ -958,7 +966,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                         <table className="w-full text-sm">
                           <thead className="bg-slate-50">
                             <tr>
-                              {['#', 'Type', 'Note #', 'Date', 'Receiver Name', 'Receiver GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax'].map(h => (
+                              {['#', 'Type', 'Note #', 'Date', 'Customer Name', 'Customer GSTIN', 'Taxable', 'IGST', 'CGST', 'SGST', 'Total Tax'].map(h => (
                                 <th key={h} className="px-3 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                               ))}
                             </tr>
@@ -974,7 +982,9 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                                 </td>
                                 <td className="px-3 py-2.5 text-xs font-semibold text-slate-800">{note.noteNumber}</td>
                                 <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{note.noteDate}</td>
-                                <td className="px-3 py-2.5 text-xs text-slate-700 max-w-[140px] truncate">{note.receiverName}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-700 max-w-[140px] truncate">
+                                  {note.receiverName || custByGstin.get((note.receiverGSTIN ?? '').toUpperCase()) || <span className="text-slate-400">—</span>}
+                                </td>
                                 <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{note.receiverGSTIN}</td>
                                 <td className="px-3 py-2.5 text-xs text-right text-slate-700">{inr(note.taxableValue)}</td>
                                 <td className="px-3 py-2.5 text-xs text-right text-slate-600">{note.igst > 0 ? inr(note.igst) : '—'}</td>
@@ -1038,7 +1048,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     <details className="text-xs border border-slate-200 rounded-xl overflow-hidden">
                       <summary className="px-4 py-2 bg-slate-50 cursor-pointer font-semibold text-slate-500 select-none flex items-center gap-2">
                         <span>API Diagnostics</span>
-                        {Object.values(gstr1Online._fetchStatus).every(v => v === 'ok')
+                        {Object.values(gstr1Online._fetchStatus).every(v => v.startsWith('ok'))
                           ? <span className="text-emerald-600 font-bold">✓ All OK</span>
                           : <span className="text-amber-600 font-bold">⚠ Check details</span>}
                       </summary>
@@ -1046,7 +1056,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                         {Object.entries(gstr1Online._fetchStatus).map(([k, v]) => (
                           <div key={k} className="flex items-start gap-2">
                             <span className="font-bold text-slate-600 w-14 shrink-0">{k}:</span>
-                            <span className={v === 'ok' ? 'text-emerald-600' : 'text-red-500 break-all'}>{v}</span>
+                            <span className={v.startsWith('ok') ? 'text-emerald-600' : 'text-red-500 break-all'}>{v}</span>
                           </div>
                         ))}
                       </div>
