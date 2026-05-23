@@ -234,6 +234,12 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     customers.forEach(c => { if (c.gstin) m.set(c.gstin.toUpperCase(), c.name); });
     return m;
   }, [customers]);
+  // Invoice number → customer name (fallback for portal data when customer isn't in DB by GSTIN)
+  const custByInvoiceNumber = useMemo(() => {
+    const m = new Map<string, string>();
+    invoices.forEach(i => { if (i.invoiceNumber) m.set(i.invoiceNumber, i.customerName); });
+    return m;
+  }, [invoices]);
 
   // Month options (last 12 months)
   const months = useMemo(() => {
@@ -905,7 +911,10 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                                 <td className="px-3 py-2.5 text-xs font-semibold text-slate-800">{inv.invoiceNumber}</td>
                                 <td className="px-3 py-2.5 text-xs text-slate-500 whitespace-nowrap">{inv.invoiceDate}</td>
                                 <td className="px-3 py-2.5 text-xs text-slate-700 max-w-[140px] truncate">
-                                  {inv.supplierName || custByGstin.get((inv.supplierGSTIN ?? '').toUpperCase()) || <span className="text-slate-400">—</span>}
+                                  {inv.supplierName
+                                    || custByGstin.get((inv.supplierGSTIN ?? '').toUpperCase())
+                                    || custByInvoiceNumber.get(inv.invoiceNumber ?? '')
+                                    || <span className="text-slate-400">—</span>}
                                 </td>
                                 <td className="px-3 py-2.5 text-xs font-mono text-slate-500">{inv.supplierGSTIN}</td>
                                 <td className="px-3 py-2.5 text-xs text-right text-slate-700">{inr(inv.taxableValue)}</td>
