@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX, IndianRupee, Receipt } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
+import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -1810,6 +1811,38 @@ const QuickCreateCustomerModal: React.FC<{
   saving: boolean;
 }> = ({ form, setForm, onSave, onClose, saving }) => {
   const STATES = ['Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Delhi','Jammu and Kashmir','Ladakh','Puducherry','Chandigarh','Dadra and Nagar Haveli and Daman and Diu','Lakshadweep','Andaman and Nicobar Islands'];
+
+  const [gstinFetching, setGstinFetching] = useState(false);
+  const [gstinFetchResult, setGstinFetchResult] = useState<GSTINDetails | null>(null);
+  const [gstinFetchError, setGstinFetchError] = useState<string | null>(null);
+
+  const handleFetchGSTIN = async () => {
+    const g = form.gstin.trim().toUpperCase();
+    if (!g || g.length !== 15) {
+      setGstinFetchError('Please enter a valid 15-character GSTIN');
+      return;
+    }
+    setGstinFetching(true);
+    setGstinFetchResult(null);
+    setGstinFetchError(null);
+    try {
+      const result = await lookupGSTIN(g);
+      setGstinFetchResult(result);
+      setForm({
+        ...form,
+        name: form.name || result.tradeName || result.legalName,
+        address: form.address || result.address,
+        city: form.city || result.city,
+        state: result.state || form.state,
+        pincode: form.pincode || result.pincode,
+      });
+    } catch (err: any) {
+      setGstinFetchError(err?.message ?? 'Could not fetch GSTIN details. Check GSTIN and try again.');
+    } finally {
+      setGstinFetching(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 max-h-[90vh] flex flex-col">
@@ -1828,11 +1861,43 @@ const QuickCreateCustomerModal: React.FC<{
           </div>
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">GSTIN</label>
-            <input
-              type="text" value={form.gstin} onChange={e => setForm({ ...form, gstin: e.target.value.toUpperCase() })}
-              placeholder="15-digit GSTIN"
-              className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100 uppercase"
-            />
+            <div className="flex gap-2">
+              <input
+                type="text" value={form.gstin} onChange={e => { setForm({ ...form, gstin: e.target.value.toUpperCase() }); setGstinFetchResult(null); setGstinFetchError(null); }}
+                placeholder="15-digit GSTIN"
+                className="flex-1 bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium border-none focus:ring-2 ring-indigo-100 uppercase"
+              />
+              <button
+                type="button"
+                onClick={handleFetchGSTIN}
+                disabled={gstinFetching || !form.gstin || form.gstin.length !== 15}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 whitespace-nowrap"
+              >
+                {gstinFetching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                {gstinFetching ? 'Fetching…' : 'Fetch'}
+              </button>
+            </div>
+            {gstinFetchError && (
+              <p className="mt-1.5 text-xs text-rose-500 font-medium">{gstinFetchError}</p>
+            )}
+            {gstinFetchResult && (
+              <div className="mt-2 p-3 bg-emerald-50 border border-emerald-100 rounded-xl space-y-1.5">
+                <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Details Fetched — Form auto-filled</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div><span className="text-slate-400">Legal Name:</span> <span className="font-bold text-slate-700">{gstinFetchResult.legalName}</span></div>
+                  {gstinFetchResult.tradeName && gstinFetchResult.tradeName !== gstinFetchResult.legalName && (
+                    <div><span className="text-slate-400">Trade Name:</span> <span className="font-bold text-slate-700">{gstinFetchResult.tradeName}</span></div>
+                  )}
+                  <div><span className="text-slate-400">Type:</span> <span className="font-bold text-slate-700">{gstinFetchResult.taxpayerType || '—'}</span></div>
+                  <div>
+                    <span className="text-slate-400">Status:</span>{' '}
+                    <span className={`font-bold text-[10px] px-1.5 py-0.5 rounded-full ${gstinFetchResult.status?.toLowerCase() === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'}`}>
+                      {gstinFetchResult.status || '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Phone</label>
