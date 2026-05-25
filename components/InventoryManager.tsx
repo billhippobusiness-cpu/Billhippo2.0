@@ -23,7 +23,7 @@ import {
 } from '../lib/firestore';
 import type { InventoryItem, BusinessProfile } from '../types';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
-import PDFPreviewModal from './pdf/PDFPreviewModal';
+import { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InventoryStatementPDF, { type InventoryStatementRow } from './pdf/InventoryStatementPDF';
 
 const UNITS = ['PCS', 'KG', 'GMS', 'LTR', 'MTR', 'BOX', 'NOS', 'SET', 'BAG', 'PKT'];
@@ -739,11 +739,9 @@ export default function InventoryManager({ userId }: Props) {
         </div>
       )}
 
-      {/* ── PDF Preview Modal ── */}
+      {/* ── Inventory Statement direct download ── */}
       {statementPdf && (
-        <PDFPreviewModal
-          open={true}
-          onClose={() => setStatementPdf(null)}
+        <PDFDirectDownload
           fileName={`Inventory-Statement-${statementPdf.fromDate}-to-${statementPdf.toDate}.pdf`}
           document={
             <InventoryStatementPDF
@@ -754,6 +752,7 @@ export default function InventoryManager({ userId }: Props) {
               logoUrl={statementPdf.profile.theme?.logoUrl}
             />
           }
+          onDone={() => setStatementPdf(null)}
         />
       )}
     </div>

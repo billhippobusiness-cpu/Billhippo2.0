@@ -24,7 +24,7 @@ import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebit
 import { downloadGSTR1Excel, downloadGSTR1JSON } from '../lib/gstr1Generator';
 import { downloadSalesRegisterExcel, downloadNotesRegisterExcel, downloadHSNExcel, aggregateHSN } from '../lib/salesRegisterExport';
 import { Invoice, GSTType, Customer, BusinessProfile, CreditNote, DebitNote } from '../types';
-import PDFPreviewModal from './pdf/PDFPreviewModal';
+import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import SalesRegisterPDF from './pdf/SalesRegisterPDF';
 import GSTR3BPDF from './pdf/GSTR3BPDF';
 import { fetchGSTR2B, fetchGSTR3BOnline, fetchGSTR1Online, GSTR2BData, GSTR3BOnlineData, GSTR1OnlineData } from '../lib/whitebooksApi';
@@ -1865,11 +1865,9 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
         </div>
       )}
 
-      {/* ── PDF Preview Modal ── */}
-      {profile && (
-        <PDFPreviewModal
-          open={pdfModalOpen}
-          onClose={() => setPdfModalOpen(false)}
+      {/* ── Sales Register direct download ── */}
+      {pdfModalOpen && profile && (
+        <PDFDirectDownload
           document={
             <SalesRegisterPDF
               profile={profile}
@@ -1880,14 +1878,13 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
             />
           }
           fileName={`Sales_Register_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}
+          onDone={() => setPdfModalOpen(false)}
         />
       )}
 
-      {/* ── GSTR-3B PDF Preview Modal ── */}
-      {profile && (
-        <PDFPreviewModal
-          open={gstr3bPdfOpen}
-          onClose={() => setGstr3bPdfOpen(false)}
+      {/* ── GSTR-3B direct download ── */}
+      {gstr3bPdfOpen && profile && (
+        <PDFDirectDownload
           document={
             <GSTR3BPDF
               profile={profile}
@@ -1901,6 +1898,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
             />
           }
           fileName={`GSTR-3B_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}
+          onDone={() => setGstr3bPdfOpen(false)}
         />
       )}
 
@@ -1978,13 +1976,12 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
         />
       )}
 
-      {/* GSTR-2B PDF Modal */}
+      {/* GSTR-2B direct download */}
       {gstr2bPdfOpen && gstr2bData && profile && (
-        <PDFPreviewModal
-          open={gstr2bPdfOpen}
-          onClose={() => setGstr2bPdfOpen(false)}
+        <PDFDirectDownload
           document={<GSTR2BPDF data={gstr2bData} businessName={profile.name} businessGSTIN={profile.gstin} />}
           fileName={`GSTR-2B-${profile.gstin}-${gstr2bData.period}.pdf`}
+          onDone={() => setGstr2bPdfOpen(false)}
         />
       )}
     </div>

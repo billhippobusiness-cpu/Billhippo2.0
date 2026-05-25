@@ -11,7 +11,7 @@ import {
   getQuotations, addQuotation, updateQuotation, deleteQuotation, getTotalQuotationCount,
   getInvoices,
 } from '../lib/firestore';
-import PDFPreviewModal from './pdf/PDFPreviewModal';
+import { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import QuotationPDF from './pdf/QuotationPDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 
@@ -144,8 +144,8 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
   const [deleteTarget, setDeleteTarget] = useState<Quotation | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // PDF modal
-  const [pdfModal, setPdfModal] = useState<{ open: boolean; quotation: Quotation | null }>({ open: false, quotation: null });
+  // PDF direct download target
+  const [downloadTarget, setDownloadTarget] = useState<{ document: React.ReactElement; fileName: string } | null>(null);
 
   // List filter & search
   const [statusFilter, setStatusFilter] = useState<QuotationStatus | 'All'>('All');
@@ -683,7 +683,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
             <div className="bg-white border border-slate-100 rounded-2xl p-5 space-y-3">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Share & Export</p>
               <button
-                onClick={() => setPdfModal({ open: true, quotation: q })}
+                onClick={() => setDownloadTarget({ document: <QuotationPDF quotation={q} business={profile} customer={customer ?? { id: '', name: q.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }} />, fileName: `Quotation-${q.quotationNumber.replace(/\//g, '-')}.pdf` })}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 text-slate-700 font-bold text-sm hover:bg-slate-100 transition-all font-poppins"
               >
                 <Download size={16} /> Download PDF
@@ -714,19 +714,12 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
           </div>
         </div>
 
-        {/* PDF Modal */}
-        {pdfModal.open && pdfModal.quotation && (
-          <PDFPreviewModal
-            open={pdfModal.open}
-            onClose={() => setPdfModal({ open: false, quotation: null })}
-            document={
-              <QuotationPDF
-                quotation={pdfModal.quotation}
-                business={profile}
-                customer={customer ?? { id: '', name: pdfModal.quotation.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
-              />
-            }
-            fileName={`Quotation-${pdfModal.quotation.quotationNumber.replace(/\//g, '-')}.pdf`}
+        {/* PDF direct download */}
+        {downloadTarget && (
+          <PDFDirectDownload
+            document={downloadTarget.document}
+            fileName={downloadTarget.fileName}
+            onDone={() => setDownloadTarget(null)}
           />
         )}
 
@@ -1293,7 +1286,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                           </button>
                         )}
                         <button
-                          onClick={() => { setPdfModal({ open: true, quotation: q }); }}
+                          onClick={() => { const cust = customers.find(c => c.id === q.customerId) ?? { id: '', name: q.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }; setDownloadTarget({ document: <QuotationPDF quotation={q} business={profile} customer={cust} />, fileName: `Quotation-${q.quotationNumber.replace(/\//g, '-')}.pdf` }); }}
                           title="Download PDF"
                           className="p-2 rounded-xl hover:bg-amber-50 text-slate-400 hover:text-amber-600 transition-colors"
                         >
@@ -1333,22 +1326,12 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
         </div>
       )}
 
-      {/* PDF Modal (from list) */}
-      {pdfModal.open && pdfModal.quotation && (
-        <PDFPreviewModal
-          open={pdfModal.open}
-          onClose={() => setPdfModal({ open: false, quotation: null })}
-          document={
-            <QuotationPDF
-              quotation={pdfModal.quotation}
-              business={profile}
-              customer={customers.find(c => c.id === pdfModal.quotation!.customerId) ?? {
-                id: '', name: pdfModal.quotation.customerName, phone: '', email: '',
-                address: '', city: '', state: '', pincode: '', balance: 0,
-              }}
-            />
-          }
-          fileName={`Quotation-${pdfModal.quotation.quotationNumber.replace(/\//g, '-')}.pdf`}
+      {/* PDF direct download (from list) */}
+      {downloadTarget && (
+        <PDFDirectDownload
+          document={downloadTarget.document}
+          fileName={downloadTarget.fileName}
+          onDone={() => setDownloadTarget(null)}
         />
       )}
 

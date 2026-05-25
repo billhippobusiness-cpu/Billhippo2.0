@@ -1101,9 +1101,9 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                             >
                               <Pencil size={15} />
                             </button>
-                            {/* Download — open PDF preview modal */}
+                            {/* Download PDF */}
                             <button
-                              onClick={() => openPDFModal(note, activeTab, custObj)}
+                              onClick={() => setDownloadTarget({ note, noteType: activeTab, customer: custObj })}
                               title="Download PDF"
                               className="p-2 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all"
                             >

@@ -438,7 +438,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
             </button>
             {ledgerEntries.length > 0 && businessProfile && (
               <button
-                onClick={() => { haptic('light'); setLedgerPdfOpen(true); }}
+                onClick={() => { haptic('light'); const n = new Date(); const dateStr = `${String(n.getDate()).padStart(2,'0')}-${String(n.getMonth()+1).padStart(2,'0')}-${n.getFullYear()}`; setDownloadTarget({ document: <LedgerPDF customer={selectedCustomer} entries={ledgerEntries} businessName={businessProfile.name} businessInfo={{ gstin: businessProfile.gstin || '', address: [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode].filter(Boolean).join(', '), phone: businessProfile.phone || '', email: businessProfile.email || '' }} logoUrl={businessProfile.theme?.logoUrl} signatureUrl={businessProfile.signatureUrl} statementDate={dateStr} />, fileName: `Statement-${selectedCustomer.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf` }); }}
                 className="flex items-center gap-1.5 bg-profee-blue text-white px-4 py-2.5 rounded-2xl text-sm font-bold active:scale-95 transition-all shadow-xl shadow-indigo-100 font-poppins"
               >
                 <Download size={15} /> <span className="hidden sm:inline">Download </span>Statement
@@ -1051,30 +1051,6 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
           </div>
         )}
 
-        {/* Ledger Statement PDF Modal */}
-        {ledgerPdfOpen && businessProfile && (
-          <PDFPreviewModal
-            open={ledgerPdfOpen}
-            onClose={() => setLedgerPdfOpen(false)}
-            document={
-              <LedgerPDF
-                customer={selectedCustomer}
-                entries={ledgerEntries}
-                businessName={businessProfile.name}
-                businessInfo={{
-                  gstin: businessProfile.gstin || '',
-                  address: [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode].filter(Boolean).join(', '),
-                  phone: businessProfile.phone || '',
-                  email: businessProfile.email || '',
-                }}
-                logoUrl={businessProfile.theme?.logoUrl}
-                signatureUrl={businessProfile.signatureUrl}
-                statementDate={(() => { const n = new Date(); return `${String(n.getDate()).padStart(2,'0')}-${String(n.getMonth()+1).padStart(2,'0')}-${n.getFullYear()}`; })()}
-              />
-            }
-            fileName={`Statement-${selectedCustomer.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`}
-          />
-        )}
 
         {/* Receipt PDF Modal */}
         {receiptPdfData.open && receiptPdfData.entry && businessProfile && (

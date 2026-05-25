@@ -6,7 +6,7 @@ import {
 import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, BarChart3, Loader2, ChevronDown, Calendar, RefreshCw, X, ExternalLink, Plus } from 'lucide-react';
 import { Invoice, Customer, LedgerEntry, BusinessProfile } from '../types';
 import { getInvoices, getCustomers, getLedgerEntries, getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
-import PDFPreviewModal from './pdf/PDFPreviewModal';
+import { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 
 interface DashboardProps { userId: string; onNavigate?: (tab: string) => void; }
@@ -60,8 +60,8 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
   const [pendingFY, setPendingFY] = useState('');
   const [savingPrefix, setSavingPrefix] = useState(false);
 
-  // ── PDF preview modal ──
-  const [pdfModal, setPdfModal] = useState<{ open: boolean; invoice: Invoice | null; customer: Customer | null }>({ open: false, invoice: null, customer: null });
+  // ── PDF direct download target ──
+  const [downloadTarget, setDownloadTarget] = useState<{ invoice: Invoice; customer: Customer | null } | null>(null);
 
   // ── Stat card hover state for colored glow ──
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
@@ -512,7 +512,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
               return (
                 <button
                   key={inv.id}
-                  onClick={() => profile && setPdfModal({ open: true, invoice: inv, customer })}
+                  onClick={() => profile && setDownloadTarget({ invoice: inv, customer })}
                   className="w-full flex items-center justify-between p-6 bg-slate-50 rounded-2xl hover:bg-indigo-50/60 hover:shadow-sm transition-all duration-200 group text-left"
                 >
                   <div className="flex items-center gap-4">
@@ -536,19 +536,18 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
         </div>
       )}
 
-      {/* Invoice PDF Preview Modal */}
-      {pdfModal.open && pdfModal.invoice && profile && (
-        <PDFPreviewModal
-          open={pdfModal.open}
-          onClose={() => setPdfModal({ open: false, invoice: null, customer: null })}
+      {/* Invoice direct download */}
+      {downloadTarget && profile && (
+        <PDFDirectDownload
           document={
             <InvoicePDF
-              invoice={pdfModal.invoice}
+              invoice={downloadTarget.invoice}
               business={profile}
-              customer={pdfModal.customer || { id: '', name: pdfModal.invoice.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
+              customer={downloadTarget.customer || { id: '', name: downloadTarget.invoice.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
             />
           }
-          fileName={`Invoice-${pdfModal.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+          fileName={`Invoice-${downloadTarget.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+          onDone={() => setDownloadTarget(null)}
         />
       )}
     </div>
