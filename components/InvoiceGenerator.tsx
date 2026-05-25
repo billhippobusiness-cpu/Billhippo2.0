@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX, IndianRupee, Receipt } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
+import HSNSearchModal, { HSNInput } from './HSNSearchModal';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import { haptic } from '../lib/haptic';
@@ -112,6 +113,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   // Inline description autocomplete
   const [activeDescItemId, setActiveDescItemId] = useState<string | null>(null);
 
+  // HSN search modal
+  const [hsnModalItemId, setHsnModalItemId] = useState<string | null>(null);
+
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -202,13 +206,22 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const isExportSupply = effectiveSupplyType === 'EXPWP' || effectiveSupplyType === 'EXPWOP';
   const isSEZSupply = effectiveSupplyType === 'SEZWP' || effectiveSupplyType === 'SEZWOP';
 
+  const hsnMinDigits = profile.annualTurnover === 'above5cr' ? 6 : 4;
+
   // HSN validation warning (non-blocking)
   const hsnWarning = useMemo(() => {
-    const minDigits = profile.annualTurnover === 'above5cr' ? 6 : 4;
-    const shortHsn = items.filter(i => i.description && (i.hsnCode || '').trim().length < minDigits);
+    const shortHsn = items.filter(i => i.description && (i.hsnCode || '').trim().length < hsnMinDigits);
     if (shortHsn.length === 0) return null;
-    return `${shortHsn.length} item(s) have HSN codes shorter than ${minDigits} digits (required for your turnover bracket).`;
-  }, [items, profile.annualTurnover]);
+    return `${shortHsn.length} item(s) have HSN codes shorter than ${hsnMinDigits} digits (required for your turnover bracket).`;
+  }, [items, hsnMinDigits]);
+
+  const handleHSNSelect = (itemId: string, code: string, _description: string, gstRate: number) => {
+    setItems(prev => prev.map(item =>
+      item.id === itemId
+        ? { ...item, hsnCode: code, gstRate }
+        : item
+    ));
+  };
 
   const handleAddItem = () => {
     setItems([...items, { id: Math.random().toString(36).substr(2, 9), description: '', notes: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }]);
@@ -1210,6 +1223,20 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           />
         )}
 
+        {/* HSN Search Modal */}
+        {hsnModalItemId && (
+          <HSNSearchModal
+            isOpen={true}
+            onClose={() => setHsnModalItemId(null)}
+            onSelect={(code, desc, gst) => {
+              handleHSNSelect(hsnModalItemId, code, desc, gst);
+              setHsnModalItemId(null);
+            }}
+            minDigits={hsnMinDigits}
+            currentValue={items.find(i => i.id === hsnModalItemId)?.hsnCode ?? ''}
+          />
+        )}
+
         {/* Delete confirmation modal */}
         <DeleteConfirmationModal
           isOpen={deleteConfirmInvoice !== null}
@@ -1629,7 +1656,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                       <input placeholder="Note (optional)" className="w-full bg-transparent border border-dashed border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-500 placeholder-slate-300 focus:outline-none focus:border-indigo-200" value={item.notes || ''} onChange={e => handleItemChange(item.id, 'notes', e.target.value)} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-medium font-mono shadow-sm" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
+                      <div className="space-y-1 pb-4">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">HSN/SAC</label>
+                        <HSNInput
+                          value={item.hsnCode}
+                          onChange={v => handleItemChange(item.id, 'hsnCode', v)}
+                          onSelectEntry={(code, desc, gst) => handleHSNSelect(item.id, code, desc, gst)}
+                          minDigits={hsnMinDigits}
+                          className="w-full bg-white border-none rounded-xl px-3 py-3 pr-8 text-sm font-medium font-mono shadow-sm focus:outline-none"
+                          placeholder="e.g. 9954"
+                          onOpenModal={() => setHsnModalItemId(item.id)}
+                        />
+                      </div>
                       <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Qty</label><input type="number" inputMode="decimal" className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center shadow-sm" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
                       <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Rate (₹)</label><input type="number" inputMode="decimal" className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center text-profee-blue shadow-sm" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
                       <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">GST %</label><select className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-bold text-center appearance-none shadow-sm" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
@@ -1672,7 +1710,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                       </div>
                       <input placeholder="Add a note or specification… (optional)" className="w-full bg-transparent border border-dashed border-slate-200 rounded-xl px-4 py-2 text-xs text-slate-500 placeholder-slate-300 focus:outline-none focus:border-indigo-200 transition-colors" value={item.notes || ''} onChange={e => handleItemChange(item.id, 'notes', e.target.value)} />
                     </div>
-                    <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-3">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium font-mono" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
+                    <div className="col-span-2 space-y-2 pb-4">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-3">HSN/SAC</label>
+                      <HSNInput
+                        value={item.hsnCode}
+                        onChange={v => handleItemChange(item.id, 'hsnCode', v)}
+                        onSelectEntry={(code, desc, gst) => handleHSNSelect(item.id, code, desc, gst)}
+                        minDigits={hsnMinDigits}
+                        className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 pr-8 text-sm font-medium font-mono focus:outline-none"
+                        placeholder="e.g. 9954"
+                        onOpenModal={() => setHsnModalItemId(item.id)}
+                      />
+                    </div>
                     <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
                     <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center text-profee-blue" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
                     <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label><select className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-center appearance-none" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
