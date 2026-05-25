@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { IndianRupee, BarChart3, ArrowRight, Play } from 'lucide-react';
+import PWAInstallButton from './PWAInstallButton';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -67,9 +68,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onEnterApp }) => {
                 >
                   Launch App Now <ArrowRight size={20} />
                 </button>
-                <button className="px-8 py-5 bg-white text-slate-700 border border-slate-200 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 hover:bg-slate-50 transition-all font-poppins">
-                  <Play size={20} fill="currentColor" /> Watch Demo
-                </button>
+                <PWAInstallButton variant="hero" />
               </div>
               <div className="flex items-center gap-6 pt-4 grayscale opacity-40">
                 <span className="font-poppins font-black text-2xl tracking-tighter">BHARAT</span>

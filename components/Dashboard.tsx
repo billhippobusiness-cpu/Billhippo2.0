@@ -8,6 +8,7 @@ import { Invoice, Customer, LedgerEntry, BusinessProfile } from '../types';
 import { getInvoices, getCustomers, getLedgerEntries, getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 import { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
+import PWAInstallButton from './PWAInstallButton';
 
 interface DashboardProps { userId: string; onNavigate?: (tab: string) => void; }
 
@@ -266,6 +267,11 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
           </div>
         </div>
       )}
+
+      {/* ═══ Download App Banner (mobile-only) ═══ */}
+      <div className="md:hidden">
+        <PWAInstallButton variant="banner" />
+      </div>
 
       {/* ═══ Filter Bar: FY Dropdown + Custom Date Range ═══ */}
       <div className="bg-white rounded-[2.5rem] p-6 md:p-8 premium-shadow border border-slate-50">
