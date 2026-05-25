@@ -37,6 +37,21 @@ main {
   top: 0;
 }
 
+/*
+ * Main app content wrapper — replaces py-4 md:py-10 on mobile so all
+ * inner pages (Customers, Invoices, etc.) clear the Dynamic Island / notch.
+ * On desktop env(safe-area-inset-top) resolves to 0 so max(1rem,0)=1rem,
+ * but md: overrides it to 2.5rem (same as the old md:py-10).
+ */
+.app-pt {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+@media (min-width: 768px) {
+  .app-pt {
+    padding-top: 2.5rem; /* matches md:py-10 */
+  }
+}
+
 /* Mobile touch press feedback */
 @media (hover: none) and (pointer: coarse) {
   button:active {
