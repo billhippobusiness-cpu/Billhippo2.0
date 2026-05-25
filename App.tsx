@@ -339,7 +339,7 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0">
-        <div className="px-4 md:px-12 py-4 md:py-10 pb-28 md:pb-12 overflow-y-auto">
+        <div className="px-4 md:px-12 pb-28 md:pb-12 overflow-y-auto app-pt">
           <div className="max-w-[1600px] mx-auto">
             {/* Pending professional-invite banner for business-only users */}
             {role === 'business' && user.email && (
