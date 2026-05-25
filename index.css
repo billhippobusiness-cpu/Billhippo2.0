@@ -26,6 +26,17 @@ main {
   padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
 }
 
+/* Top safe-area — pushes content below Dynamic Island / notch */
+.pt-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* For fixed bars: extend the background INTO the safe area, push content below it */
+.safe-top-bar {
+  padding-top: env(safe-area-inset-top);
+  top: 0;
+}
+
 /* Mobile touch press feedback */
 @media (hover: none) and (pointer: coarse) {
   button:active {
