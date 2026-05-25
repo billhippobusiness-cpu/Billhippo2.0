@@ -25,6 +25,7 @@ import ProDashboard from './components/ProDashboard';
 import ProRegister from './components/pro/ProRegister';
 import InviteAccept from './components/pro/InviteAccept';
 import BusinessInviteNotice from './components/BusinessInviteNotice';
+import PWAInstallBanner from './components/PWAInstallBanner';
 
 const App: React.FC = () => {
   const {
@@ -357,6 +358,9 @@ const App: React.FC = () => {
       >
         {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
+
+      {/* PWA install banner — mobile only, zero effect on desktop (md:hidden) */}
+      <PWAInstallBanner />
     </div>
   );
 };

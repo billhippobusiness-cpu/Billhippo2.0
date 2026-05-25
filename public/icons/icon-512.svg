@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Maskable: safe zone 80%, so content lives within 204..308 x 204..308 -->
+  <rect width="512" height="512" rx="96" fill="#4c2de0"/>
+  <!-- Subtle glow layer -->
+  <rect x="32" y="32" width="448" height="448" rx="72" fill="#5e3ef3" opacity="0.4"/>
+  <!-- White rupee symbol -->
+  <text x="256" y="370" font-family="Arial,Helvetica,sans-serif" font-size="310" font-weight="700" fill="white" text-anchor="middle">₹</text>
+</svg>
