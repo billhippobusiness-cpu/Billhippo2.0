@@ -956,7 +956,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                       <div className="flex items-center gap-2 mt-2">
                         <button onClick={() => { haptic('light'); handlePreviewInvoice(inv); }} title="Preview" className="flex-1 py-2 rounded-xl bg-indigo-50 text-profee-blue text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Eye size={14} /> View</button>
                         <button onClick={() => { haptic('light'); handleEditInvoice(inv); }} title="Edit" className="flex-1 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Pencil size={14} /> Edit</button>
-                        <button onClick={() => { haptic('light'); openPDFModal(inv, custObj); }} title="PDF" className="flex-1 py-2 rounded-xl bg-indigo-50 text-profee-blue text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Download size={14} /> PDF</button>
+                        <button onClick={() => { haptic('light'); setDownloadTarget({ invoice: inv, customer: custObj }); }} title="PDF" className="flex-1 py-2 rounded-xl bg-indigo-50 text-profee-blue text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Download size={14} /> PDF</button>
                         {(inv.status === 'Unpaid' || inv.status === 'Partial') && (
                           <button onClick={() => { haptic('medium'); setCollectModal({ open: true, invoice: inv }); }} title="Collect" className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><IndianRupee size={14} /> Collect</button>
                         )}
@@ -1047,9 +1047,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                               >
                                 <Pencil size={15} />
                               </button>
-                              {/* Download — open PDF preview modal */}
+                              {/* Download PDF */}
                               <button
-                                onClick={() => openPDFModal(inv, custObj)}
+                                onClick={() => setDownloadTarget({ invoice: inv, customer: custObj })}
                                 title="Download PDF"
                                 className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
                               >

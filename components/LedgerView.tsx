@@ -146,21 +146,12 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
         </div>
         <style>{`@media print { body * { visibility: hidden; } .print-area, .print-area * { visibility: visible; } .print-area { position: absolute; left: 0; top: 0; width: 100%; } .no-print { display: none !important; } @page { size: A4; margin: 10mm; } }`}</style>
 
-        {/* PDF Preview Modal */}
-        {showPDFModal && selectedCustomer && (
-          <PDFPreviewModal
-            open={showPDFModal}
-            onClose={() => setShowPDFModal(false)}
-            document={
-              <LedgerPDF
-                customer={selectedCustomer}
-                entries={entries}
-                businessName={businessName}
-                businessInfo={businessInfo}
-                statementDate={new Date().toLocaleDateString('en-IN')}
-              />
-            }
-            fileName={`Ledger-Statement-${selectedCustomer.name.replace(/\s+/g, '-')}.pdf`}
+        {/* Ledger direct download */}
+        {downloadTarget && (
+          <PDFDirectDownload
+            document={downloadTarget.document}
+            fileName={downloadTarget.fileName}
+            onDone={() => setDownloadTarget(null)}
           />
         )}
       </div>
@@ -202,7 +193,7 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
         <div className="flex gap-4">
           <button onClick={() => setShowPaymentForm(true)} className="bg-emerald-500 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-3 hover:scale-105 transition-all shadow-lg shadow-emerald-100"><Plus size={18} /> Record Payment</button>
           <button onClick={() => setIsPreview(true)} className="bg-white border border-indigo-100 text-profee-blue px-8 py-3 rounded-2xl font-bold flex items-center gap-3 hover:bg-indigo-50 transition-all shadow-sm"><Eye size={18} /> Preview Statement</button>
-          <button onClick={() => setShowPDFModal(true)} className="bg-profee-blue text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-3 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"><Download size={18} /> Download PDF</button>
+          <button onClick={() => setDownloadTarget({ document: <LedgerPDF customer={selectedCustomer!} entries={entries} businessName={businessName} businessInfo={businessInfo} statementDate={new Date().toLocaleDateString('en-IN')} />, fileName: `Ledger-Statement-${selectedCustomer!.name.replace(/\s+/g, '-')}.pdf` })} className="bg-profee-blue text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-3 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"><Download size={18} /> Download PDF</button>
         </div>
       </div>
 
@@ -265,23 +256,6 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
         </div>
       </div>
 
-      {/* PDF Preview Modal (detail view) */}
-      {showPDFModal && selectedCustomer && (
-        <PDFPreviewModal
-          open={showPDFModal}
-          onClose={() => setShowPDFModal(false)}
-          document={
-            <LedgerPDF
-              customer={selectedCustomer}
-              entries={entries}
-              businessName={businessName}
-              businessInfo={businessInfo}
-              statementDate={new Date().toLocaleDateString('en-IN')}
-            />
-          }
-          fileName={`Ledger-Statement-${selectedCustomer.name.replace(/\s+/g, '-')}.pdf`}
-        />
-      )}
 
       {/* Receipt detail modal */}
       {receiptModal.open && receiptModal.entry && selectedCustomer && (
