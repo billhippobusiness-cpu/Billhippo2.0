@@ -12,6 +12,7 @@ import {
   FileDown,
   Loader2,
 } from 'lucide-react';
+import HSNSearchModal, { HSNInput } from './HSNSearchModal';
 import {
   getInventoryItems,
   addInventoryItem,
@@ -62,6 +63,8 @@ export default function InventoryManager({ userId }: Props) {
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showHSNModal, setShowHSNModal] = useState(false);
+  const [profile, setProfile] = useState<BusinessProfile | null>(null);
 
   // ── Inventory statement ──
   const [showStatementModal, setShowStatementModal] = useState(false);
@@ -83,8 +86,12 @@ export default function InventoryManager({ userId }: Props) {
   async function loadItems() {
     setLoading(true);
     try {
-      const data = await getInventoryItems(userId);
+      const [data, prof] = await Promise.all([
+        getInventoryItems(userId),
+        getBusinessProfile(userId),
+      ]);
       setItems(data);
+      if (prof) setProfile(prof);
     } finally {
       setLoading(false);
     }
@@ -468,6 +475,18 @@ export default function InventoryManager({ userId }: Props) {
         )}
       </div>
 
+      {/* ── HSN Search Modal ── */}
+      <HSNSearchModal
+        isOpen={showHSNModal}
+        onClose={() => setShowHSNModal(false)}
+        onSelect={(code, _desc, gstRate) => {
+          setForm(f => ({ ...f, hsnCode: code, gstRate }));
+          setShowHSNModal(false);
+        }}
+        minDigits={profile?.annualTurnover === 'above5cr' ? 6 : 4}
+        currentValue={form.hsnCode}
+      />
+
       {/* ── Delete confirmation modal ── */}
       <DeleteConfirmationModal
         isOpen={deleteConfirm !== null}
@@ -524,14 +543,18 @@ export default function InventoryManager({ userId }: Props) {
 
               {/* HSN + Unit row */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="pb-4">
                   <label className="block text-xs font-medium text-gray-600 mb-1">HSN Code</label>
-                  <input
-                    type="text"
+                  <HSNInput
                     value={form.hsnCode}
-                    onChange={(e) => setForm({ ...form, hsnCode: e.target.value })}
+                    onChange={(v) => setForm({ ...form, hsnCode: v })}
+                    onSelectEntry={(code, _desc, gstRate) =>
+                      setForm(f => ({ ...f, hsnCode: code, gstRate }))
+                    }
+                    minDigits={profile?.annualTurnover === 'above5cr' ? 6 : 4}
+                    className="w-full px-3 py-2 pr-8 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                     placeholder="e.g. 7214"
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                    onOpenModal={() => setShowHSNModal(true)}
                   />
                 </div>
                 <div>
