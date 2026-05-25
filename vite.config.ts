@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
           registerType: 'autoUpdate',
           // Inject the <link rel="manifest"> automatically into index.html
           injectRegister: 'auto',
-          includeAssets: ['icons/*.svg', 'fonts/**'],
+          includeAssets: ['icons/*.png', 'icons/*.svg', 'fonts/**'],
           manifest: {
             name: 'BillHippo – GST Invoicing & Accounts',
             short_name: 'BillHippo',
@@ -31,21 +31,21 @@ export default defineConfig(({ mode }) => {
             categories: ['finance', 'business', 'productivity'],
             icons: [
               {
-                src: 'icons/icon-192.svg',
+                src: 'icons/icon-192.png',
                 sizes: '192x192',
-                type: 'image/svg+xml',
+                type: 'image/png',
                 purpose: 'any',
               },
               {
-                src: 'icons/icon-512.svg',
+                src: 'icons/icon-512.png',
                 sizes: '512x512',
-                type: 'image/svg+xml',
+                type: 'image/png',
                 purpose: 'any',
               },
               {
-                src: 'icons/icon-maskable.svg',
+                src: 'icons/icon-maskable.png',
                 sizes: '512x512',
-                type: 'image/svg+xml',
+                type: 'image/png',
                 purpose: 'maskable',
               },
             ],
@@ -55,20 +55,20 @@ export default defineConfig(({ mode }) => {
                 short_name: 'Invoice',
                 description: 'Create a new GST invoice',
                 url: '/?tab=invoices&new=1&source=pwa',
-                icons: [{ src: 'icons/icon-192.svg', sizes: '192x192' }],
+                icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }],
               },
               {
                 name: 'Inventory',
                 short_name: 'Inventory',
                 description: 'View your inventory',
                 url: '/?tab=inventory&source=pwa',
-                icons: [{ src: 'icons/icon-192.svg', sizes: '192x192' }],
+                icons: [{ src: 'icons/icon-192.png', sizes: '192x192' }],
               },
             ],
           },
           workbox: {
             // Pre-cache all built assets
-            globPatterns: ['**/*.{js,css,html,woff,woff2,ttf,svg}'],
+            globPatterns: ['**/*.{js,css,html,woff,woff2,ttf,svg,png}'],
             // Main bundle exceeds 2 MiB due to @react-pdf/renderer — raise the limit
             maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
             navigateFallback: '/index.html',
