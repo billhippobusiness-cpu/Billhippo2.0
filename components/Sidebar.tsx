@@ -3,6 +3,7 @@ import React from 'react';
 import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight, Briefcase, ScrollText, ShoppingBag } from 'lucide-react';
 import { type User } from 'firebase/auth';
 import type { UserRole } from '../types';
+import { haptic } from '../lib/haptic';
 
 const BILLHIPPO_LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
@@ -64,6 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
           <button
             key={item.id}
             onClick={() => {
+              haptic('light');
               setActiveTab(item.id);
               setIsOpen(false);
             }}
@@ -71,7 +73,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
               w-full flex items-center justify-between px-6 py-4 rounded-2xl transition-all duration-300 group
               ${activeTab === item.id
                 ? 'bg-profee-blue text-white active-tab-glow translate-x-1'
-                : 'text-slate-500 hover:bg-slate-50'}
+                : 'text-slate-500 hover:bg-slate-50 active:bg-slate-100'}
             `}
           >
             <div className="flex items-center gap-4">

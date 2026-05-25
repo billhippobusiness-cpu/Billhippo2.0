@@ -354,7 +354,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {[
           { label: 'Total Sales', value: formatAmount(totalSales), icon: IndianRupee, color: 'bg-profee-blue', shadow: 'shadow-indigo-100', textColor: 'text-profee-blue', hoverShadow: '0 0 0 1px rgba(76,45,224,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(76,45,224,0.28), 0 20px 50px -10px rgba(76,45,224,0.22)' },
           { label: 'Collections', value: formatAmount(totalCollections), icon: TrendingUp, color: 'bg-emerald-500', shadow: 'shadow-emerald-100', textColor: 'text-emerald-500', hoverShadow: '0 0 0 1px rgba(16,185,129,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(16,185,129,0.28), 0 20px 50px -10px rgba(16,185,129,0.22)' },
@@ -367,7 +367,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
             key={metric.label}
             onMouseEnter={() => setHoveredCard(metric.label)}
             onMouseLeave={() => setHoveredCard(null)}
-            className="bg-white rounded-[2.5rem] p-8 border border-slate-100 transition-all duration-300 cursor-default"
+            className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 border border-slate-100 transition-all duration-300 cursor-default"
             style={{
               boxShadow: hoveredCard === metric.label
                 ? metric.hoverShadow
@@ -375,18 +375,18 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
               transform: hoveredCard === metric.label ? 'translateY(-5px) scale(1.02)' : 'none',
             }}
           >
-            <div className="flex justify-between items-start mb-6">
-              <div className={`p-4 rounded-2xl text-white ${metric.color} shadow-lg ${metric.shadow}`}><metric.icon size={24} /></div>
+            <div className="flex justify-between items-start mb-4 sm:mb-6">
+              <div className={`p-3 sm:p-4 rounded-2xl text-white ${metric.color} shadow-lg ${metric.shadow}`}><metric.icon size={20} /></div>
             </div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 font-poppins">{metric.label}</p>
-            <h3 className={`text-3xl font-bold ${metric.textColor} font-poppins`}>{metric.value}</h3>
+            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 sm:mb-2 font-poppins">{metric.label}</p>
+            <h3 className={`text-xl sm:text-3xl font-bold ${metric.textColor} font-poppins`}>{metric.value}</h3>
           </div>
         ))}
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+        <div className="lg:col-span-2 bg-white rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 premium-shadow border border-slate-50">
           <h3 className="text-xl font-bold font-poppins text-slate-900 mb-2">Sales & Collections</h3>
           <p className="text-xs text-slate-400 font-medium mb-8 uppercase tracking-widest">
             {filterMode === 'fy' ? `FY ${selectedFY}` : customFrom && customTo ? `${customFrom} to ${customTo}` : 'Revenue overview'}
@@ -411,7 +411,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
           )}
         </div>
 
-        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
+        <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 premium-shadow border border-slate-50">
           <h3 className="text-xl font-bold font-poppins text-slate-900 mb-2">Invoice Status</h3>
           <p className="text-xs text-slate-400 font-medium mb-6 uppercase tracking-widest">{invoices.length} invoice{invoices.length !== 1 ? 's' : ''} in period</p>
           {pieData.length > 0 ? (
@@ -440,10 +440,10 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
       </div>
 
       {/* Top Customers + Smart Alerts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
 
         {/* Top Customers */}
-        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
+        <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 premium-shadow border border-slate-50">
           <h3 className="text-xl font-bold font-poppins text-slate-900 mb-2">Top Customers</h3>
           <p className="text-xs text-slate-400 font-medium mb-6 uppercase tracking-widest">By invoiced amount · this period</p>
           {topCustomers.length > 0 ? (
@@ -476,7 +476,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
         </div>
 
         {/* Smart Alerts */}
-        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
+        <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 premium-shadow border border-slate-50">
         <h3 className="text-xl font-bold font-poppins text-slate-900 mb-6">Smart Alerts</h3>
         {overdueInvoices.length > 0 ? (
           <div className="space-y-4">
@@ -504,7 +504,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
 
       {/* Recent Invoices */}
       {invoices.length > 0 && (
-        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50">
+        <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 premium-shadow border border-slate-50">
           <h3 className="text-xl font-bold font-poppins text-slate-900 mb-6">Recent Invoices</h3>
           <div className="space-y-3">
             {invoices.slice(0, 5).map(inv => {
@@ -522,12 +522,12 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
                       <p className="text-xs text-slate-400 font-medium">{inv.customerName} • {inv.date}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 sm:gap-4 shrink-0">
                     <div className="text-right">
-                      <p className="text-lg font-bold text-slate-800 font-poppins">₹{inv.totalAmount.toLocaleString('en-IN')}</p>
+                      <p className="text-sm sm:text-lg font-bold text-slate-800 font-poppins">₹{inv.totalAmount.toLocaleString('en-IN')}</p>
                       <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-600' : inv.status === 'Partial' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>{inv.status}</span>
                     </div>
-                    <ExternalLink size={16} className="text-slate-300 group-hover:text-profee-blue transition-colors flex-shrink-0" />
+                    <ExternalLink size={16} className="text-slate-300 group-hover:text-profee-blue transition-colors flex-shrink-0 hidden sm:block" />
                   </div>
                 </button>
               );
