@@ -1439,7 +1439,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
              )}
              <button onClick={() => { haptic('light'); window.print(); }} className="hidden sm:flex flex-1 sm:flex-none bg-white border border-slate-200 px-4 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all shadow-sm"><Printer size={16} /> Print</button>
              <button
-               onClick={() => { haptic('medium'); openPDFModal(buildCurrentInvoice(), selectedCustomer || null); }}
+               onClick={() => { haptic('medium'); setDownloadTarget({ invoice: buildCurrentInvoice(), customer: selectedCustomer || null }); }}
                className="flex-1 sm:flex-none bg-profee-blue text-white px-4 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-100"
              >
                <Download size={16} /> <span className="hidden sm:inline">Download PDF</span><span className="sm:hidden">PDF</span>
@@ -1450,19 +1450,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         <div className="hidden print:block">{invoiceTemplate}</div>
         <style>{`@media print { body * { visibility: hidden; } .print-area, .print-area * { visibility: visible; } .print-area { position: absolute; left: 0; top: 0; padding: 0 !important; width: 100%; box-shadow: none !important; background: white !important; } .no-print { display: none !important; } @page { size: A4; margin: 10mm; } }`}</style>
 
-        {/* PDF Preview Modal */}
-        {pdfModal.open && pdfModal.invoice && (
-          <PDFPreviewModal
-            open={pdfModal.open}
-            onClose={() => setPdfModal({ open: false, invoice: null, customer: null })}
+        {/* Direct download — renders PDF invisibly and auto-downloads */}
+        {downloadTarget && (
+          <PDFDirectDownload
             document={
               <InvoicePDF
-                invoice={pdfModal.invoice}
+                invoice={downloadTarget.invoice}
                 business={profile}
-                customer={pdfModal.customer || { id: '', name: pdfModal.invoice.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
+                customer={downloadTarget.customer || { id: '', name: downloadTarget.invoice.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }}
               />
             }
-            fileName={`Invoice-${pdfModal.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+            fileName={`Invoice-${downloadTarget.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+            onDone={() => setDownloadTarget(null)}
           />
         )}
       </div>
