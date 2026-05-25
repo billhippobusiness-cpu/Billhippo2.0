@@ -50,7 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
       ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       bg-white border-r border-slate-100 flex flex-col
     `}>
-      <div className="px-5 flex flex-col items-center justify-center overflow-hidden" style={{ height: '180px' }}>
+      <div className="px-5 flex flex-col items-center justify-center overflow-hidden" style={{ paddingTop: 'env(safe-area-inset-top)', minHeight: '180px' }}>
         <img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-full object-contain scale-125" />
         {/* BIZ mode badge — only shown for dual-account users */}
         {role === 'both' && (
