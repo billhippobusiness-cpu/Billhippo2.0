@@ -20,6 +20,7 @@ import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
 import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import { lookupGSTIN, GSTINDetails } from '../lib/whitebooksApi';
+import { haptic } from '../lib/haptic';
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -421,64 +422,64 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     return (
       <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <button
-            onClick={handleBack}
+            onClick={() => { haptic('light'); handleBack(); }}
             className="flex items-center gap-2 text-profee-blue font-bold text-sm hover:underline font-poppins"
           >
             <ChevronLeft size={16} /> All Customers
           </button>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => { setShowPaymentForm(prev => !prev); setPaymentAmount(''); setPaymentDesc(''); }}
-              className="flex items-center gap-2 bg-emerald-500 text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:scale-105 active:scale-95 transition-all shadow-xl shadow-emerald-100 font-poppins"
+              onClick={() => { haptic('medium'); setShowPaymentForm(prev => !prev); setPaymentAmount(''); setPaymentDesc(''); }}
+              className="flex items-center gap-1.5 bg-emerald-500 text-white px-4 py-2.5 rounded-2xl text-sm font-bold active:scale-95 transition-all shadow-xl shadow-emerald-100 font-poppins"
             >
-              <Plus size={15} /> Record Payment
+              <Plus size={15} /> <span className="hidden sm:inline">Record </span>Payment
             </button>
             {ledgerEntries.length > 0 && businessProfile && (
               <button
-                onClick={() => setLedgerPdfOpen(true)}
-                className="flex items-center gap-2 bg-profee-blue text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:scale-105 active:scale-95 transition-all shadow-xl shadow-indigo-100 font-poppins"
+                onClick={() => { haptic('light'); setLedgerPdfOpen(true); }}
+                className="flex items-center gap-1.5 bg-profee-blue text-white px-4 py-2.5 rounded-2xl text-sm font-bold active:scale-95 transition-all shadow-xl shadow-indigo-100 font-poppins"
               >
-                <Download size={15} /> Download Statement
+                <Download size={15} /> <span className="hidden sm:inline">Download </span>Statement
               </button>
             )}
             <button
-              onClick={isInlineEditing ? resetForm : handleInlineEdit}
-              className={`flex items-center gap-2 border px-5 py-2.5 rounded-2xl text-sm font-bold transition-all shadow-sm font-poppins ${
+              onClick={() => { haptic('light'); isInlineEditing ? resetForm() : handleInlineEdit(); }}
+              className={`flex items-center gap-1.5 border px-4 py-2.5 rounded-2xl text-sm font-bold transition-all shadow-sm font-poppins ${
                 isInlineEditing
                   ? 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
                   : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'
               }`}
             >
               {isInlineEditing
-                ? <><X size={15} className="text-slate-400" /> Cancel Edit</>
-                : <><Edit3 size={15} className="text-profee-blue" /> Edit Profile</>
+                ? <><X size={15} className="text-slate-400" /> Cancel</>
+                : <><Edit3 size={15} className="text-profee-blue" /> Edit</>
               }
             </button>
           </div>
         </div>
 
         {/* Customer card — expands in-place when editing */}
-        <motion.div layout className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 overflow-hidden">
-          <div className="flex items-center gap-6 mb-2">
-            <div className="w-16 h-16 rounded-2xl bg-profee-blue/10 text-profee-blue flex items-center justify-center font-bold font-poppins text-2xl">
+        <motion.div layout className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 overflow-hidden">
+          <div className="flex items-center gap-4 sm:gap-6 mb-2">
+            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-profee-blue/10 text-profee-blue flex items-center justify-center font-bold font-poppins text-xl sm:text-2xl shrink-0">
               {selectedCustomer.name.charAt(0).toUpperCase()}
             </div>
-            <div>
-              <h2 className="text-2xl font-bold font-poppins text-slate-900">{selectedCustomer.name}</h2>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg sm:text-2xl font-bold font-poppins text-slate-900 truncate">{selectedCustomer.name}</h2>
               {selectedCustomer.gstin && (
-                <p className="text-[10px] font-bold text-profee-blue uppercase tracking-widest mt-1">GSTIN: {selectedCustomer.gstin}</p>
+                <p className="text-[10px] font-bold text-profee-blue uppercase tracking-widest mt-1 truncate">GSTIN: {selectedCustomer.gstin}</p>
               )}
-              <div className="flex flex-wrap gap-4 mt-2 text-xs font-medium text-slate-400">
+              <div className="flex flex-wrap gap-2 sm:gap-4 mt-2 text-xs font-medium text-slate-400">
                 {selectedCustomer.phone && <span className="flex items-center gap-1"><Phone size={11} />{selectedCustomer.phone}</span>}
-                {selectedCustomer.email && <span className="flex items-center gap-1"><Mail size={11} />{selectedCustomer.email}</span>}
-                {selectedCustomer.city && <span className="flex items-center gap-1"><MapPin size={11} />{selectedCustomer.city}, {selectedCustomer.state}</span>}
+                {selectedCustomer.email && <span className="hidden sm:flex items-center gap-1"><Mail size={11} />{selectedCustomer.email}</span>}
+                {selectedCustomer.city && <span className="flex items-center gap-1"><MapPin size={11} />{selectedCustomer.city}</span>}
               </div>
             </div>
-            <div className="ml-auto text-right">
-              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Outstanding</p>
-              <p className={`text-2xl font-bold font-poppins ${closingBalance > 0 ? 'text-rose-500' : closingBalance < 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+            <div className="ml-auto text-right shrink-0">
+              <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest hidden sm:block">Outstanding</p>
+              <p className={`text-lg sm:text-2xl font-bold font-poppins ${closingBalance > 0 ? 'text-rose-500' : closingBalance < 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
                 {closingBalance === 0 ? 'Settled' : `₹${Math.abs(closingBalance).toLocaleString('en-IN')}`}
               </p>
             </div>
@@ -1222,16 +1223,16 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
   // ══════════════════════════════════════════════════════
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
-      <div className="flex justify-between items-end mb-2">
+      <div className="flex justify-between items-center mb-2 gap-3">
         <div>
-          <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Customers</h1>
+          <h1 className="text-2xl sm:text-4xl font-bold font-poppins text-slate-900 tracking-tight">Customers</h1>
           <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">{customers.length} parties registered</p>
         </div>
         <button
-          onClick={() => { resetForm(); setShowForm(true); }}
-          className="bg-profee-blue text-white px-8 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 active:scale-95 transition-all font-poppins"
+          onClick={() => { haptic('medium'); resetForm(); setShowForm(true); }}
+          className="bg-profee-blue text-white px-5 sm:px-8 py-3 sm:py-4 rounded-2xl font-bold flex items-center gap-2 shadow-xl shadow-indigo-100 active:scale-95 transition-all font-poppins whitespace-nowrap"
         >
-          <Plus size={20} /> Add Customer
+          <Plus size={20} /> <span className="hidden sm:inline">Add Customer</span><span className="sm:hidden">Add</span>
         </button>
       </div>
 
@@ -1252,24 +1253,24 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
 
       {/* Add/Edit Form Modal */}
       {showForm && (
-        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 animate-in fade-in slide-in-from-top-4 duration-300">
+        <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 space-y-6 sm:space-y-8 animate-sheet-up">
           <div className="flex justify-between items-center">
-            <h3 className="text-xl font-bold font-poppins flex items-center gap-3">
+            <h3 className="text-lg sm:text-xl font-bold font-poppins flex items-center gap-3">
               <UserCircle className="text-profee-blue" size={22} />
               {editingId ? 'Edit Customer' : 'New Customer'}
             </h3>
-            <button onClick={resetForm} className="p-2 hover:bg-slate-50 rounded-xl transition-all"><X size={20} className="text-slate-400" /></button>
+            <button onClick={() => { haptic('light'); resetForm(); }} className="p-2 hover:bg-slate-50 rounded-xl transition-all"><X size={20} className="text-slate-400" /></button>
           </div>
 
           {error && <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-sm font-bold text-rose-600 font-poppins">{error}</div>}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-poppins">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 font-poppins">
             {/* GSTIN first with Fetch button */}
             <div className="space-y-2 md:col-span-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">GSTIN <span className="text-slate-300">(Optional — enter to auto-fill details)</span></label>
-              <div className="flex gap-3">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">GSTIN <span className="text-slate-300 hidden sm:inline">(Optional — enter to auto-fill details)</span></label>
+              <div className="flex flex-col sm:flex-row gap-3">
                 <input
-                  className="flex-1 bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50 font-mono tracking-wider uppercase"
+                  className="flex-1 bg-slate-50 border-none rounded-2xl px-5 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50 font-mono tracking-wider uppercase"
                   value={formData.gstin}
                   onChange={e => { setFormData({...formData, gstin: e.target.value.toUpperCase()}); setGstinFetchResult(null); setGstinFetchError(null); }}
                   placeholder="15-CHAR GSTIN (Optional)"
@@ -1277,9 +1278,9 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                 />
                 <button
                   type="button"
-                  onClick={() => handleFetchGSTIN(formData.gstin)}
+                  onClick={() => { haptic('medium'); handleFetchGSTIN(formData.gstin); }}
                   disabled={gstinFetching || !formData.gstin || formData.gstin.length !== 15}
-                  className="flex items-center gap-2 px-6 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-sm hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-xl shadow-indigo-100 whitespace-nowrap"
+                  className="flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-indigo-600 text-white font-bold text-sm active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-xl shadow-indigo-100 whitespace-nowrap"
                 >
                   {gstinFetching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                   {gstinFetching ? 'Fetching...' : 'Fetch Details'}
@@ -1320,12 +1321,12 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Phone</label>
-              <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+              <input type="tel" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
                 value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="+91 98765 43210" />
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Email</label>
-              <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+              <input type="email" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
                 value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="customer@email.com" />
             </div>
             <div className="space-y-2 md:col-span-2">
@@ -1340,7 +1341,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Pincode</label>
-              <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
+              <input type="tel" inputMode="numeric" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
                 value={formData.pincode} onChange={e => setFormData({...formData, pincode: e.target.value})} placeholder="400001" />
             </div>
             <div className="space-y-2">
@@ -1352,10 +1353,10 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
             </div>
           </div>
 
-          <div className="flex justify-end gap-4">
-            <button onClick={resetForm} className="px-8 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all font-poppins">Cancel</button>
-            <button onClick={handleSave} disabled={saving}
-              className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins disabled:opacity-50">
+          <div className="flex gap-3">
+            <button onClick={() => { haptic('light'); resetForm(); }} className="flex-1 sm:flex-none px-6 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all font-poppins border border-slate-100">Cancel</button>
+            <button onClick={() => { haptic('medium'); handleSave(); }} disabled={saving}
+              className="flex-1 sm:flex-none bg-profee-blue text-white px-8 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-indigo-100 active:scale-95 transition-all font-poppins disabled:opacity-50">
               {saving ? <><Loader2 size={18} className="animate-spin" /> Saving...</> : <><Save size={18} /> {editingId ? 'Update' : 'Add Customer'}</>}
             </button>
           </div>
@@ -1378,37 +1379,37 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
           {filtered.map(customer => (
             <div
               key={customer.id}
-              onClick={() => handleSelectCustomer(customer)}
-              className={`bg-white rounded-[2rem] px-8 py-6 premium-shadow border border-slate-50 hover:border-indigo-100 transition-all cursor-pointer flex items-center gap-6 group ${deletingId === customer.id ? 'deleting-item' : ''}`}
+              onClick={() => { haptic('light'); handleSelectCustomer(customer); }}
+              className={`bg-white rounded-[2rem] px-4 sm:px-8 py-4 sm:py-6 premium-shadow border border-slate-50 hover:border-indigo-100 transition-all cursor-pointer flex items-center gap-3 sm:gap-6 group ${deletingId === customer.id ? 'deleting-item' : ''}`}
             >
               {/* Avatar */}
-              <div className="w-12 h-12 rounded-2xl bg-profee-blue/10 text-profee-blue flex items-center justify-center font-bold font-poppins text-lg shrink-0">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-profee-blue/10 text-profee-blue flex items-center justify-center font-bold font-poppins text-lg shrink-0">
                 {customer.name.charAt(0).toUpperCase()}
               </div>
 
               {/* Info */}
               <div className="flex-1 min-w-0">
-                <h4 className="text-base font-bold font-poppins text-slate-900 truncate">{customer.name}</h4>
-                <div className="flex flex-wrap gap-4 mt-1 text-xs font-medium text-slate-400">
-                  {customer.gstin && <span className="text-profee-blue font-bold">GSTIN: {customer.gstin}</span>}
+                <h4 className="text-sm sm:text-base font-bold font-poppins text-slate-900 truncate">{customer.name}</h4>
+                <div className="flex flex-wrap gap-2 sm:gap-4 mt-1 text-xs font-medium text-slate-400">
+                  {customer.gstin && <span className="text-profee-blue font-bold hidden sm:inline">GSTIN: {customer.gstin}</span>}
                   {customer.phone && <span className="flex items-center gap-1"><Phone size={11} />{customer.phone}</span>}
-                  {customer.email && <span className="flex items-center gap-1 hidden sm:flex"><Mail size={11} />{customer.email}</span>}
-                  {customer.city && <span className="flex items-center gap-1"><MapPin size={11} />{customer.city}, {customer.state}</span>}
+                  {customer.email && <span className="hidden sm:flex items-center gap-1"><Mail size={11} />{customer.email}</span>}
+                  {customer.city && <span className="flex items-center gap-1"><MapPin size={11} />{customer.city}</span>}
                 </div>
               </div>
 
               {/* Balance */}
               <div className="text-right shrink-0">
-                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Balance</p>
-                <p className={`text-lg font-bold font-poppins ${customer.balance > 0 ? 'text-rose-500' : customer.balance < 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest hidden sm:block">Balance</p>
+                <p className={`text-sm sm:text-lg font-bold font-poppins ${customer.balance > 0 ? 'text-rose-500' : customer.balance < 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
                   {customer.balance === 0 ? 'Settled' : `₹${Math.abs(customer.balance).toLocaleString('en-IN')}`}
                 </p>
               </div>
 
               {/* Edit icon */}
               <button
-                onClick={e => handleEdit(customer, e)}
-                className="p-2.5 hover:bg-indigo-50 rounded-xl transition-all shrink-0"
+                onClick={e => { haptic('light'); handleEdit(customer, e); }}
+                className="p-2.5 hover:bg-indigo-50 active:bg-indigo-100 rounded-xl transition-all shrink-0 touch-manipulation"
                 title="Edit customer"
               >
                 <Edit3 size={16} className="text-profee-blue" />
@@ -1416,8 +1417,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
 
               {/* Delete icon */}
               <button
-                onClick={e => { e.stopPropagation(); handleDelete(customer.id); }}
-                className="p-2.5 hover:bg-rose-50 rounded-xl transition-all shrink-0"
+                onClick={e => { haptic('medium'); e.stopPropagation(); handleDelete(customer.id); }}
+                className="p-2.5 hover:bg-rose-50 active:bg-rose-100 rounded-xl transition-all shrink-0 touch-manipulation"
                 title="Delete customer"
               >
                 <Trash2 size={16} className="text-rose-400" />

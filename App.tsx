@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard } from 'lucide-react';
+import { LayoutDashboard, Menu, X } from 'lucide-react';
+import { haptic } from './lib/haptic';
 import { useAuth } from './contexts/AuthContext';
 import type { Quotation } from './types';
 import LandingPage from './components/LandingPage';
@@ -316,6 +317,14 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex selection:bg-indigo-100 selection:text-indigo-700">
+      {/* Mobile sidebar overlay backdrop */}
+      {isSidebarOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -329,7 +338,7 @@ const App: React.FC = () => {
       />
 
       <main className="flex-1 flex flex-col min-w-0">
-        <div className="px-4 md:px-12 py-10 overflow-y-auto">
+        <div className="px-4 md:px-12 py-4 md:py-10 pb-28 md:pb-12 overflow-y-auto">
           <div className="max-w-[1600px] mx-auto">
             {/* Pending professional-invite banner for business-only users */}
             {role === 'business' && user.email && (
@@ -340,11 +349,13 @@ const App: React.FC = () => {
         </div>
       </main>
 
+      {/* Mobile FAB — toggles sidebar */}
       <button
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        className="lg:hidden fixed bottom-6 right-6 z-[100] w-14 h-14 rounded-2xl bg-[#4c2de0] text-white shadow-xl shadow-indigo-200 flex items-center justify-center hover:scale-110 active:scale-95 transition-all"
+        onClick={() => { haptic('light'); setIsSidebarOpen(!isSidebarOpen); }}
+        className="lg:hidden fixed bottom-6 right-6 z-[100] w-14 h-14 rounded-2xl bg-[#4c2de0] text-white shadow-xl shadow-indigo-200 flex items-center justify-center transition-all active:scale-90"
+        style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))' }}
       >
-        <LayoutDashboard size={24} />
+        {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
     </div>
   );

@@ -1,5 +1,55 @@
 /* BillHippo - Global Styles */
 
+/* Remove iOS tap highlight on all interactive elements */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS scroll momentum */
+.overflow-y-auto,
+.overflow-x-auto,
+main {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent input zoom on iOS (16px min font-size) */
+@media (max-width: 768px) {
+  input:not([type="radio"]):not([type="checkbox"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe-area padding utilities for phones with notches */
+.pb-safe {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+/* Mobile touch press feedback */
+@media (hover: none) and (pointer: coarse) {
+  button:active {
+    transform: scale(0.95);
+    transition: transform 0.1s ease;
+  }
+}
+
+/* Bottom sheet slide-up animation */
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-sheet-up {
+  animation: slideUpSheet 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 /* Smooth scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

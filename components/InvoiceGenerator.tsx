@@ -4,6 +4,7 @@ import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Ey
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
+import { haptic } from '../lib/haptic';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -868,26 +869,26 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     return (
       <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 pb-20">
         {/* ── Header ── */}
-        <div className="flex justify-between items-end mb-4">
+        <div className="flex justify-between items-center mb-4 gap-3">
           <div>
-            <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
+            <h1 className="text-2xl sm:text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
             <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">
               {allInvoices.length} invoice{allInvoices.length !== 1 ? 's' : ''}
               {q ? ` · ${filteredInvoices.length} matching` : ''}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
-              onClick={loadData}
-              className="bg-white border border-slate-200 px-6 py-4 rounded-2xl font-bold flex items-center gap-2 hover:bg-slate-50 active:scale-95 transition-all font-poppins text-sm text-slate-500 shadow-sm"
+              onClick={() => { haptic('light'); loadData(); }}
+              className="bg-white border border-slate-200 p-3 sm:px-6 sm:py-4 rounded-2xl font-bold flex items-center gap-2 hover:bg-slate-50 active:scale-95 transition-all font-poppins text-sm text-slate-500 shadow-sm"
             >
-              <RotateCcw size={16} /> Refresh
+              <RotateCcw size={16} /> <span className="hidden sm:inline">Refresh</span>
             </button>
             <button
-              onClick={handleNewInvoice}
-              className="bg-profee-blue text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 active:scale-95 transition-all font-poppins"
+              onClick={() => { haptic('medium'); handleNewInvoice(); }}
+              className="bg-profee-blue text-white px-5 sm:px-10 py-3 sm:py-4 rounded-2xl font-bold flex items-center gap-2 shadow-xl shadow-indigo-100 active:scale-95 transition-all font-poppins whitespace-nowrap"
             >
-              <Plus size={20} /> Create Invoice
+              <Plus size={20} /> <span className="hidden sm:inline">Create Invoice</span><span className="sm:hidden">Create</span>
             </button>
           </div>
         </div>
@@ -924,8 +925,54 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               </div>
             </div>
 
-            {/* ── Table ── */}
-            <div className="overflow-x-auto">
+            {/* ── Mobile card list (shown < md) ── */}
+            <div className="md:hidden divide-y divide-slate-50">
+              {filteredInvoices.length === 0 ? (
+                <p className="px-6 py-10 text-center text-sm text-slate-400 font-medium">No invoices match &ldquo;{searchQuery}&rdquo;</p>
+              ) : (
+                filteredInvoices.map(inv => {
+                  const tax = (inv.cgst || 0) + (inv.sgst || 0) + (inv.igst || 0);
+                  const custObj = customers.find(c => c.id === inv.customerId) || null;
+                  return (
+                    <div
+                      key={inv.id}
+                      className={`px-5 py-4 active:bg-indigo-50/40 transition-colors ${deletingInvoiceId === inv.id ? 'deleting-item' : ''}`}
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-900 font-poppins">{inv.invoiceNumber}</p>
+                          <p className="text-sm font-medium text-slate-600 truncate">{inv.customerName}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">{formatDate(inv.date)}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-base font-black text-slate-900 font-poppins">{inr(inv.totalAmount)}</p>
+                          <span className={`inline-block text-[10px] font-bold px-2.5 py-1 rounded-full mt-1 ${
+                            inv.status === 'Paid'    ? 'bg-emerald-100 text-emerald-700' :
+                            inv.status === 'Partial' ? 'bg-amber-100 text-amber-700'    :
+                                                       'bg-rose-100 text-rose-700'
+                          }`}>{inv.status}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <button onClick={() => { haptic('light'); handlePreviewInvoice(inv); }} title="Preview" className="flex-1 py-2 rounded-xl bg-indigo-50 text-profee-blue text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Eye size={14} /> View</button>
+                        <button onClick={() => { haptic('light'); handleEditInvoice(inv); }} title="Edit" className="flex-1 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Pencil size={14} /> Edit</button>
+                        <button onClick={() => { haptic('light'); openPDFModal(inv, custObj); }} title="PDF" className="flex-1 py-2 rounded-xl bg-indigo-50 text-profee-blue text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Download size={14} /> PDF</button>
+                        {(inv.status === 'Unpaid' || inv.status === 'Partial') && (
+                          <button onClick={() => { haptic('medium'); setCollectModal({ open: true, invoice: inv }); }} title="Collect" className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><IndianRupee size={14} /> Collect</button>
+                        )}
+                        {inv.status === 'Paid' && (
+                          <button onClick={() => { haptic('light'); handleShowReceiptFromPaidInvoice(inv); }} title="Receipt" className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Receipt size={14} /> Receipt</button>
+                        )}
+                        <button onClick={e => { haptic('medium'); handleDeleteInvoice(inv, e); }} title="Delete" className="p-2 rounded-xl bg-rose-50 text-rose-400 active:scale-95 transition-all"><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* ── Table (hidden on mobile) ── */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse font-poppins">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100">
@@ -1044,7 +1091,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                   )}
                 </tbody>
               </table>
-            </div>
+            </div>{/* end hidden md:block table wrapper */}
 
             {/* ── Footer summary ── */}
             {filteredInvoices.length > 0 && (
@@ -1174,8 +1221,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
         {/* ── Collect Payment modal ── */}
         {collectModal.open && collectModal.invoice && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-t-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 w-full max-w-md shadow-2xl font-poppins animate-sheet-up sm:animate-in sm:fade-in sm:zoom-in-95 duration-200 pb-safe">
               <div className="flex justify-between items-center mb-8">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
@@ -1202,6 +1249,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Amount Received (₹) *</label>
                   <input
                     type="number"
+                    inputMode="decimal"
                     className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700"
                     value={collectAmount}
                     onChange={e => setCollectAmount(e.target.value)}
@@ -1227,9 +1275,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                   Cancel
                 </button>
                 <button
-                  onClick={handleCollectPayment}
+                  onClick={() => { haptic('heavy'); handleCollectPayment(); }}
                   disabled={collectSaving || !collectAmount}
-                  className="flex-1 py-4 rounded-2xl font-bold bg-emerald-500 text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-emerald-100 disabled:opacity-50"
+                  className="flex-1 py-4 rounded-2xl font-bold bg-emerald-500 text-white active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-emerald-100 disabled:opacity-50"
                 >
                   {collectSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                   {collectSaving ? 'Saving...' : 'Record & Get Receipt'}
@@ -1241,8 +1289,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
         {/* ── Receipt detail modal ── */}
         {receiptModal.open && receiptModal.entry && receiptModal.customer && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-t-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 w-full max-w-md shadow-2xl font-poppins animate-sheet-up sm:animate-in sm:fade-in sm:zoom-in-95 duration-200 pb-safe">
               <div className="flex justify-between items-center mb-8">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
@@ -1372,29 +1420,29 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   if (mode === 'preview') {
     return (
       <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 font-poppins">
-        <div className="flex justify-between items-center mb-6 no-print">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors"><ArrowLeft size={18} /> All Invoices</button>
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6 no-print">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button onClick={() => { haptic('light'); setMode('list'); }} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors"><ArrowLeft size={18} /> All Invoices</button>
             <div className="w-px h-5 bg-slate-200" />
-            <button onClick={() => setMode('editing')} className="flex items-center gap-2 text-profee-blue font-bold text-sm hover:underline"><Edit3 size={18} /> Edit Invoice</button>
+            <button onClick={() => { haptic('light'); setMode('editing'); }} className="flex items-center gap-2 text-profee-blue font-bold text-sm hover:underline"><Edit3 size={18} /> Edit</button>
           </div>
-          <div className="flex gap-4">
-             {saveSuccess && <div className="flex items-center gap-2 text-emerald-500 px-4"><CheckCircle size={18} /><span className="text-sm font-bold">Invoice Saved!</span></div>}
-             <button onClick={handleNewInvoice} className="bg-white border border-slate-200 px-8 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Plus size={18} /> New Invoice</button>
+          <div className="flex gap-2 sm:gap-4 flex-wrap">
+             {saveSuccess && <div className="flex items-center gap-2 text-emerald-500 px-2"><CheckCircle size={18} /><span className="text-sm font-bold">Saved!</span></div>}
+             <button onClick={() => { haptic('light'); handleNewInvoice(); }} className="flex-1 sm:flex-none bg-white border border-slate-200 px-4 sm:px-8 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all shadow-sm"><Plus size={16} /> <span className="hidden sm:inline">New Invoice</span><span className="sm:hidden">New</span></button>
              {editingInvoice && (editingInvoice.status === 'Unpaid' || editingInvoice.status === 'Partial') && (
                <button
-                 onClick={() => setCollectModal({ open: true, invoice: editingInvoice })}
-                 className="bg-emerald-500 text-white px-8 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-100"
+                 onClick={() => { haptic('medium'); setCollectModal({ open: true, invoice: editingInvoice }); }}
+                 className="flex-1 sm:flex-none bg-emerald-500 text-white px-4 sm:px-8 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-all shadow-lg shadow-emerald-100"
                >
-                 <IndianRupee size={18} /> Collect Payment
+                 <IndianRupee size={16} /> <span className="hidden sm:inline">Collect Payment</span><span className="sm:hidden">Collect</span>
                </button>
              )}
-             <button onClick={() => window.print()} className="bg-white border border-slate-200 px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Printer size={18} /> Print A4</button>
+             <button onClick={() => { haptic('light'); window.print(); }} className="hidden sm:flex flex-1 sm:flex-none bg-white border border-slate-200 px-4 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all shadow-sm"><Printer size={16} /> Print</button>
              <button
-               onClick={() => openPDFModal(buildCurrentInvoice(), selectedCustomer || null)}
-               className="bg-profee-blue text-white px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+               onClick={() => { haptic('medium'); openPDFModal(buildCurrentInvoice(), selectedCustomer || null); }}
+               className="flex-1 sm:flex-none bg-profee-blue text-white px-4 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-100"
              >
-               <Download size={18} /> Download PDF
+               <Download size={16} /> <span className="hidden sm:inline">Download PDF</span><span className="sm:hidden">PDF</span>
              </button>
           </div>
         </div>
@@ -1425,29 +1473,29 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   //  EDITING VIEW: Invoice creation form
   // ═══════════════════════════════════════════
   return (
-    <div className="max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 pb-20">
-      <div className="flex justify-between items-end mb-4">
-        <div className="flex items-center gap-4">
-          <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins"><ArrowLeft size={18} /></button>
+    <div className="max-w-7xl mx-auto space-y-6 sm:space-y-10 animate-in fade-in slide-in-from-bottom-4 pb-20">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-2 sm:mb-4">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <button onClick={() => { haptic('light'); setMode('list'); }} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins p-2 -ml-2"><ArrowLeft size={18} /></button>
           <div>
-            <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
+            <h1 className="text-2xl sm:text-4xl font-bold font-poppins text-slate-900 tracking-tight">Invoice Maker</h1>
             <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">
               {editingInvoice ? `Editing ${editingInvoice.invoiceNumber}` : `New Bill Entry \u2022 ${invoiceNumber}`}
             </p>
           </div>
         </div>
-        <div className="flex gap-4 items-center">
-           {error && <span className="text-sm font-bold text-rose-500 font-poppins">{error}</span>}
-           <button onClick={() => setMode('preview')} className="bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-slate-50 transition-all font-poppins"><Eye size={20} /> Preview</button>
-           <button onClick={handleFinalize} disabled={saving} className="bg-profee-blue text-white px-12 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl shadow-indigo-100 hover:scale-105 transition-all font-poppins disabled:opacity-50">
-             {saving ? <><Loader2 size={20} className="animate-spin" /> Saving...</> : editingInvoice ? <><Save size={20} /> Update Invoice</> : <><Save size={20} /> Finalize Bill</>}
+        <div className="flex gap-2 sm:gap-4 items-center flex-wrap">
+           {error && <span className="text-sm font-bold text-rose-500 font-poppins w-full sm:w-auto">{error}</span>}
+           <button onClick={() => { haptic('light'); setMode('preview'); }} className="flex-1 sm:flex-none bg-white border border-slate-200 text-slate-700 px-5 sm:px-10 py-3 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all font-poppins"><Eye size={18} /> Preview</button>
+           <button onClick={() => { haptic('heavy'); handleFinalize(); }} disabled={saving} className="flex-1 sm:flex-none bg-profee-blue text-white px-6 sm:px-12 py-3 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-xl shadow-indigo-100 active:scale-95 transition-all font-poppins disabled:opacity-50">
+             {saving ? <><Loader2 size={18} className="animate-spin" /> Saving...</> : editingInvoice ? <><Save size={18} /> Update</> : <><Save size={18} /> Finalize</>}
            </button>
         </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8 space-y-8">
-          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 font-poppins">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 space-y-6 sm:space-y-8 font-poppins">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-8">
               <div className="space-y-3 relative">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Party / Customer *</label>
                  {/* Custom customer dropdown */}
@@ -1520,9 +1568,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               </div>
             </div>
           </div>
-          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 font-poppins">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold flex items-center gap-3"><Plus className="text-profee-blue" size={22} /> Particulars</h3>
+          <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 space-y-6 sm:space-y-8 font-poppins">
+            <div className="flex justify-between items-center mb-2 sm:mb-4 gap-2 flex-wrap">
+              <h3 className="text-lg sm:text-xl font-bold flex items-center gap-3"><Plus className="text-profee-blue" size={22} /> Particulars</h3>
               <div className="flex items-center gap-3">
                 {profile.businessType === 'trading' && (
                   <button
@@ -1544,65 +1592,93 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             )}
             <div className="space-y-4">
               {items.map((item) => (
-                <div key={item.id} className="grid grid-cols-12 gap-3 items-start animate-in fade-in duration-300">
-                  <div className="col-span-3 space-y-1.5">
-                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
-                    <div className="relative">
-                      <input
-                        placeholder="Product or service"
-                        autoComplete="off"
-                        className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
-                        value={item.description}
-                        onChange={e => handleItemChange(item.id, 'description', e.target.value)}
-                        onFocus={() => {
-                          setActiveDescItemId(item.id);
-                          if (profile.businessType === 'trading') ensureInventoryLoaded();
-                        }}
-                        onBlur={() => setTimeout(() => setActiveDescItemId(null), 160)}
-                      />
-                      {profile.businessType === 'trading' && activeDescItemId === item.id && (() => {
-                        const q = item.description.toLowerCase().trim();
-                        const filtered = (q.length === 0
-                          ? inventoryItems
-                          : inventoryItems.filter(inv =>
-                              inv.name.toLowerCase().includes(q) ||
-                              (inv.hsnCode || '').toLowerCase().includes(q)
-                            )
-                        ).slice(0, 6);
-                        if (filtered.length === 0) return null;
-                        return (
-                          <div className="absolute top-full left-0 right-0 z-40 mt-1 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
-                            {filtered.map(inv => (
-                              <button
-                                key={inv.id}
-                                type="button"
-                                onMouseDown={() => handleInlinePickInventoryItem(item.id, inv)}
-                                className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-amber-50 border-b border-slate-50 last:border-0 transition-colors text-left group"
-                              >
-                                <div className="min-w-0">
-                                  <p className="text-sm font-bold text-slate-800 group-hover:text-amber-800 truncate">{inv.name}</p>
-                                  <p className="text-xs text-slate-400 mt-0.5">HSN: {inv.hsnCode || '—'} · {inv.unit} · GST {inv.gstRate}%</p>
-                                </div>
-                                <div className="text-right flex-shrink-0 ml-3">
-                                  <p className="text-sm font-black text-slate-900">₹{inv.sellingPrice.toLocaleString('en-IN')}</p>
-                                  {(inv.stock ?? 0) > 0
-                                    ? <p className="text-xs text-emerald-600">Stock: {inv.stock}</p>
-                                    : <p className="text-xs text-rose-400">Out of stock</p>
-                                  }
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        );
-                      })()}
+                <div key={item.id} className="animate-in fade-in duration-300">
+                  {/* Mobile layout: stacked card */}
+                  <div className="sm:hidden bg-slate-50/60 rounded-2xl p-4 space-y-3 border border-slate-100">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Item {items.indexOf(item) + 1}</span>
+                      <button onClick={() => handleRemoveItem(item.id)} className="p-2 text-rose-400 active:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
                     </div>
-                    <input placeholder="Add a note or specification… (optional)" className="w-full bg-transparent border border-dashed border-slate-200 rounded-xl px-4 py-2 text-xs text-slate-500 placeholder-slate-300 focus:outline-none focus:border-indigo-200 transition-colors" value={item.notes || ''} onChange={e => handleItemChange(item.id, 'notes', e.target.value)} />
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Description *</label>
+                      <div className="relative">
+                        <input
+                          placeholder="Product or service"
+                          autoComplete="off"
+                          className="w-full bg-white border-none rounded-xl px-4 py-3 text-sm font-medium shadow-sm"
+                          value={item.description}
+                          onChange={e => handleItemChange(item.id, 'description', e.target.value)}
+                          onFocus={() => { setActiveDescItemId(item.id); if (profile.businessType === 'trading') ensureInventoryLoaded(); }}
+                          onBlur={() => setTimeout(() => setActiveDescItemId(null), 160)}
+                        />
+                        {profile.businessType === 'trading' && activeDescItemId === item.id && (() => {
+                          const q = item.description.toLowerCase().trim();
+                          const filtered = (q.length === 0 ? inventoryItems : inventoryItems.filter(inv => inv.name.toLowerCase().includes(q) || (inv.hsnCode || '').toLowerCase().includes(q))).slice(0, 6);
+                          if (filtered.length === 0) return null;
+                          return (
+                            <div className="absolute top-full left-0 right-0 z-40 mt-1 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+                              {filtered.map(inv => (
+                                <button key={inv.id} type="button" onMouseDown={() => handleInlinePickInventoryItem(item.id, inv)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-amber-50 border-b border-slate-50 last:border-0 transition-colors text-left">
+                                  <div className="min-w-0"><p className="text-sm font-bold text-slate-800 truncate">{inv.name}</p><p className="text-xs text-slate-400 mt-0.5">HSN: {inv.hsnCode || '—'} · GST {inv.gstRate}%</p></div>
+                                  <div className="text-right flex-shrink-0 ml-3"><p className="text-sm font-black text-slate-900">₹{inv.sellingPrice.toLocaleString('en-IN')}</p></div>
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <input placeholder="Note (optional)" className="w-full bg-transparent border border-dashed border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-500 placeholder-slate-300 focus:outline-none focus:border-indigo-200" value={item.notes || ''} onChange={e => handleItemChange(item.id, 'notes', e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-medium font-mono shadow-sm" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
+                      <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Qty</label><input type="number" inputMode="decimal" className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center shadow-sm" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
+                      <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Rate (₹)</label><input type="number" inputMode="decimal" className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center text-profee-blue shadow-sm" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
+                      <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">GST %</label><select className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-bold text-center appearance-none shadow-sm" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
+                    </div>
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                      <span className="text-xs text-slate-400 font-medium">Amount</span>
+                      <span className="text-base font-black text-slate-900">₹{(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
                   </div>
-                  <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-3">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium font-mono" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
-                  <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
-                  <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center text-profee-blue" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
-                  <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label><select className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-center appearance-none" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
-                  <div className="col-span-1 pb-2 flex justify-center"><button onClick={() => handleRemoveItem(item.id)} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button></div>
+
+                  {/* Desktop layout: original 12-col grid */}
+                  <div className="hidden sm:grid grid-cols-12 gap-3 items-start">
+                    <div className="col-span-3 space-y-1.5">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
+                      <div className="relative">
+                        <input
+                          placeholder="Product or service"
+                          autoComplete="off"
+                          className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
+                          value={item.description}
+                          onChange={e => handleItemChange(item.id, 'description', e.target.value)}
+                          onFocus={() => { setActiveDescItemId(item.id); if (profile.businessType === 'trading') ensureInventoryLoaded(); }}
+                          onBlur={() => setTimeout(() => setActiveDescItemId(null), 160)}
+                        />
+                        {profile.businessType === 'trading' && activeDescItemId === item.id && (() => {
+                          const q = item.description.toLowerCase().trim();
+                          const filtered = (q.length === 0 ? inventoryItems : inventoryItems.filter(inv => inv.name.toLowerCase().includes(q) || (inv.hsnCode || '').toLowerCase().includes(q))).slice(0, 6);
+                          if (filtered.length === 0) return null;
+                          return (
+                            <div className="absolute top-full left-0 right-0 z-40 mt-1 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+                              {filtered.map(inv => (
+                                <button key={inv.id} type="button" onMouseDown={() => handleInlinePickInventoryItem(item.id, inv)} className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-amber-50 border-b border-slate-50 last:border-0 transition-colors text-left group">
+                                  <div className="min-w-0"><p className="text-sm font-bold text-slate-800 group-hover:text-amber-800 truncate">{inv.name}</p><p className="text-xs text-slate-400 mt-0.5">HSN: {inv.hsnCode || '—'} · {inv.unit} · GST {inv.gstRate}%</p></div>
+                                  <div className="text-right flex-shrink-0 ml-3"><p className="text-sm font-black text-slate-900">₹{inv.sellingPrice.toLocaleString('en-IN')}</p>{(inv.stock ?? 0) > 0 ? <p className="text-xs text-emerald-600">Stock: {inv.stock}</p> : <p className="text-xs text-rose-400">Out of stock</p>}</div>
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <input placeholder="Add a note or specification… (optional)" className="w-full bg-transparent border border-dashed border-slate-200 rounded-xl px-4 py-2 text-xs text-slate-500 placeholder-slate-300 focus:outline-none focus:border-indigo-200 transition-colors" value={item.notes || ''} onChange={e => handleItemChange(item.id, 'notes', e.target.value)} />
+                    </div>
+                    <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-3">HSN/SAC</label><input placeholder="e.g. 9954" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium font-mono" value={item.hsnCode} onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)} /></div>
+                    <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
+                    <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center text-profee-blue" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
+                    <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label><select className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-center appearance-none" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
+                    <div className="col-span-1 pb-2 flex justify-center"><button onClick={() => handleRemoveItem(item.id)} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button></div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1622,7 +1698,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
           {/* ── GST Classification (GSTR-1 compliance) ── */}
           {selectedCustomerId && (
-            <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-6 font-poppins">
+            <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 space-y-6 font-poppins">
               <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-3">
                 <span className="text-profee-blue">⬡</span> GST Classification
                 <span className="text-[9px] font-bold bg-indigo-50 text-indigo-500 px-2 py-1 rounded-full">GSTR-1</span>
@@ -1708,8 +1784,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </div>
           )}
         </div>
-        <div className="lg:col-span-4 space-y-8 font-poppins">
-           <div className="bg-slate-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
+        <div className="lg:col-span-4 space-y-6 sm:space-y-8 font-poppins">
+           <div className="bg-slate-900 rounded-[2rem] sm:rounded-[3rem] p-6 sm:p-10 text-white shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-10"><CheckCircle size={100} /></div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-8">Summary Preview</p>
               <div className="space-y-4 mb-10">
@@ -1747,8 +1823,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
       {/* ── Inventory picker modal (trading only) ── */}
       {showInventoryPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40">
+          <div className="bg-white rounded-t-[2rem] sm:rounded-2xl shadow-2xl w-full max-w-lg sm:mx-4 max-h-[85vh] flex flex-col animate-sheet-up sm:animate-none">
+            <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="w-10 h-1 bg-slate-200 rounded-full" /></div>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h2 className="text-base font-bold font-poppins text-slate-900 flex items-center gap-2"><Package size={18} className="text-amber-600" /> Pick from Inventory</h2>
               <button onClick={() => setShowInventoryPicker(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><X size={16} /></button>
@@ -1844,8 +1921,12 @@ const QuickCreateCustomerModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40">
+      <div className="bg-white rounded-t-[2rem] sm:rounded-2xl shadow-2xl w-full max-w-sm sm:mx-4 max-h-[92vh] flex flex-col animate-sheet-up sm:animate-none">
+        {/* Pull indicator on mobile */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="w-10 h-1 bg-slate-200 rounded-full" />
+        </div>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
           <h2 className="text-base font-bold font-poppins text-slate-900">New Customer</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><X size={16} /></button>
@@ -1951,9 +2032,9 @@ const QuickCreateCustomerModal: React.FC<{
             </select>
           </div>
         </div>
-        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end flex-shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-poppins font-medium">Cancel</button>
-          <button onClick={onSave} disabled={saving || !form.name.trim()} className="px-5 py-2 text-sm bg-profee-blue hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl font-poppins transition-colors">
+        <div className="px-6 py-4 pb-safe border-t border-slate-100 flex gap-3 flex-shrink-0">
+          <button onClick={onClose} className="flex-1 px-4 py-3 text-sm border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 font-poppins font-medium">Cancel</button>
+          <button onClick={() => { haptic('medium'); onSave(); }} disabled={saving || !form.name.trim()} className="flex-1 px-5 py-3 text-sm bg-profee-blue hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl font-poppins transition-colors active:scale-95">
             {saving ? 'Saving…' : 'Create Customer'}
           </button>
         </div>
