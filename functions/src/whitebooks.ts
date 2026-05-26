@@ -1,12 +1,77 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { defineSecret } from "firebase-functions/params";
-import { getFirestore } from "firebase-admin/firestore";
+import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
+import { defineSecret, defineString } from "firebase-functions/params";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
 const WB_BASE = "https://api.whitebooks.in";
 
 const wbClientId     = defineSecret("WHITEBOOKS_CLIENT_ID");
 const wbClientSecret = defineSecret("WHITEBOOKS_CLIENT_SECRET");
 const wbEmail        = defineSecret("WHITEBOOKS_EMAIL");
+
+// App Check rollout switch. Set via: firebase functions:params:set APP_CHECK_MODE enforce
+//   "monitor" (default) → log requests missing a valid App Check token but ALLOW them.
+//   "enforce"           → reject requests without a valid App Check token.
+// Roll out as: deploy in monitor → confirm tokens arrive in App Check metrics → flip to enforce.
+const appCheckMode = defineString("APP_CHECK_MODE", { default: "monitor" });
+
+// ─── App Check guard ──────────────────────────────────────────────────────────
+// `request.app` is populated by the Functions SDK when a valid App Check token is
+// attached. We do enforcement in-code (rather than the `enforceAppCheck` option)
+// so the monitor→enforce rollout can be toggled without a code change.
+function assertAppCheck(request: CallableRequest): void {
+  if (request.app) return; // valid token present
+  if (appCheckMode.value() === "enforce") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Request blocked. Please use the official BillHippo app."
+    );
+  }
+  console.warn("[AppCheck] Missing/invalid token (monitor mode — allowing).");
+}
+
+// ─── Rate limiting ──────────────────────────────────────────────────────────
+// Fixed-window counter stored at rateLimits/{bucket__key}. Throws when the limit
+// for the current window is exceeded. Docs carry `expireAt` so a Firestore TTL
+// policy on that field can auto-purge them (set one up in the console, optional).
+function clientIp(request: CallableRequest): string {
+  const raw: any = request.rawRequest;
+  const xff = (raw?.headers?.["x-forwarded-for"] as string | undefined) ?? "";
+  return xff.split(",")[0].trim() || raw?.ip || "unknown";
+}
+
+function safeKey(s: string): string {
+  return s.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+}
+
+async function checkRateLimit(
+  bucket: string,
+  key: string,
+  max: number,
+  windowMs: number
+): Promise<void> {
+  const db = getFirestore();
+  const ref = db.collection("rateLimits").doc(`${bucket}__${safeKey(key)}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const now = Date.now();
+    const data = snap.exists ? (snap.data() as { windowStart: number; count: number }) : null;
+    if (data && data.windowStart > now - windowMs) {
+      if (data.count >= max) {
+        throw new HttpsError(
+          "resource-exhausted",
+          "Too many requests. Please wait a few minutes and try again."
+        );
+      }
+      tx.update(ref, { count: data.count + 1 });
+    } else {
+      tx.set(ref, {
+        windowStart: now,
+        count: 1,
+        expireAt: Timestamp.fromMillis(now + windowMs),
+      });
+    }
+  });
+}
 
 // Base headers — only client_id and client_secret (per Postman collection)
 function baseHeaders(extra?: Record<string, string>): Record<string, string> {
@@ -23,6 +88,9 @@ function baseHeaders(extra?: Record<string, string>): Record<string, string> {
 export const wbLookupGSTIN = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
+    assertAppCheck(request);
+    await checkRateLimit("lookup", clientIp(request), 30, 10 * 60 * 1000);
+
     const { gstin } = request.data as { gstin: string };
     if (!gstin || gstin.length !== 15) {
       throw new HttpsError("invalid-argument", "GSTIN must be 15 characters");
@@ -76,10 +144,16 @@ export const wbLookupGSTIN = onCall(
 export const wbInitSession = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
+    assertAppCheck(request);
+
     const { gstin, gstUsername } = request.data as { gstin: string; gstUsername: string };
     if (!gstin || !gstUsername) {
       throw new HttpsError("invalid-argument", "GSTIN and GST username are required");
     }
+
+    // OTP sends are the most abuse-prone path: cap per GST username and per IP.
+    await checkRateLimit("otp_user", gstUsername, 5, 60 * 60 * 1000);
+    await checkRateLimit("otp_ip", clientIp(request), 10, 60 * 60 * 1000);
 
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
@@ -123,9 +197,14 @@ export const wbInitSession = onCall(
 export const wbVerifyOTP = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
+    assertAppCheck(request);
+
     const { gstin, gstUsername, txn, otp, userId } = request.data as {
       gstin: string; gstUsername: string; txn: string; otp: string; userId: string;
     };
+
+    // Limit OTP verification attempts to blunt brute-forcing of the code.
+    await checkRateLimit("otp_verify", `${clientIp(request)}_${gstin}`, 10, 10 * 60 * 1000);
 
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
@@ -174,6 +253,9 @@ export const wbVerifyOTP = onCall(
 export const wbFetchGSTR2B = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
+    assertAppCheck(request);
+    await checkRateLimit("gstr_fetch", clientIp(request), 60, 10 * 60 * 1000);
+
     const { gstin, period, authToken, gstUsername } = request.data as {
       gstin: string; period: string; authToken: string; gstUsername: string;
     };
@@ -217,6 +299,9 @@ export const wbFetchGSTR2B = onCall(
 export const wbFetchGSTR3B = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
+    assertAppCheck(request);
+    await checkRateLimit("gstr_fetch", clientIp(request), 60, 10 * 60 * 1000);
+
     const { gstin, period, authToken, gstUsername } = request.data as {
       gstin: string; period: string; authToken: string; gstUsername: string;
     };
@@ -254,6 +339,9 @@ export const wbFetchGSTR3B = onCall(
 export const wbFetchGSTR1 = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
+    assertAppCheck(request);
+    await checkRateLimit("gstr_fetch", clientIp(request), 60, 10 * 60 * 1000);
+
     const { gstin, period, authToken, gstUsername } = request.data as {
       gstin: string; period: string; authToken: string; gstUsername: string;
     };
