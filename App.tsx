@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Menu, X } from 'lucide-react';
 import { haptic } from './lib/haptic';
 import { useAuth } from './contexts/AuthContext';
-import type { Quotation } from './types';
+import type { Quotation, Invoice } from './types';
 import LandingPage from './components/LandingPage';
 import AboutPage from './components/AboutPage';
 import ContactPage from './components/ContactPage';
@@ -20,6 +20,7 @@ import OnboardingWizard from './components/OnboardingWizard';
 import InventoryManager from './components/InventoryManager';
 import PurchaseManager from './components/PurchaseManager';
 import CreditDebitNotes from './components/CreditDebitNotes';
+import DeliveryChallan from './components/DeliveryChallan';
 import QuotationManager from './components/QuotationManager';
 import ProDashboard from './components/ProDashboard';
 import ProRegister from './components/pro/ProRegister';
@@ -51,6 +52,8 @@ const App: React.FC = () => {
   const [pendingQuotation, setPendingQuotation] = useState<Quotation | null>(null);
   // Customer → Invoice navigation: stores invoice ID to open in preview from CustomerManager
   const [pendingInvoiceId, setPendingInvoiceId] = useState<string | null>(null);
+  // Invoice → Delivery Challan handoff
+  const [pendingChallanInvoice, setPendingChallanInvoice] = useState<Invoice | null>(null);
 
   // Hash-based routing — tracks window.location.hash so we can render
   // /pro-register without a third-party router.
@@ -313,9 +316,18 @@ const App: React.FC = () => {
           onQuotationConsumed={() => setPendingQuotation(null)}
           initialInvoiceId={pendingInvoiceId}
           onInvoiceConsumed={() => setPendingInvoiceId(null)}
+          onCreateChallan={(inv) => { setPendingChallanInvoice(inv); setActiveTab('challans'); }}
         />
       );
       case 'notes':       return <CreditDebitNotes userId={userId} />;
+      case 'challans':    return (
+        <DeliveryChallan
+          userId={userId}
+          initialInvoice={pendingChallanInvoice}
+          onChallanConsumed={() => setPendingChallanInvoice(null)}
+          onNavigate={setActiveTab}
+        />
+      );
       case 'quotations':  return (
         <QuotationManager
           userId={userId}

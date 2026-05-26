@@ -49,17 +49,15 @@ const inr = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigi
 
 interface InvoiceGeneratorProps {
   userId: string;
-  /** When set, pre-fills the invoice form with data from a quotation and enters editing mode. */
   initialQuotation?: Quotation | null;
-  /** Called after initialQuotation has been consumed so App.tsx can clear it. */
   onQuotationConsumed?: () => void;
-  /** When set, directly opens this invoice ID in preview mode. */
   initialInvoiceId?: string | null;
-  /** Called after initialInvoiceId has been consumed so App.tsx can clear it. */
   onInvoiceConsumed?: () => void;
+  /** Called when the user wants to create a Delivery Challan from the current invoice. */
+  onCreateChallan?: (invoice: Invoice) => void;
 }
 
-const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuotation, onQuotationConsumed, initialInvoiceId, onInvoiceConsumed }) => {
+const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuotation, onQuotationConsumed, initialInvoiceId, onInvoiceConsumed, onCreateChallan }) => {
   const [mode, setMode] = useState<'list' | 'editing' | 'preview'>('list');
   const [sourceQuotationId, setSourceQuotationId] = useState<string | null>(null);
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
@@ -1571,6 +1569,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           <div className="flex gap-2 sm:gap-4 flex-wrap">
              {saveSuccess && <div className="flex items-center gap-2 text-emerald-500 px-2"><CheckCircle size={18} /><span className="text-sm font-bold">Saved!</span></div>}
              <button onClick={() => { haptic('light'); handleNewInvoice(); }} className="flex-1 sm:flex-none bg-white border border-slate-200 px-4 sm:px-8 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all shadow-sm"><Plus size={16} /> <span className="hidden sm:inline">New Invoice</span><span className="sm:hidden">New</span></button>
+             {onCreateChallan && editingInvoice && (
+               <button
+                 onClick={() => { haptic('medium'); onCreateChallan(editingInvoice); }}
+                 className="flex-1 sm:flex-none bg-amber-50 border border-amber-200 text-amber-700 px-4 sm:px-6 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-100 active:scale-95 transition-all shadow-sm"
+                 title="Create a Delivery Challan from this invoice"
+               >
+                 <FileText size={16} /> <span className="hidden sm:inline">Delivery Challan</span><span className="sm:hidden">Challan</span>
+               </button>
+             )}
              {editingInvoice && (editingInvoice.status === 'Unpaid' || editingInvoice.status === 'Partial') && (
                <button
                  onClick={() => { haptic('medium'); setCollectModal({ open: true, invoice: editingInvoice }); }}
