@@ -45,6 +45,7 @@ import type {
   ProfessionalDesignation,
   ProfessionalInvite,
   PendingAssignment,
+  DeliveryChallan,
 } from '../types';
 
 // ── Helper: get user-scoped collection reference ──
@@ -679,4 +680,34 @@ export async function loadGSTRCache(
   const snap = await getDoc(userDoc(userId, 'gstrCache', docId));
   if (!snap.exists()) return null;
   return snap.data() as GSTRCacheDoc;
+}
+
+// ═══════════════════════════════════════════
+//  DELIVERY CHALLANS
+//  Stored at users/{userId}/deliveryChallans/{id}.
+// ═══════════════════════════════════════════
+
+export async function getDeliveryChallans(userId: string): Promise<DeliveryChallan[]> {
+  const snap = await getDocs(userCollection(userId, 'deliveryChallans'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as DeliveryChallan));
+  return docs.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function addDeliveryChallan(userId: string, challan: Omit<DeliveryChallan, 'id'>): Promise<string> {
+  const ref = await addDoc(userCollection(userId, 'deliveryChallans'), {
+    ...challan,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateDeliveryChallan(userId: string, challanId: string, data: Partial<DeliveryChallan>): Promise<void> {
+  await updateDoc(userDoc(userId, 'deliveryChallans', challanId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteDeliveryChallan(userId: string, challanId: string): Promise<void> {
+  await deleteDoc(userDoc(userId, 'deliveryChallans', challanId));
 }

@@ -336,3 +336,32 @@ export interface Quotation {
   convertedInvoiceId?: string;     // Firestore doc ID of the created invoice
   convertedInvoiceNumber?: string; // Human-readable number, e.g. "INV/2026/005"
 }
+
+// ── Delivery Challans ──────────────────────────────────────────────────────
+// A delivery challan records goods dispatched to a customer before or without
+// a tax invoice. Stored at users/{userId}/deliveryChallans/{id}.
+
+export interface DeliveryChallan {
+  id: string;
+  challanNumber: string;
+  date: string;
+  customerId: string;
+  customerName: string;
+  enableShipTo: boolean;
+  shipToName?: string;
+  shipToGstin?: string;
+  shipToAddress?: string;
+  shipToCity?: string;
+  shipToState?: string;
+  shipToPincode?: string;
+  items: InvoiceItem[];
+  totalQuantity: number;
+  totalBeforeTax: number;
+  totalAmount: number;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  vehicleNumber?: string;
+  transportMode?: string;
+  notes?: string;
+  status: 'Draft' | 'Dispatched' | 'Delivered';
+}
