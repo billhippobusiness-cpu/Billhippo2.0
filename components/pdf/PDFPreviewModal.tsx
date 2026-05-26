@@ -36,14 +36,32 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
   customerPhone,
   whatsappMessage,
 }) => {
-  const handleWhatsApp = () => {
+  const handleWhatsApp = async () => {
     const phone = customerPhone?.replace(/\D/g, '');
     const text = whatsappMessage || `Please find the attached document: ${fileName}`;
+
+    // On mobile/supported browsers: share the actual PDF file via Web Share API
+    if (instance.url) {
+      try {
+        const response = await fetch(instance.url);
+        const blob = await response.blob();
+        const file = new File([blob], fileName, { type: 'application/pdf' });
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], text });
+          return;
+        }
+      } catch (_) {
+        // fall through to text-only link
+      }
+    }
+
+    // Desktop fallback: open WhatsApp with text message
     const url = phone
       ? `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`
       : `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
+
   // usePDF renders the document into a blob URL in the background
   const [instance, updateInstance] = usePDF({ document: pdfDocument });
 

@@ -8,6 +8,7 @@ import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import { haptic } from '../lib/haptic';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
+import { pdf } from '@react-pdf/renderer';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
 
@@ -118,6 +119,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const [addInvItemId, setAddInvItemId] = useState<string | null>(null);
   const [addingInventory, setAddingInventory] = useState(false);
   const [addInvForm, setAddInvForm] = useState({ name: '', hsnCode: '', unit: 'PCS', sellingPrice: '', gstRate: '18', stock: '0' });
+  const [showHSNModalForInvAdd, setShowHSNModalForInvAdd] = useState(false);
+
+  // WhatsApp PDF share loading (tracks which invoice row is being processed)
+  const [whatsappLoading, setWhatsappLoading] = useState<string | null>(null);
 
   // HSN search modal
   const [hsnModalItemId, setHsnModalItemId] = useState<string | null>(null);
@@ -562,6 +567,40 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       ? `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`
       : `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
+  };
+
+  // Generate PDF blob and share it via WhatsApp (Web Share API on mobile, text-link on desktop)
+  const handleShareInvoiceWhatsApp = async (inv: Invoice, custObj: Customer | null) => {
+    setWhatsappLoading(inv.id);
+    try {
+      const customer = custObj || { id: '', name: inv.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 };
+      const phone = custObj?.phone?.replace(/\D/g, '');
+      const message = `Dear ${inv.customerName},\n\nPlease find your Invoice *${inv.invoiceNumber}* for ₹${inv.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nThank you for your business!\n\nRegards,\n${profile.name}`;
+      const fileName = `Invoice-${inv.invoiceNumber.replace(/\//g, '-')}.pdf`;
+
+      const blob = await pdf(<InvoicePDF invoice={inv} business={profile} customer={customer} />).toBlob();
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: message });
+      } else {
+        // Desktop: download the PDF, then open WhatsApp with a text message
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl; a.download = fileName;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+        const waUrl = phone
+          ? `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`
+          : `https://wa.me/?text=${encodeURIComponent(message)}`;
+        window.open(waUrl, '_blank');
+      }
+    } catch (err) {
+      console.error('WhatsApp share failed:', err);
+    } finally {
+      setWhatsappLoading(null);
+    }
   };
 
   const handleNewInvoice = () => {
@@ -1009,6 +1048,14 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                         <button onClick={() => { haptic('light'); handlePreviewInvoice(inv); }} title="Preview" className="flex-1 py-2 rounded-xl bg-indigo-50 text-profee-blue text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Eye size={14} /> View</button>
                         <button onClick={() => { haptic('light'); handleEditInvoice(inv); }} title="Edit" className="flex-1 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Pencil size={14} /> Edit</button>
                         <button onClick={() => { haptic('light'); setDownloadTarget({ invoice: inv, customer: custObj }); }} title="PDF" className="flex-1 py-2 rounded-xl bg-indigo-50 text-profee-blue text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><Download size={14} /> PDF</button>
+                        <button
+                          onClick={() => { haptic('medium'); handleShareInvoiceWhatsApp(inv, custObj); }}
+                          title="Share via WhatsApp"
+                          disabled={whatsappLoading === inv.id}
+                          className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all disabled:opacity-60"
+                        >
+                          {whatsappLoading === inv.id ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />} WA
+                        </button>
                         {(inv.status === 'Unpaid' || inv.status === 'Partial') && (
                           <button onClick={() => { haptic('medium'); setCollectModal({ open: true, invoice: inv }); }} title="Collect" className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"><IndianRupee size={14} /> Collect</button>
                         )}
@@ -1106,6 +1153,17 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                                 className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-profee-blue hover:text-white transition-all"
                               >
                                 <Download size={15} />
+                              </button>
+                              {/* WhatsApp — share PDF */}
+                              <button
+                                onClick={() => handleShareInvoiceWhatsApp(inv, custObj)}
+                                title="Share via WhatsApp"
+                                disabled={whatsappLoading === inv.id}
+                                className="p-2 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-60"
+                              >
+                                {whatsappLoading === inv.id
+                                  ? <Loader2 size={15} className="animate-spin" />
+                                  : <MessageCircle size={15} />}
                               </button>
                               {/* Collect Payment — for unpaid / partially-paid invoices */}
                               {(inv.status === 'Unpaid' || inv.status === 'Partial') && (
@@ -1264,7 +1322,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           />
         )}
 
-        {/* HSN Search Modal */}
+        {/* HSN Search Modal (invoice line items) */}
         {hsnModalItemId && (
           <HSNSearchModal
             isOpen={true}
@@ -1275,6 +1333,20 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             }}
             minDigits={hsnMinDigits}
             currentValue={items.find(i => i.id === hsnModalItemId)?.hsnCode ?? ''}
+          />
+        )}
+
+        {/* HSN Search Modal (quick-add inventory item) */}
+        {showHSNModalForInvAdd && (
+          <HSNSearchModal
+            isOpen={true}
+            onClose={() => setShowHSNModalForInvAdd(false)}
+            onSelect={(code, _desc, gst) => {
+              setAddInvForm(f => ({ ...f, hsnCode: code, gstRate: String(gst) }));
+              setShowHSNModalForInvAdd(false);
+            }}
+            minDigits={hsnMinDigits}
+            currentValue={addInvForm.hsnCode}
           />
         )}
 
@@ -1963,11 +2035,14 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">HSN/SAC Code</label>
-                  <input
+                  <HSNInput
                     value={addInvForm.hsnCode}
-                    onChange={e => setAddInvForm(f => ({ ...f, hsnCode: e.target.value }))}
+                    onChange={v => setAddInvForm(f => ({ ...f, hsnCode: v }))}
+                    onSelectEntry={(code, _desc, gstRate) => setAddInvForm(f => ({ ...f, hsnCode: code, gstRate: String(gstRate) }))}
+                    minDigits={hsnMinDigits}
+                    className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 pr-8 text-sm font-medium font-mono focus:outline-none"
                     placeholder="e.g. 8471"
-                    className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-medium font-mono focus:outline-none focus:ring-2 ring-amber-100"
+                    onOpenModal={() => setShowHSNModalForInvAdd(true)}
                   />
                 </div>
                 <div className="space-y-1">
