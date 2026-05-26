@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, Download, Search, Plus, Eye, Printer, Edit3, Loader2, Save, X, Receipt } from 'lucide-react';
+import { ChevronLeft, Download, Search, Plus, Eye, Printer, Edit3, Loader2, Save, X, Receipt, MessageCircle } from 'lucide-react';
 import { Customer, LedgerEntry } from '../types';
 import { getCustomers, getLedgerEntries, addLedgerEntry, getBusinessProfile } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
@@ -113,6 +113,17 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
           <button onClick={() => setIsPreview(false)} className="flex items-center gap-2 text-profee-blue font-bold text-sm hover:underline"><Edit3 size={18} /> Back to Ledger</button>
           <div className="flex gap-3">
             <button onClick={() => window.print()} className="bg-white border border-slate-200 px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm"><Printer size={18} /> Print Statement</button>
+            <button
+              onClick={() => {
+                const phone = selectedCustomer.phone?.replace(/\D/g, '');
+                const message = `Dear ${selectedCustomer.name},\n\nPlease find your account statement attached.\n\nRegards,\n${businessName}`;
+                const url = phone ? `https://wa.me/91${phone}?text=${encodeURIComponent(message)}` : `https://wa.me/?text=${encodeURIComponent(message)}`;
+                window.open(url, '_blank');
+              }}
+              className="bg-emerald-500 text-white px-8 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-100"
+            >
+              <MessageCircle size={18} /> WhatsApp
+            </button>
             <button onClick={() => setShowPDFModal(true)} className="bg-profee-blue text-white px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"><Download size={18} /> Download PDF</button>
           </div>
         </div>
@@ -357,6 +368,8 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
             />
           }
           fileName={`Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
+          customerPhone={selectedCustomer.phone}
+          whatsappMessage={`Dear ${selectedCustomer.name},\n\nYour payment of ₹${receiptPdfData.entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} has been received. Please find your receipt attached.\n\nRegards,\n${businessName}`}
         />
       )}
 

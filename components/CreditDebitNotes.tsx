@@ -494,6 +494,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
               />
             }
             fileName={`${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${pdfModal.note.noteNumber.replace(/\//g, '-')}.pdf`}
+            customerPhone={pdfModal.customer?.phone}
+            whatsappMessage={`Dear ${pdfModal.note.customerName},\n\nPlease find your ${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'} Note *${pdfModal.note.noteNumber}* for ₹${pdfModal.note.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nRegards,\n${profile.name}`}
           />
         )}
 
@@ -883,6 +885,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
               />
             }
             fileName={`${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${pdfModal.note.noteNumber.replace(/\//g, '-')}.pdf`}
+            customerPhone={pdfModal.customer?.phone}
+            whatsappMessage={`Dear ${pdfModal.note.customerName},\n\nPlease find your ${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'} Note *${pdfModal.note.noteNumber}* for ₹${pdfModal.note.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nRegards,\n${profile.name}`}
           />
         )}
       </div>
@@ -1156,6 +1160,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
             />
           }
           fileName={`${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${pdfModal.note.noteNumber.replace(/\//g, '-')}.pdf`}
+          customerPhone={pdfModal.customer?.phone}
+          whatsappMessage={`Dear ${pdfModal.note.customerName},\n\nPlease find your ${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'} Note *${pdfModal.note.noteNumber}* for ₹${pdfModal.note.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nRegards,\n${profile.name}`}
         />
       )}
 
