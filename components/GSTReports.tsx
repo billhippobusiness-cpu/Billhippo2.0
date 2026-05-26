@@ -1969,7 +1969,6 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       {showPortalLogin && profile?.gstin && (
         <GSTPortalLogin
           gstin={profile.gstin}
-          userId={userId}
           prefilledUsername={profile.gstPortalUsername}
           onSuccess={handlePortalLogin}
           onClose={() => setShowPortalLogin(false)}

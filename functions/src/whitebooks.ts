@@ -29,6 +29,17 @@ function assertAppCheck(request: CallableRequest): void {
   console.warn("[AppCheck] Missing/invalid token (monitor mode — allowing).");
 }
 
+// ─── Auth guard ───────────────────────────────────────────────────────────────
+// Rejects any caller that is not a signed-in Firebase user, and returns the
+// verified user id. Callers can never spoof this — it comes from the ID token
+// the Functions SDK validates, not from the request body.
+function assertAuth(request: CallableRequest): string {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Please sign in to continue.");
+  }
+  return request.auth.uid;
+}
+
 // ─── Rate limiting ──────────────────────────────────────────────────────────
 // Fixed-window counter stored at rateLimits/{bucket__key}. Throws when the limit
 // for the current window is exceeded. Docs carry `expireAt` so a Firestore TTL
@@ -89,7 +100,8 @@ export const wbLookupGSTIN = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
     assertAppCheck(request);
-    await checkRateLimit("lookup", clientIp(request), 30, 10 * 60 * 1000);
+    const uid = assertAuth(request);
+    await checkRateLimit("lookup", uid, 30, 10 * 60 * 1000);
 
     const { gstin } = request.data as { gstin: string };
     if (!gstin || gstin.length !== 15) {
@@ -145,14 +157,17 @@ export const wbInitSession = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
     assertAppCheck(request);
+    const uid = assertAuth(request);
 
     const { gstin, gstUsername } = request.data as { gstin: string; gstUsername: string };
     if (!gstin || !gstUsername) {
       throw new HttpsError("invalid-argument", "GSTIN and GST username are required");
     }
 
-    // OTP sends are the most abuse-prone path: cap per GST username and per IP.
+    // OTP sends are the most abuse-prone path: cap per GST username, per user,
+    // and per IP (the IP cap blunts account-farming with many fresh sign-ups).
     await checkRateLimit("otp_user", gstUsername, 5, 60 * 60 * 1000);
+    await checkRateLimit("otp_uid", uid, 10, 60 * 60 * 1000);
     await checkRateLimit("otp_ip", clientIp(request), 10, 60 * 60 * 1000);
 
     const email     = wbEmail.value();
@@ -198,13 +213,14 @@ export const wbVerifyOTP = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
     assertAppCheck(request);
+    const uid = assertAuth(request);
 
-    const { gstin, gstUsername, txn, otp, userId } = request.data as {
-      gstin: string; gstUsername: string; txn: string; otp: string; userId: string;
+    const { gstin, gstUsername, txn, otp } = request.data as {
+      gstin: string; gstUsername: string; txn: string; otp: string;
     };
 
     // Limit OTP verification attempts to blunt brute-forcing of the code.
-    await checkRateLimit("otp_verify", `${clientIp(request)}_${gstin}`, 10, 10 * 60 * 1000);
+    await checkRateLimit("otp_verify", `${uid}_${gstin}`, 10, 10 * 60 * 1000);
 
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
@@ -237,12 +253,12 @@ export const wbVerifyOTP = onCall(
 
     const expiresAt = Date.now() + 6 * 60 * 60 * 1000;
 
-    if (userId) {
-      await getFirestore()
-        .collection("users").doc(userId)
-        .collection("gstSessions").doc(gstin.toUpperCase())
-        .set({ authToken, txn, expiresAt, gstin: gstin.toUpperCase(), gstUsername, updatedAt: new Date() }, { merge: true });
-    }
+    // Store the session under the VERIFIED user's own document only — the user
+    // id can no longer be supplied (and spoofed) by the caller.
+    await getFirestore()
+      .collection("users").doc(uid)
+      .collection("gstSessions").doc(gstin.toUpperCase())
+      .set({ authToken, txn, expiresAt, gstin: gstin.toUpperCase(), gstUsername, updatedAt: new Date() }, { merge: true });
 
     return { authToken, expiresAt };
   }
@@ -254,7 +270,8 @@ export const wbFetchGSTR2B = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
     assertAppCheck(request);
-    await checkRateLimit("gstr_fetch", clientIp(request), 60, 10 * 60 * 1000);
+    const uid = assertAuth(request);
+    await checkRateLimit("gstr_fetch", uid, 60, 10 * 60 * 1000);
 
     const { gstin, period, authToken, gstUsername } = request.data as {
       gstin: string; period: string; authToken: string; gstUsername: string;
@@ -300,7 +317,8 @@ export const wbFetchGSTR3B = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
     assertAppCheck(request);
-    await checkRateLimit("gstr_fetch", clientIp(request), 60, 10 * 60 * 1000);
+    const uid = assertAuth(request);
+    await checkRateLimit("gstr_fetch", uid, 60, 10 * 60 * 1000);
 
     const { gstin, period, authToken, gstUsername } = request.data as {
       gstin: string; period: string; authToken: string; gstUsername: string;
@@ -340,7 +358,8 @@ export const wbFetchGSTR1 = onCall(
   { secrets: [wbClientId, wbClientSecret, wbEmail], region: "asia-south1" },
   async (request) => {
     assertAppCheck(request);
-    await checkRateLimit("gstr_fetch", clientIp(request), 60, 10 * 60 * 1000);
+    const uid = assertAuth(request);
+    await checkRateLimit("gstr_fetch", uid, 60, 10 * 60 * 1000);
 
     const { gstin, period, authToken, gstUsername } = request.data as {
       gstin: string; period: string; authToken: string; gstUsername: string;
