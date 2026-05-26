@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
+import Lottie from 'lottie-react';
+import pencilAnimation from './pencil-drawing.json';
 import { LayoutDashboard, Menu, X } from 'lucide-react';
 import { haptic } from './lib/haptic';
 import { useAuth } from './contexts/AuthContext';
@@ -206,13 +208,16 @@ const App: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-[#4c2de0] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm font-bold text-slate-400 font-poppins uppercase tracking-widest">
-            Loading BillHippo…
-          </p>
-        </div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc]">
+        <Lottie
+          animationData={pencilAnimation}
+          loop
+          autoplay
+          style={{ width: 220, height: 220 }}
+        />
+        <p className="text-sm font-bold text-slate-400 font-poppins uppercase tracking-widest mt-2">
+          Loading BillHippo…
+        </p>
       </div>
     );
   }
