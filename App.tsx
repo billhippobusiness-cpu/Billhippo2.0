@@ -84,6 +84,21 @@ const App: React.FC = () => {
     }
   }, [role, hash]);
 
+  // Lock body scroll on mobile when sidebar is open so background doesn't scroll
+  useEffect(() => {
+    if (isSidebarOpen) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    };
+  }, [isSidebarOpen]);
+
   // ── Auth handlers ────────────────────────────────────────────────────────
 
   const handleLogin = async (email: string, password: string) => {
@@ -323,6 +338,7 @@ const App: React.FC = () => {
         <div
           className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
           onClick={() => setIsSidebarOpen(false)}
+          onTouchMove={(e) => e.preventDefault()}
         />
       )}
 

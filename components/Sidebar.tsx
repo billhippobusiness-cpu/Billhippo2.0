@@ -60,7 +60,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
         )}
       </div>
 
-      <nav className="flex-1 px-4 space-y-2">
+      {/* Nav list — independently scrollable, contained so it never bleeds to background */}
+      <nav className="flex-1 px-4 space-y-2 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
         {menuItems.map((item) => (
           <button
             key={item.id}
