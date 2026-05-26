@@ -107,13 +107,13 @@ export async function initiateGSTSession(gstin: string, gstUsername: string): Pr
 }
 
 export async function verifyGSTOTP(
-  gstin: string, otp: string, gstUsername: string, userId: string, txn: string
+  gstin: string, otp: string, gstUsername: string, txn: string
 ): Promise<{ authToken: string; expiresAt: number }> {
   const fn = httpsCallable<
-    { gstin: string; otp: string; gstUsername: string; userId: string; txn: string },
+    { gstin: string; otp: string; gstUsername: string; txn: string },
     { authToken: string; expiresAt: number }
   >(functions, 'wbVerifyOTP');
-  const result = await fn({ gstin, otp, gstUsername, userId, txn });
+  const result = await fn({ gstin, otp, gstUsername, txn });
   return result.data;
 }
 

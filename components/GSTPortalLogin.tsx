@@ -4,7 +4,6 @@ import { initiateGSTSession, verifyGSTOTP } from '../lib/whitebooksApi';
 
 interface GSTPortalLoginProps {
   gstin: string;
-  userId: string;
   prefilledUsername?: string;
   onSuccess: (authToken: string, expiresAt: number, gstUsername: string) => void;
   onClose: () => void;
@@ -12,7 +11,7 @@ interface GSTPortalLoginProps {
 
 type Step = 'credentials' | 'otp' | 'success';
 
-const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, prefilledUsername, onSuccess, onClose }) => {
+const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, prefilledUsername, onSuccess, onClose }) => {
   const [step, setStep] = useState<Step>('credentials');
   const [gstUsername, setGstUsername] = useState(prefilledUsername ?? '');
   const [otp, setOtp] = useState('');
@@ -47,7 +46,7 @@ const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, userId, prefille
     setLoading(true);
     setError(null);
     try {
-      const { authToken, expiresAt } = await verifyGSTOTP(gstin, otp.trim(), gstUsername, userId, sessionTxn);
+      const { authToken, expiresAt } = await verifyGSTOTP(gstin, otp.trim(), gstUsername, sessionTxn);
       setStep('success');
       setTimeout(() => onSuccess(authToken, expiresAt, gstUsername), 1200);
     } catch (err: any) {
