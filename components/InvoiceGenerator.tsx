@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX, IndianRupee, Receipt } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import { haptic } from '../lib/haptic';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
@@ -112,6 +112,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
   // Inline description autocomplete
   const [activeDescItemId, setActiveDescItemId] = useState<string | null>(null);
+
+  // Quick-add inventory item from invoice form
+  const [showAddInventoryItemModal, setShowAddInventoryItemModal] = useState(false);
+  const [addInvItemId, setAddInvItemId] = useState<string | null>(null);
+  const [addingInventory, setAddingInventory] = useState(false);
+  const [addInvForm, setAddInvForm] = useState({ name: '', hsnCode: '', unit: 'PCS', sellingPrice: '', gstRate: '18', stock: '0' });
 
   // HSN search modal
   const [hsnModalItemId, setHsnModalItemId] = useState<string | null>(null);
@@ -358,6 +364,30 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     setActiveDescItemId(null);
   };
 
+  // Quick-add a new item to inventory from the invoice form, then auto-select it
+  const handleAddToInventory = async () => {
+    if (!addInvForm.name.trim()) return;
+    setAddingInventory(true);
+    try {
+      const newItem: Omit<InventoryItem, 'id'> = {
+        name: addInvForm.name.trim(),
+        hsnCode: addInvForm.hsnCode,
+        unit: addInvForm.unit,
+        sellingPrice: parseFloat(addInvForm.sellingPrice) || 0,
+        gstRate: parseFloat(addInvForm.gstRate),
+        stock: parseInt(addInvForm.stock) || 0,
+      };
+      const id = await addInventoryItem(userId, newItem);
+      const createdItem: InventoryItem = { id, ...newItem };
+      setInventoryItems(prev => [...prev, createdItem]);
+      if (addInvItemId) handleInlinePickInventoryItem(addInvItemId, createdItem);
+      setShowAddInventoryItemModal(false);
+      setAddInvForm({ name: '', hsnCode: '', unit: 'PCS', sellingPrice: '', gstRate: '18', stock: '0' });
+    } finally {
+      setAddingInventory(false);
+    }
+  };
+
   // Select an inventory item → add as a line item (modal picker)
   const handlePickInventoryItem = (item: InventoryItem) => {
     const firstEmpty = items.find(i => !i.description.trim());
@@ -523,6 +553,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
   const openPDFModal = (invoice: Invoice, customer: Customer | null) => {
     setPdfModal({ open: true, invoice, customer });
+  };
+
+  const handleWhatsAppInvoice = (inv: Invoice, customer: Customer | null) => {
+    const phone = customer?.phone?.replace(/\D/g, '');
+    const message = `Dear ${inv.customerName},\n\nPlease find your Invoice *${inv.invoiceNumber}* for ₹${inv.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nThank you for your business!\n\nRegards,\n${profile.name}`;
+    const url = phone
+      ? `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
   };
 
   const handleNewInvoice = () => {
@@ -1205,6 +1244,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               />
             }
             fileName={`Invoice-${pdfModal.invoice.invoiceNumber.replace(/\//g, '-')}.pdf`}
+            customerPhone={pdfModal.customer?.phone}
+            whatsappMessage={`Dear ${pdfModal.invoice.customerName},\n\nPlease find your Invoice *${pdfModal.invoice.invoiceNumber}* for ₹${pdfModal.invoice.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nThank you for your business!\n\nRegards,\n${profile.name}`}
           />
         )}
 
@@ -1426,6 +1467,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               />
             }
             fileName={`Receipt-${receiptPdfData.customer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
+            customerPhone={receiptPdfData.customer.phone}
+            whatsappMessage={`Dear ${receiptPdfData.customer.name},\n\nYour payment of ₹${receiptPdfData.entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} has been received. Please find your receipt attached.\n\nRegards,\n${profile.name}`}
           />
         )}
 
@@ -1465,6 +1508,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                </button>
              )}
              <button onClick={() => { haptic('light'); window.print(); }} className="hidden sm:flex flex-1 sm:flex-none bg-white border border-slate-200 px-4 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all shadow-sm"><Printer size={16} /> Print</button>
+             <button
+               onClick={() => { haptic('light'); handleWhatsAppInvoice(buildCurrentInvoice(), selectedCustomer || null); }}
+               className="flex-1 sm:flex-none bg-emerald-500 text-white px-4 sm:px-8 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-all shadow-lg shadow-emerald-100"
+             >
+               <MessageCircle size={16} /> <span className="hidden sm:inline">WhatsApp</span><span className="sm:hidden">WA</span>
+             </button>
              <button
                onClick={() => { haptic('medium'); setDownloadTarget({ invoice: buildCurrentInvoice(), customer: selectedCustomer || null }); }}
                className="flex-1 sm:flex-none bg-profee-blue text-white px-4 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-100"
@@ -1640,15 +1689,25 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                         {profile.businessType === 'trading' && activeDescItemId === item.id && (() => {
                           const q = item.description.toLowerCase().trim();
                           const filtered = (q.length === 0 ? inventoryItems : inventoryItems.filter(inv => inv.name.toLowerCase().includes(q) || (inv.hsnCode || '').toLowerCase().includes(q))).slice(0, 6);
-                          if (filtered.length === 0) return null;
                           return (
                             <div className="absolute top-full left-0 right-0 z-40 mt-1 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+                              <button
+                                type="button"
+                                onMouseDown={() => { setAddInvItemId(item.id); setAddInvForm(f => ({ ...f, name: item.description.trim() })); setActiveDescItemId(null); setShowAddInventoryItemModal(true); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 bg-amber-50 hover:bg-amber-100 border-b border-amber-100 transition-colors text-left"
+                              >
+                                <Plus size={14} className="text-amber-600 flex-shrink-0" />
+                                <span className="text-sm font-bold text-amber-700">Add item to inventory</span>
+                              </button>
                               {filtered.map(inv => (
                                 <button key={inv.id} type="button" onMouseDown={() => handleInlinePickInventoryItem(item.id, inv)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-amber-50 border-b border-slate-50 last:border-0 transition-colors text-left">
                                   <div className="min-w-0"><p className="text-sm font-bold text-slate-800 truncate">{inv.name}</p><p className="text-xs text-slate-400 mt-0.5">HSN: {inv.hsnCode || '—'} · GST {inv.gstRate}%</p></div>
                                   <div className="text-right flex-shrink-0 ml-3"><p className="text-sm font-black text-slate-900">₹{inv.sellingPrice.toLocaleString('en-IN')}</p></div>
                                 </button>
                               ))}
+                              {filtered.length === 0 && (
+                                <p className="px-4 py-3 text-xs text-slate-400 font-medium">No matching items — add a new one above.</p>
+                              )}
                             </div>
                           );
                         })()}
@@ -1695,15 +1754,25 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                         {profile.businessType === 'trading' && activeDescItemId === item.id && (() => {
                           const q = item.description.toLowerCase().trim();
                           const filtered = (q.length === 0 ? inventoryItems : inventoryItems.filter(inv => inv.name.toLowerCase().includes(q) || (inv.hsnCode || '').toLowerCase().includes(q))).slice(0, 6);
-                          if (filtered.length === 0) return null;
                           return (
                             <div className="absolute top-full left-0 right-0 z-40 mt-1 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+                              <button
+                                type="button"
+                                onMouseDown={() => { setAddInvItemId(item.id); setAddInvForm(f => ({ ...f, name: item.description.trim() })); setActiveDescItemId(null); setShowAddInventoryItemModal(true); }}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border-b border-amber-100 transition-colors text-left"
+                              >
+                                <Plus size={14} className="text-amber-600 flex-shrink-0" />
+                                <span className="text-sm font-bold text-amber-700">Add item to inventory</span>
+                              </button>
                               {filtered.map(inv => (
                                 <button key={inv.id} type="button" onMouseDown={() => handleInlinePickInventoryItem(item.id, inv)} className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-amber-50 border-b border-slate-50 last:border-0 transition-colors text-left group">
                                   <div className="min-w-0"><p className="text-sm font-bold text-slate-800 group-hover:text-amber-800 truncate">{inv.name}</p><p className="text-xs text-slate-400 mt-0.5">HSN: {inv.hsnCode || '—'} · {inv.unit} · GST {inv.gstRate}%</p></div>
                                   <div className="text-right flex-shrink-0 ml-3"><p className="text-sm font-black text-slate-900">₹{inv.sellingPrice.toLocaleString('en-IN')}</p>{(inv.stock ?? 0) > 0 ? <p className="text-xs text-emerald-600">Stock: {inv.stock}</p> : <p className="text-xs text-rose-400">Out of stock</p>}</div>
                                 </button>
                               ))}
+                              {filtered.length === 0 && (
+                                <p className="px-4 py-2.5 text-xs text-slate-400 font-medium">No matching items — add a new one above.</p>
+                              )}
                             </div>
                           );
                         })()}
@@ -1867,6 +1936,100 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           onClose={() => setShowQuickCreate(false)}
           saving={qcSaving}
         />
+      )}
+
+      {/* ── Quick-add item to inventory (from description dropdown) ── */}
+      {showAddInventoryItemModal && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40">
+          <div className="bg-white rounded-t-[2rem] sm:rounded-2xl shadow-2xl w-full max-w-md sm:mx-4 animate-sheet-up sm:animate-none">
+            <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="w-10 h-1 bg-slate-200 rounded-full" /></div>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="text-base font-bold font-poppins text-slate-900 flex items-center gap-2">
+                <Package size={18} className="text-amber-600" /> Add Item to Inventory
+              </h2>
+              <button onClick={() => setShowAddInventoryItemModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><X size={16} /></button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Item Name *</label>
+                <input
+                  autoFocus
+                  value={addInvForm.name}
+                  onChange={e => setAddInvForm(f => ({ ...f, name: e.target.value }))}
+                  placeholder="e.g. Laptop, Consulting Service"
+                  className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-medium font-poppins focus:outline-none focus:ring-2 ring-amber-100"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">HSN/SAC Code</label>
+                  <input
+                    value={addInvForm.hsnCode}
+                    onChange={e => setAddInvForm(f => ({ ...f, hsnCode: e.target.value }))}
+                    placeholder="e.g. 8471"
+                    className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-medium font-mono focus:outline-none focus:ring-2 ring-amber-100"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Unit</label>
+                  <select
+                    value={addInvForm.unit}
+                    onChange={e => setAddInvForm(f => ({ ...f, unit: e.target.value }))}
+                    className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-medium appearance-none focus:outline-none"
+                  >
+                    {['PCS', 'NOS', 'KGS', 'MTR', 'LTR', 'BOX', 'SET', 'HRS'].map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Selling Price (₹) *</label>
+                  <input
+                    type="number" inputMode="decimal"
+                    value={addInvForm.sellingPrice}
+                    onChange={e => setAddInvForm(f => ({ ...f, sellingPrice: e.target.value }))}
+                    placeholder="0"
+                    className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-medium text-center focus:outline-none focus:ring-2 ring-amber-100"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">GST Rate</label>
+                  <select
+                    value={addInvForm.gstRate}
+                    onChange={e => setAddInvForm(f => ({ ...f, gstRate: e.target.value }))}
+                    className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-center appearance-none focus:outline-none"
+                  >
+                    {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Opening Stock</label>
+                <input
+                  type="number" inputMode="numeric"
+                  value={addInvForm.stock}
+                  onChange={e => setAddInvForm(f => ({ ...f, stock: e.target.value }))}
+                  placeholder="0"
+                  className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-medium text-center focus:outline-none focus:ring-2 ring-amber-100"
+                />
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                onClick={() => setShowAddInventoryItemModal(false)}
+                className="flex-1 py-3 rounded-xl font-bold text-slate-500 border border-slate-100 hover:bg-slate-50 font-poppins text-sm transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddToInventory}
+                disabled={addingInventory || !addInvForm.name.trim()}
+                className="flex-1 py-3 rounded-xl font-bold bg-amber-500 text-white hover:bg-amber-600 font-poppins text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-100"
+              >
+                {addingInventory ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                {addingInventory ? 'Adding…' : 'Add to Inventory'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Inventory picker modal (trading only) ── */}

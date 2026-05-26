@@ -854,6 +854,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
               />
             }
             fileName={`Invoice-${pdfModal.invoice.invoiceNumber}.pdf`}
+            customerPhone={selectedCustomer?.phone}
+            whatsappMessage={`Dear ${pdfModal.invoice.customerName},\n\nPlease find your Invoice *${pdfModal.invoice.invoiceNumber}* for ₹${pdfModal.invoice.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nThank you for your business!\n\nRegards,\n${businessProfile.name}`}
           />
         )}
 
@@ -1073,6 +1075,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
               />
             }
             fileName={`Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
+            customerPhone={selectedCustomer?.phone}
+            whatsappMessage={receiptPdfData.entry ? `Dear ${selectedCustomer?.name},\n\nYour payment of ₹${receiptPdfData.entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} has been received. Please find your receipt attached.\n\nRegards,\n${businessProfile.name}` : undefined}
           />
         )}
 
@@ -1179,6 +1183,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
               />
             }
             fileName={`${noteModal.noteType === 'credit' ? 'Credit' : 'Debit'}-Note-${noteModal.note.noteNumber.replace(/\//g, '-')}.pdf`}
+            customerPhone={selectedCustomer?.phone}
+            whatsappMessage={`Dear ${selectedCustomer?.name},\n\nPlease find your ${noteModal.noteType === 'credit' ? 'Credit' : 'Debit'} Note *${noteModal.note.noteNumber}* for ₹${noteModal.note.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nRegards,\n${businessProfile.name}`}
           />
         )}
 
