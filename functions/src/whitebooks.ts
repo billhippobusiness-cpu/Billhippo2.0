@@ -8,7 +8,7 @@ const wbClientId     = defineSecret("WHITEBOOKS_CLIENT_ID");
 const wbClientSecret = defineSecret("WHITEBOOKS_CLIENT_SECRET");
 const wbEmail        = defineSecret("WHITEBOOKS_EMAIL");
 
-// App Check rollout switch. Set via: firebase functions:params:set APP_CHECK_MODE enforce
+// App Check rollout switch. Value comes from functions/.env.billhippo-42f95
 //   "monitor" (default) → log requests missing a valid App Check token but ALLOW them.
 //   "enforce"           → reject requests without a valid App Check token.
 // Roll out as: deploy in monitor → confirm tokens arrive in App Check metrics → flip to enforce.
