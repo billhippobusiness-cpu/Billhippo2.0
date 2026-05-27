@@ -3,7 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
-import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, BarChart3, Loader2, ChevronDown, Calendar, RefreshCw, X, ExternalLink, Plus } from 'lucide-react';
+import { IndianRupee, Users, FileText, AlertTriangle, TrendingUp, BarChart3, Loader2, ChevronDown, Calendar, RefreshCw, X, ExternalLink, Plus, ChevronRight, ArrowUpRight } from 'lucide-react';
 import { Invoice, Customer, LedgerEntry, BusinessProfile } from '../types';
 import { getInvoices, getCustomers, getLedgerEntries, getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 import { PDFDirectDownload } from './pdf/PDFPreviewModal';
@@ -66,6 +66,10 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
 
   // ── Stat card hover state for colored glow ──
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+
+  // ── Drill-down modal ──
+  type ModalType = 'sales' | 'collections' | 'outstanding' | 'rate' | null;
+  const [detailModal, setDetailModal] = useState<ModalType>(null);
 
   const fyOptions = useMemo(() => generateFYOptions(), []);
 
@@ -359,21 +363,197 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
         </div>
       </div>
 
+      {/* ═══ Drill-down Detail Modal ═══ */}
+      {detailModal && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setDetailModal(null)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-lg rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            {detailModal === 'sales' && (
+              <>
+                <div className="flex items-center justify-between px-8 pt-8 pb-4 flex-shrink-0">
+                  <div>
+                    <h3 className="text-xl font-bold font-poppins text-slate-900">Total Sales</h3>
+                    <p className="text-xs text-slate-400 font-medium font-poppins mt-0.5">{invoices.length} invoice{invoices.length !== 1 ? 's' : ''} · {formatAmount(totalSales)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => { setDetailModal(null); onNavigate?.('invoices'); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-profee-blue/10 text-profee-blue text-xs font-bold font-poppins hover:bg-profee-blue/20 transition-colors">
+                      View All <ArrowUpRight size={13} />
+                    </button>
+                    <button onClick={() => setDetailModal(null)} className="p-2 rounded-xl hover:bg-slate-100 transition-colors"><X size={18} className="text-slate-400" /></button>
+                  </div>
+                </div>
+                <div className="overflow-y-auto px-8 pb-8 space-y-2">
+                  {invoices.length === 0 ? (
+                    <p className="text-center py-12 text-slate-300 font-bold font-poppins">No invoices in this period</p>
+                  ) : (
+                    invoices.slice().sort((a, b) => b.totalAmount - a.totalAmount).map(inv => (
+                      <div key={inv.id} className="flex items-center justify-between py-3 px-4 rounded-2xl hover:bg-slate-50 transition-colors">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800 font-poppins">{inv.invoiceNumber}</p>
+                          <p className="text-xs text-slate-400 font-medium">{inv.customerName} · {inv.date}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-profee-blue font-poppins">{formatAmount(inv.totalAmount)}</p>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-600' : inv.status === 'Partial' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>{inv.status}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
+            {detailModal === 'collections' && (
+              <>
+                <div className="flex items-center justify-between px-8 pt-8 pb-4 flex-shrink-0">
+                  <div>
+                    <h3 className="text-xl font-bold font-poppins text-slate-900">Collections</h3>
+                    <p className="text-xs text-slate-400 font-medium font-poppins mt-0.5">Payments received · {formatAmount(totalCollections)}</p>
+                  </div>
+                  <button onClick={() => setDetailModal(null)} className="p-2 rounded-xl hover:bg-slate-100 transition-colors"><X size={18} className="text-slate-400" /></button>
+                </div>
+                <div className="overflow-y-auto px-8 pb-8 space-y-2">
+                  {ledgerEntries.filter(e => e.type === 'Credit').length === 0 ? (
+                    <p className="text-center py-12 text-slate-300 font-bold font-poppins">No collections in this period</p>
+                  ) : (
+                    ledgerEntries.filter(e => e.type === 'Credit').slice().sort((a, b) => b.date.localeCompare(a.date)).map(e => (
+                      <div key={e.id} className="flex items-center justify-between py-3 px-4 rounded-2xl hover:bg-emerald-50/60 transition-colors">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800 font-poppins">{e.description || 'Payment received'}</p>
+                          <p className="text-xs text-slate-400 font-medium">{e.date}</p>
+                        </div>
+                        <p className="text-sm font-bold text-emerald-600 font-poppins">+{formatAmount(e.amount)}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
+            {detailModal === 'outstanding' && (
+              <>
+                <div className="flex items-center justify-between px-8 pt-8 pb-4 flex-shrink-0">
+                  <div>
+                    <h3 className="text-xl font-bold font-poppins text-slate-900">Outstanding</h3>
+                    <p className="text-xs text-slate-400 font-medium font-poppins mt-0.5">Unpaid &amp; partial invoices · {formatAmount(outstanding)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => { setDetailModal(null); onNavigate?.('invoices'); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold font-poppins hover:bg-rose-100 transition-colors">
+                      View All <ArrowUpRight size={13} />
+                    </button>
+                    <button onClick={() => setDetailModal(null)} className="p-2 rounded-xl hover:bg-slate-100 transition-colors"><X size={18} className="text-slate-400" /></button>
+                  </div>
+                </div>
+                <div className="overflow-y-auto px-8 pb-8 space-y-2">
+                  {invoices.filter(i => i.status !== 'Paid').length === 0 ? (
+                    <div className="py-12 text-center">
+                      <p className="text-emerald-500 font-bold font-poppins text-sm">🎉 All invoices are paid!</p>
+                    </div>
+                  ) : (
+                    invoices.filter(i => i.status !== 'Paid').slice().sort((a, b) => b.totalAmount - a.totalAmount).map(inv => {
+                      const daysSince = Math.floor((Date.now() - new Date(inv.date).getTime()) / (1000 * 60 * 60 * 24));
+                      return (
+                        <div key={inv.id} className="flex items-center justify-between py-3 px-4 rounded-2xl hover:bg-rose-50/60 transition-colors">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 font-poppins">{inv.invoiceNumber}</p>
+                            <p className="text-xs text-slate-400 font-medium">{inv.customerName} · {daysSince}d ago</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-rose-600 font-poppins">{formatAmount(inv.totalAmount)}</p>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${inv.status === 'Partial' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>{inv.status}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
+
+            {detailModal === 'rate' && (() => {
+              // Monthly breakdown
+              const monthlyData = chartData.map(m => ({
+                ...m,
+                rate: m.Sales > 0 ? Math.round((m.Collections / m.Sales) * 100) : 0,
+              }));
+              return (
+                <>
+                  <div className="flex items-center justify-between px-8 pt-8 pb-4 flex-shrink-0">
+                    <div>
+                      <h3 className="text-xl font-bold font-poppins text-slate-900">Collection Rate</h3>
+                      <p className="text-xs text-slate-400 font-medium font-poppins mt-0.5">Overall: {collectionRate !== null ? `${collectionRate}%` : '—'} collected</p>
+                    </div>
+                    <button onClick={() => setDetailModal(null)} className="p-2 rounded-xl hover:bg-slate-100 transition-colors"><X size={18} className="text-slate-400" /></button>
+                  </div>
+                  <div className="overflow-y-auto px-8 pb-8 space-y-3">
+                    {/* Summary row */}
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                      {[
+                        { label: 'Total Billed', value: formatAmount(totalSales), color: 'text-profee-blue' },
+                        { label: 'Collected', value: formatAmount(totalCollections), color: 'text-emerald-600' },
+                        { label: 'Pending', value: formatAmount(outstanding), color: 'text-rose-500' },
+                      ].map(s => (
+                        <div key={s.label} className="bg-slate-50 rounded-2xl p-4 text-center">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider font-poppins">{s.label}</p>
+                          <p className={`text-base font-bold font-poppins mt-1 ${s.color}`}>{s.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Rate bar */}
+                    <div className="bg-slate-50 rounded-2xl p-4 mb-2">
+                      <div className="flex justify-between text-xs font-bold font-poppins text-slate-500 mb-2">
+                        <span>Collection Rate</span>
+                        <span>{collectionRate !== null ? `${collectionRate}%` : '—'}</span>
+                      </div>
+                      <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full transition-all duration-700" style={{ width: `${collectionRate ?? 0}%` }} />
+                      </div>
+                    </div>
+                    {/* Monthly breakdown */}
+                    {monthlyData.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-poppins mb-2 px-1">Monthly Breakdown</p>
+                        {monthlyData.map(m => (
+                          <div key={m.name} className="flex items-center gap-3 py-2.5 px-4 rounded-2xl hover:bg-slate-50 transition-colors">
+                            <span className="text-xs font-bold text-slate-500 font-poppins w-14 flex-shrink-0">{m.name}</span>
+                            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-cyan-400 to-emerald-500 rounded-full" style={{ width: `${Math.min(m.rate, 100)}%` }} />
+                            </div>
+                            <span className="text-xs font-bold text-cyan-600 font-poppins w-10 text-right flex-shrink-0">{m.rate}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {[
-          { label: 'Total Sales', value: formatAmount(totalSales), icon: IndianRupee, color: 'bg-profee-blue', shadow: 'shadow-indigo-100', textColor: 'text-profee-blue', hoverShadow: '0 0 0 1px rgba(76,45,224,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(76,45,224,0.28), 0 20px 50px -10px rgba(76,45,224,0.22)' },
-          { label: 'Collections', value: formatAmount(totalCollections), icon: TrendingUp, color: 'bg-emerald-500', shadow: 'shadow-emerald-100', textColor: 'text-emerald-500', hoverShadow: '0 0 0 1px rgba(16,185,129,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(16,185,129,0.28), 0 20px 50px -10px rgba(16,185,129,0.22)' },
-          { label: 'Outstanding', value: formatAmount(outstanding), icon: AlertTriangle, color: 'bg-rose-500', shadow: 'shadow-rose-100', textColor: 'text-rose-500', hoverShadow: '0 0 0 1px rgba(244,63,94,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(244,63,94,0.28), 0 20px 50px -10px rgba(244,63,94,0.22)' },
-          { label: 'Active Parties', value: String(activePartyCount), icon: Users, color: 'bg-amber-500', shadow: 'shadow-amber-100', textColor: 'text-amber-500', hoverShadow: '0 0 0 1px rgba(245,158,11,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(245,158,11,0.28), 0 20px 50px -10px rgba(245,158,11,0.22)' },
-          { label: 'Invoices Raised', value: String(invoices.length), icon: FileText, color: 'bg-violet-500', shadow: 'shadow-violet-100', textColor: 'text-violet-600', hoverShadow: '0 0 0 1px rgba(124,58,237,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(124,58,237,0.28), 0 20px 50px -10px rgba(124,58,237,0.22)' },
-          { label: 'Collection Rate', value: collectionRate !== null ? `${collectionRate}%` : '—', icon: BarChart3, color: 'bg-cyan-500', shadow: 'shadow-cyan-100', textColor: 'text-cyan-600', hoverShadow: '0 0 0 1px rgba(6,182,212,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(6,182,212,0.28), 0 20px 50px -10px rgba(6,182,212,0.22)' },
+          { label: 'Total Sales', value: formatAmount(totalSales), icon: IndianRupee, color: 'bg-profee-blue', shadow: 'shadow-indigo-100', textColor: 'text-profee-blue', hoverShadow: '0 0 0 1px rgba(76,45,224,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(76,45,224,0.28), 0 20px 50px -10px rgba(76,45,224,0.22)', onClick: () => setDetailModal('sales'), hint: 'View invoices' },
+          { label: 'Collections', value: formatAmount(totalCollections), icon: TrendingUp, color: 'bg-emerald-500', shadow: 'shadow-emerald-100', textColor: 'text-emerald-500', hoverShadow: '0 0 0 1px rgba(16,185,129,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(16,185,129,0.28), 0 20px 50px -10px rgba(16,185,129,0.22)', onClick: () => setDetailModal('collections'), hint: 'View payments' },
+          { label: 'Outstanding', value: formatAmount(outstanding), icon: AlertTriangle, color: 'bg-rose-500', shadow: 'shadow-rose-100', textColor: 'text-rose-500', hoverShadow: '0 0 0 1px rgba(244,63,94,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(244,63,94,0.28), 0 20px 50px -10px rgba(244,63,94,0.22)', onClick: () => setDetailModal('outstanding'), hint: 'View unpaid' },
+          { label: 'Active Parties', value: String(activePartyCount), icon: Users, color: 'bg-amber-500', shadow: 'shadow-amber-100', textColor: 'text-amber-500', hoverShadow: '0 0 0 1px rgba(245,158,11,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(245,158,11,0.28), 0 20px 50px -10px rgba(245,158,11,0.22)', onClick: () => onNavigate?.('customers'), hint: 'Go to customers' },
+          { label: 'Invoices Raised', value: String(invoices.length), icon: FileText, color: 'bg-violet-500', shadow: 'shadow-violet-100', textColor: 'text-violet-600', hoverShadow: '0 0 0 1px rgba(124,58,237,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(124,58,237,0.28), 0 20px 50px -10px rgba(124,58,237,0.22)', onClick: () => onNavigate?.('invoices'), hint: 'Go to invoices' },
+          { label: 'Collection Rate', value: collectionRate !== null ? `${collectionRate}%` : '—', icon: BarChart3, color: 'bg-cyan-500', shadow: 'shadow-cyan-100', textColor: 'text-cyan-600', hoverShadow: '0 0 0 1px rgba(6,182,212,0.08), 0 8px 20px -4px rgba(0,0,0,0.10), 0 0 40px 8px rgba(6,182,212,0.28), 0 20px 50px -10px rgba(6,182,212,0.22)', onClick: () => setDetailModal('rate'), hint: 'View breakdown' },
         ].map((metric) => (
-          <div
+          <button
             key={metric.label}
+            onClick={metric.onClick}
             onMouseEnter={() => setHoveredCard(metric.label)}
             onMouseLeave={() => setHoveredCard(null)}
-            className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 border border-slate-100 transition-all duration-300 cursor-default"
+            className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 border border-slate-100 transition-all duration-300 cursor-pointer text-left w-full group relative overflow-hidden"
             style={{
               boxShadow: hoveredCard === metric.label
                 ? metric.hoverShadow
@@ -383,10 +563,12 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
           >
             <div className="flex justify-between items-start mb-4 sm:mb-6">
               <div className={`p-3 sm:p-4 rounded-2xl text-white ${metric.color} shadow-lg ${metric.shadow}`}><metric.icon size={20} /></div>
+              <ChevronRight size={15} className="text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all mt-1" />
             </div>
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 sm:mb-2 font-poppins">{metric.label}</p>
             <h3 className={`text-xl sm:text-3xl font-bold ${metric.textColor} font-poppins`}>{metric.value}</h3>
-          </div>
+            <p className="text-[9px] font-semibold text-slate-300 font-poppins mt-2 group-hover:text-slate-400 transition-colors">{metric.hint}</p>
+          </button>
         ))}
       </div>
 
