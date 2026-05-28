@@ -40,6 +40,7 @@ const DEFAULT_PROFILE: BusinessProfile = {
   theme: { templateId: 'modern-2', primaryColor: '#4c2de0', fontFamily: 'Poppins, sans-serif', invoicePrefix: `INV/${currentYear}/`, autoNumbering: true },
 };
 
+const r2  = (n: number) => Math.round(n * 100) / 100;
 const inr = (n: number) =>
   `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -126,9 +127,9 @@ const PurchaseManager: React.FC<Props> = ({ userId }) => {
     return supplierState === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [supplierState, profile.state]);
 
-  const subTotal = items.reduce((s, i) => s + i.quantity * i.rate, 0);
-  const taxAmount = items.reduce((s, i) => s + (i.quantity * i.rate * i.gstRate) / 100, 0);
-  const grandTotal = subTotal + taxAmount;
+  const subTotal  = r2(items.reduce((s, i) => s + r2(i.quantity * i.rate), 0));
+  const taxAmount = r2(items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * i.gstRate / 100), 0));
+  const grandTotal = r2(subTotal + taxAmount);
 
   // ── Item handlers ──
   const addRow = () => setItems(prev => [...prev, newLineItem()]);
@@ -223,8 +224,8 @@ const PurchaseManager: React.FC<Props> = ({ userId }) => {
     if (subTotal === 0) { setError('Purchase total cannot be zero'); return; }
     setSaving(true); setError(null);
     try {
-      const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
-      const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
+      const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
 
       // Always fetch the freshest inventory before saving so concurrent edits
@@ -811,11 +812,11 @@ const PurchaseManager: React.FC<Props> = ({ userId }) => {
               <>
                 <div className="flex justify-between text-slate-600">
                   <span>CGST</span>
-                  <span>{inr(taxAmount / 2)}</span>
+                  <span>{inr(r2(taxAmount / 2))}</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
                   <span>SGST</span>
-                  <span>{inr(taxAmount / 2)}</span>
+                  <span>{inr(r2(taxAmount / 2))}</span>
                 </div>
               </>
             ) : (

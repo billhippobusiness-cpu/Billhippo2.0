@@ -20,6 +20,8 @@ const DEFAULT_PROFILE: BusinessProfile = {
   theme: { templateId: 'modern-2', primaryColor: '#4c2de0', fontFamily: 'Poppins, sans-serif', invoicePrefix: 'INV/2026/', autoNumbering: true, logoUrl: BILLHIPPO_LOGO }
 };
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 const numberToWords = (num: number) => {
   const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
   const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -198,9 +200,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [selectedCustomer, profile.state]);
 
-  const subTotal = items.reduce((sum, item) => sum + (item.quantity * item.rate), 0);
-  const taxAmount = items.reduce((sum, item) => sum + (item.quantity * item.rate * item.gstRate / 100), 0);
-  const grandTotal = subTotal + taxAmount;
+  const subTotal  = r2(items.reduce((sum, item) => sum + r2(item.quantity * item.rate), 0));
+  const taxAmount = r2(items.reduce((sum, item) => sum + r2(r2(item.quantity * item.rate) * item.gstRate / 100), 0));
+  const grandTotal = r2(subTotal + taxAmount);
 
   // Auto-detect supply type based on customer GSTIN + state + invoice value
   const autoSupplyType = useMemo((): SupplyType => {
@@ -419,8 +421,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     if (subTotal === 0) { setError('Invoice total cannot be zero'); return; }
     setSaving(true); setError(null);
     try {
-      const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
-      const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
+      const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
       // Omit optional fields when empty — Firestore rejects undefined values
       const invoicePayload = {
@@ -536,8 +538,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
   // Build a temporary Invoice object from current form state (used for PDF before or after save)
   const buildCurrentInvoice = (): Invoice => {
-    const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
-    const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
+    const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+    const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
     const igst = gstType === GSTType.IGST ? taxAmount : 0;
     return {
       id: 'preview',
@@ -674,7 +676,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 <td className="px-4 py-6 text-center text-slate-400">{item.hsnCode || '---'}</td>
                 <td className="px-4 py-6 text-center font-black">{item.quantity}</td>
                 <td className="px-4 py-6 text-center text-slate-400">{item.gstRate}%</td>
-                <td className="px-10 py-6 text-right font-black">₹{(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                <td className="px-10 py-6 text-right font-black">₹{r2(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               </tr>
             ))}
           </tbody>
@@ -820,9 +822,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map((item, idx) => {
-                const taxable = item.quantity * item.rate;
-                const itemTax = taxable * item.gstRate / 100;
-                const halfTax = itemTax / 2;
+                const taxable = r2(item.quantity * item.rate);
+                const itemTax = r2(taxable * item.gstRate / 100);
+                const halfTax = r2(itemTax / 2);
                 return (
                   <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
                     <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
@@ -897,11 +899,11 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               <>
                 <div className="flex justify-between py-2">
                   <span className="text-slate-400">CGST</span>
-                  <span className="text-slate-700">₹{(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between py-2">
                   <span className="text-slate-400">SGST</span>
-                  <span className="text-slate-700">₹{(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                 </div>
               </>
             ) : (
@@ -1812,7 +1814,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                     </div>
                     <div className="flex justify-between items-center pt-1 border-t border-slate-100">
                       <span className="text-xs text-slate-400 font-medium">Amount</span>
-                      <span className="text-base font-black text-slate-900">₹{(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-base font-black text-slate-900">₹{r2(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
 

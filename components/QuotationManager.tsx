@@ -41,6 +41,7 @@ const formatDate = (d: string) => {
   return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : d;
 };
 
+const r2  = (n: number) => Math.round(n * 100) / 100;
 const inr = (n: number) =>
   `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -220,9 +221,9 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [selectedCustomer, profile.state]);
 
-  const subTotal = items.reduce((sum, item) => sum + item.quantity * item.rate, 0);
-  const taxAmount = items.reduce((sum, item) => sum + item.quantity * item.rate * item.gstRate / 100, 0);
-  const grandTotal = subTotal + taxAmount;
+  const subTotal  = r2(items.reduce((sum, item) => sum + r2(item.quantity * item.rate), 0));
+  const taxAmount = r2(items.reduce((sum, item) => sum + r2(r2(item.quantity * item.rate) * item.gstRate / 100), 0));
+  const grandTotal = r2(subTotal + taxAmount);
 
   const filteredCustomers = useMemo(
     () => customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())),
@@ -313,8 +314,8 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     if (subTotal === 0) { setError('Quotation total cannot be zero'); return; }
     setSaving(true); setError(null);
     try {
-      const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
-      const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
+      const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
       // Build payload without undefined fields — Firestore rejects undefined values
       const payload: Omit<Quotation, 'id'> = {
@@ -549,8 +550,8 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                       </thead>
                       <tbody>
                         {q.items.filter(i => i.description.trim()).map((item, idx) => {
-                          const lineTotal = item.quantity * item.rate;
-                          const lineTax = lineTotal * item.gstRate / 100;
+                          const lineTotal = r2(item.quantity * item.rate);
+                          const lineTax = r2(lineTotal * item.gstRate / 100);
                           return (
                             <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                               <td className="px-4 py-3 text-slate-500 text-xs">{idx + 1}</td>
@@ -903,8 +904,8 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                     </thead>
                     <tbody>
                       {items.map((item, idx) => {
-                        const lineTotal = item.quantity * item.rate;
-                        const lineTax = lineTotal * item.gstRate / 100;
+                        const lineTotal = r2(item.quantity * item.rate);
+                        const lineTax = r2(lineTotal * item.gstRate / 100);
                         return (
                           <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                             <td className="px-3 py-2">
@@ -1004,10 +1005,10 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                 {gstType === GSTType.CGST_SGST ? (
                   <>
                     <div className="flex justify-between text-sm text-slate-500">
-                      <span>CGST</span><span>{inr(taxAmount / 2)}</span>
+                      <span>CGST</span><span>{inr(r2(taxAmount / 2))}</span>
                     </div>
                     <div className="flex justify-between text-sm text-slate-500">
-                      <span>SGST</span><span>{inr(taxAmount / 2)}</span>
+                      <span>SGST</span><span>{inr(r2(taxAmount / 2))}</span>
                     </div>
                   </>
                 ) : (

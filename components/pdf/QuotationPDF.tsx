@@ -54,6 +54,8 @@ function formatDate(d: string): string {
 const fmt = (n: number) =>
   `\u20B9${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 function toWords(amount: number): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven',
     'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen',
@@ -297,9 +299,9 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
           </View>
 
           {validItems.map((item, idx) => {
-            const lineAmt = item.quantity * item.rate;
-            const lineTax = lineAmt * item.gstRate / 100;
-            const lineTotal = lineAmt + lineTax;
+            const lineAmt = r2(item.quantity * item.rate);
+            const lineTax = r2(lineAmt * item.gstRate / 100);
+            const lineTotal = r2(lineAmt + lineTax);
             return (
               <View key={item.id} style={[S.tableRow, idx % 2 !== 0 ? S.tableRowAlt : {}]} wrap={false}>
                 <Text style={[S.tableCellLight, S.colNo]}>{idx + 1}</Text>

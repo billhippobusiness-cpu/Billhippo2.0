@@ -104,6 +104,8 @@ function formatDate(dateStr: string): string {
 const fmt = (n: number) =>
   `\u20B9${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
 // ─── Base stylesheet ──────────────────────────────────────────────────────────
 const S = StyleSheet.create({
   page: {
@@ -258,10 +260,10 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
   const isCgst     = invoice.gstType === GSTType.CGST_SGST;
 
   const itemsWithTax = invoice.items.map(item => {
-    const lineTotal = item.quantity * item.rate;
-    const taxAmt    = lineTotal * (item.gstRate / 100);
-    const halfTax   = taxAmt / 2;
-    return { ...item, lineTotal, taxAmt, halfTax, grandLine: lineTotal + taxAmt };
+    const lineTotal = r2(item.quantity * item.rate);
+    const taxAmt    = r2(lineTotal * (item.gstRate / 100));
+    const halfTax   = r2(taxAmt / 2);
+    return { ...item, lineTotal, taxAmt, halfTax, grandLine: r2(lineTotal + taxAmt) };
   });
 
   // QR URL (external, not Firebase — no CORS issue)

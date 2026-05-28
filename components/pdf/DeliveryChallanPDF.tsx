@@ -80,6 +80,8 @@ function formatDate(dateStr: string): string {
 const fmt = (n: number) =>
   `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 // ─── StyleSheet ───────────────────────────────────────────────────────────────
 const S = StyleSheet.create({
   page: {
@@ -304,16 +306,16 @@ const DeliveryChallanPDF: React.FC<DeliveryChallanPDFProps> = ({
   const PRIMARY = business.theme?.primaryColor || '#4c2de0';
 
   // Compute totals from items
-  const subTotal   = challan.items.reduce((s, i) => s + i.quantity * i.rate, 0);
-  const taxAmount  = challan.items.reduce((s, i) => s + i.quantity * i.rate * (i.gstRate / 100), 0);
-  const grandTotal = subTotal + taxAmount;
+  const subTotal   = r2(challan.items.reduce((s, i) => s + r2(i.quantity * i.rate), 0));
+  const taxAmount  = r2(challan.items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * (i.gstRate / 100)), 0));
+  const grandTotal = r2(subTotal + taxAmount);
   const totalQty   = challan.items.reduce((s, i) => s + i.quantity, 0);
 
   // GST breakdown by rate
   const gstBreakdown = challan.items.reduce<Record<number, { taxable: number; tax: number }>>(
     (acc, item) => {
-      const taxable = item.quantity * item.rate;
-      const tax     = taxable * (item.gstRate / 100);
+      const taxable = r2(item.quantity * item.rate);
+      const tax     = r2(taxable * (item.gstRate / 100));
       if (!acc[item.gstRate]) acc[item.gstRate] = { taxable: 0, tax: 0 };
       acc[item.gstRate].taxable += taxable;
       acc[item.gstRate].tax     += tax;
@@ -498,9 +500,9 @@ const DeliveryChallanPDF: React.FC<DeliveryChallanPDFProps> = ({
 
         {/* Table rows */}
         {challan.items.map((item, idx) => {
-          const lineTotal = item.quantity * item.rate;
-          const itemTax   = lineTotal * (item.gstRate / 100);
-          const grandLine = lineTotal + itemTax;
+          const lineTotal = r2(item.quantity * item.rate);
+          const itemTax   = r2(lineTotal * (item.gstRate / 100));
+          const grandLine = r2(lineTotal + itemTax);
           return (
             <View
               key={item.id}
