@@ -206,6 +206,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const subTotal  = r2(items.reduce((sum, item) => sum + r2(item.quantity * item.rate), 0));
   const taxAmount = r2(items.reduce((sum, item) => sum + r2(r2(item.quantity * item.rate) * item.gstRate / 100), 0));
   const grandTotal = r2(subTotal + taxAmount);
+  const roundedTotal = Math.round(grandTotal);
+  const roundOff = r2(roundedTotal - grandTotal);
 
   // Auto-detect supply type based on customer GSTIN + state + invoice value
   const autoSupplyType = useMemo((): SupplyType => {
@@ -431,7 +433,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       const invoicePayload = {
         invoiceNumber, date: invoiceDate, customerId: selectedCustomerId,
         customerName: selectedCustomer?.name || '', items, gstType,
-        totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: grandTotal,
+        totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: roundedTotal,
         status: (editingInvoice?.status || 'Unpaid') as 'Paid' | 'Unpaid' | 'Partial',
         stockApplied: true,
         supplyType: effectiveSupplyType,
@@ -464,11 +466,11 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         // Set editingInvoice so that returning to edit mode updates rather than creates a duplicate
         setEditingInvoice(newInvoice);
         await addLedgerEntry(userId, {
-          date: invoiceDate, type: 'Debit', amount: grandTotal,
+          date: invoiceDate, type: 'Debit', amount: roundedTotal,
           description: `Sale - ${invoiceNumber}`, invoiceId, customerId: selectedCustomerId
         });
         if (selectedCustomer) {
-          await updateCustomer(userId, selectedCustomerId, { balance: (selectedCustomer.balance || 0) + grandTotal });
+          await updateCustomer(userId, selectedCustomerId, { balance: (selectedCustomer.balance || 0) + roundedTotal });
         }
         // If this invoice was converted from a quotation, mark the quotation as Converted
         if (sourceQuotationId) {
@@ -554,7 +556,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       gstType,
       totalBeforeTax: subTotal,
       cgst, sgst, igst,
-      totalAmount: grandTotal,
+      totalAmount: roundedTotal,
       status: 'Unpaid',
     };
   };
@@ -713,14 +715,20 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                  <div className="flex justify-between text-xs font-medium text-slate-400"><span>CGST ({items[0]?.gstRate/2}%)</span><span>₹{(taxAmount/2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                  <div className="flex justify-between text-xs font-medium text-slate-400"><span>SGST ({items[0]?.gstRate/2}%)</span><span>₹{(taxAmount/2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                </>) : (<div className="flex justify-between text-xs font-medium text-slate-400"><span>IGST ({items[0]?.gstRate}%)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+               {roundOff !== 0 && (
+                 <div className="flex justify-between text-xs font-medium text-slate-400">
+                   <span>Round Off</span>
+                   <span>{roundOff > 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                 </div>
+               )}
             </div>
             <div className="pt-8 border-t-2 border-slate-100 flex justify-between items-center px-6 gap-4">
                <span className="text-2xl font-black uppercase tracking-tighter text-slate-900 font-montserrat shrink-0">Total</span>
-               <span className="text-4xl font-black text-slate-900 font-montserrat tracking-tighter text-right min-w-0">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+               <span className="text-4xl font-black text-slate-900 font-montserrat tracking-tighter text-right min-w-0">₹{roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
             </div>
             <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 font-poppins space-y-2 shadow-sm">
                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Amount in Words</p>
-               <p className="text-base font-black text-slate-800 leading-tight">{numberToWords(grandTotal)}</p>
+               <p className="text-base font-black text-slate-800 leading-tight">{numberToWords(roundedTotal)}</p>
             </div>
          </div>
       </div>
@@ -915,13 +923,19 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 <span className="text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
             )}
+            {roundOff !== 0 && (
+              <div className="flex justify-between py-2">
+                <span className="text-slate-400">Round Off</span>
+                <span className="text-slate-700">{roundOff > 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
             <div className="flex justify-between items-baseline pt-4 border-t-2" style={{ borderColor: profile.theme.primaryColor }}>
               <span className="text-[22px] font-black tracking-tight font-montserrat" style={{ color: profile.theme.primaryColor }}>Total</span>
-              <span className="text-[34px] font-black tracking-tighter font-montserrat" style={{ color: profile.theme.primaryColor }}>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              <span className="text-[34px] font-black tracking-tighter font-montserrat" style={{ color: profile.theme.primaryColor }}>₹{roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
             </div>
             <div className="pt-3">
               <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Invoice Total (in words)</p>
-              <p className="text-[9px] font-black text-slate-700 italic leading-snug mt-1">{numberToWords(grandTotal)}</p>
+              <p className="text-[9px] font-black text-slate-700 italic leading-snug mt-1">{numberToWords(roundedTotal)}</p>
             </div>
           </div>
         </div>
@@ -1993,7 +2007,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                  <div className="flex justify-between items-center opacity-80"><span className="text-sm font-medium">Sub Total</span><span className="text-base font-bold">₹{subTotal.toLocaleString()}</span></div>
                  <div className="flex justify-between items-center text-emerald-400"><span className="text-sm font-medium">Tax Amount</span><span className="text-base font-bold">+ ₹{taxAmount.toLocaleString()}</span></div>
               </div>
-              <div className="pt-8 border-t border-white/10 space-y-2"><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">Grand Total</p><h3 className="text-4xl font-black">₹{grandTotal.toLocaleString()}</h3></div>
+              <div className="pt-8 border-t border-white/10 space-y-2"><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">Grand Total</p><h3 className="text-4xl font-black">₹{roundedTotal.toLocaleString()}</h3></div>
            </div>
            <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-6">
               <h4 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Globe size={18} className="text-profee-blue" /> Quick Info</h4>

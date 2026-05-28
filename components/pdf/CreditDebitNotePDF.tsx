@@ -287,9 +287,19 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
               <Text style={s.totalsValue}>₹{note.igst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
             </View>
           )}
+          {(() => {
+            const rawTotal = r2(note.totalBeforeTax + note.cgst + note.sgst + note.igst);
+            const roundOff = r2(note.totalAmount - rawTotal);
+            return roundOff !== 0 ? (
+              <View style={s.totalsRow}>
+                <Text style={s.totalsLabel}>Round Off</Text>
+                <Text style={s.totalsValue}>{roundOff > 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+              </View>
+            ) : null;
+          })()}
           <View style={s.grandTotalRow}>
             <Text style={[s.grandTotalLabel, { color: accentColor }]}>Total {isCredit ? 'Credit' : 'Debit'}</Text>
-            <Text style={[s.grandTotalValue, { color: accentColor }]}>₹{note.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+            <Text style={[s.grandTotalValue, { color: accentColor }]}>₹{note.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</Text>
           </View>
         </View>
 

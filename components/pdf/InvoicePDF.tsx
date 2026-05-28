@@ -412,11 +412,21 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
             <Text style={S.m1TotValue}>{fmt(invoice.igst)}</Text>
           </View>
         ) : null}
+        {(() => {
+          const rawTotal = r2(invoice.totalBeforeTax + invoice.cgst + invoice.sgst + invoice.igst);
+          const roundOff = r2(invoice.totalAmount - rawTotal);
+          return roundOff !== 0 ? (
+            <View style={S.m1TotRow}>
+              <Text style={S.m1TotLabel}>Round Off</Text>
+              <Text style={S.m1TotValue}>{roundOff > 0 ? '+' : ''}{fmt(Math.abs(roundOff))}</Text>
+            </View>
+          ) : null;
+        })()}
 
         <View style={[S.m1GrandSection, { borderTopWidth: 2, borderTopColor: PRIMARY, borderTopStyle: 'solid' }]}>
           <View style={S.m1GrandRow}>
             <Text style={[S.m1GrandLabel, { color: PRIMARY }]}>Total</Text>
-            <Text style={[S.m1GrandValue, { color: PRIMARY }]}>{fmt(invoice.totalAmount)}</Text>
+            <Text style={[S.m1GrandValue, { color: PRIMARY }]}>₹{invoice.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</Text>
           </View>
         </View>
 

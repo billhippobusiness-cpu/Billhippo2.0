@@ -173,6 +173,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
   const subTotal  = r2(items.reduce((s, i) => s + r2(i.quantity * i.rate), 0));
   const taxAmount = r2(items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * i.gstRate / 100), 0));
   const grandTotal = r2(subTotal + taxAmount);
+  const roundedTotal = Math.round(grandTotal);
+  const roundOff = r2(roundedTotal - grandTotal);
 
   // ── Item handlers ──
   const handleAddItem = () => {
@@ -282,7 +284,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
         ...(originalInvoiceNumber.trim() ? { originalInvoiceNumber: originalInvoiceNumber.trim() } : {}),
         reason: reason.trim(),
         items, gstType,
-        totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: grandTotal,
+        totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: roundedTotal,
       };
 
       if (activeTab === 'credit') {
@@ -293,13 +295,13 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
           const noteId = await addCreditNote(userId, payload as Omit<CreditNote, 'id'>);
           // Ledger: Credit entry → reduces customer balance
           await addLedgerEntry(userId, {
-            date: noteDate, type: 'Credit', amount: grandTotal,
+            date: noteDate, type: 'Credit', amount: roundedTotal,
             description: `Credit Note - ${noteNumber}${originalInvoiceNumber ? ` (Ref: ${originalInvoiceNumber})` : ''}`,
             creditNoteId: noteId, customerId: selectedCustomerId,
           });
           if (selectedCustomer) {
             await updateCustomer(userId, selectedCustomerId, {
-              balance: (selectedCustomer.balance || 0) - grandTotal,
+              balance: (selectedCustomer.balance || 0) - roundedTotal,
             });
           }
           await loadData();
@@ -312,13 +314,13 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
           const noteId = await addDebitNote(userId, payload as Omit<DebitNote, 'id'>);
           // Ledger: Debit entry → increases customer balance
           await addLedgerEntry(userId, {
-            date: noteDate, type: 'Debit', amount: grandTotal,
+            date: noteDate, type: 'Debit', amount: roundedTotal,
             description: `Debit Note - ${noteNumber}${originalInvoiceNumber ? ` (Ref: ${originalInvoiceNumber})` : ''}`,
             debitNoteId: noteId, customerId: selectedCustomerId,
           });
           if (selectedCustomer) {
             await updateCustomer(userId, selectedCustomerId, {
-              balance: (selectedCustomer.balance || 0) + grandTotal,
+              balance: (selectedCustomer.balance || 0) + roundedTotal,
             });
           }
           await loadData();
@@ -346,7 +348,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
       customerName: selectedCustomer?.name || '',
       originalInvoiceNumber: originalInvoiceNumber || undefined,
       reason, items, gstType,
-      totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: grandTotal,
+      totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: roundedTotal,
     };
   };
 
@@ -476,8 +478,14 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                   <span>IGST</span><span>{inr(taxAmount)}</span>
                 </div>
               )}
+              {roundOff !== 0 && (
+                <div className="flex justify-between text-sm text-slate-400">
+                  <span>Round Off</span>
+                  <span>{roundOff > 0 ? '+' : ''}{inr(Math.abs(roundOff))}</span>
+                </div>
+              )}
               <div className={`flex justify-between text-lg font-black pt-3 border-t-2 ${activeTab === 'credit' ? 'border-emerald-200 text-emerald-600' : 'border-amber-200 text-amber-600'}`}>
-                <span>Total</span><span>{inr(grandTotal)}</span>
+                <span>Total</span><span>₹{roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
               </div>
             </div>
           </div>

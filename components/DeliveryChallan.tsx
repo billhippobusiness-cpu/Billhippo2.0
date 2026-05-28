@@ -233,7 +233,9 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
     const taxAmount  = r2(items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * (i.gstRate / 100)), 0));
     const grandTotal = r2(subTotal + taxAmount);
     const totalQty   = items.reduce((s, i) => s + i.quantity, 0);
-    return { subTotal, taxAmount, grandTotal, totalQty };
+    const roundedTotal = Math.round(grandTotal);
+    const roundOff   = r2(roundedTotal - grandTotal);
+    return { subTotal, taxAmount, grandTotal, roundedTotal, roundOff, totalQty };
   }, [items]);
 
   const filteredChallans = useMemo(() => {
@@ -372,7 +374,7 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
       items,
       totalQuantity: totalQty,
       totalBeforeTax: subTotal,
-      totalAmount: grandTotal,
+      totalAmount: roundedTotal,
       ...(invoiceRef ? { invoiceNumber: invoiceRef } : {}),
       ...(vehicleNumber ? { vehicleNumber } : {}),
       ...(transportMode ? { transportMode } : {}),
@@ -576,7 +578,7 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
                   {challan.totalQuantity} <span className="text-base font-bold text-slate-400">items</span>
                 </p>
                 {showPrices && (
-                  <p className="text-sm font-bold text-emerald-600">{inr(computedTotals.grandTotal)}</p>
+                  <p className="text-sm font-bold text-emerald-600">₹{computedTotals.roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</p>
                 )}
               </div>
             </div>
@@ -685,7 +687,7 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
                     <>
                       <td className="px-3 py-3" />
                       <td className="px-3 py-3" />
-                      <td className="px-4 py-3 text-right text-sm font-black text-slate-900">{inr(computedTotals.grandTotal)}</td>
+                      <td className="px-4 py-3 text-right text-sm font-black text-slate-900">₹{computedTotals.roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</td>
                     </>
                   )}
                 </tr>
@@ -705,9 +707,15 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
                   <span>GST</span>
                   <span className="font-bold">{inr(computedTotals.taxAmount)}</span>
                 </div>
+                {computedTotals.roundOff !== 0 && (
+                  <div className="flex justify-between text-sm font-medium text-slate-400">
+                    <span>Round Off</span>
+                    <span>{computedTotals.roundOff > 0 ? '+' : ''}{inr(Math.abs(computedTotals.roundOff))}</span>
+                  </div>
+                )}
                 <div className="flex justify-between pt-3 border-t-2 border-slate-200">
                   <span className="text-base font-black text-slate-900">Total</span>
-                  <span className="text-xl font-black" style={{ color: primaryColor }}>{inr(computedTotals.grandTotal)}</span>
+                  <span className="text-xl font-black" style={{ color: primaryColor }}>₹{computedTotals.roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
                 </div>
               </div>
             </div>
@@ -1178,10 +1186,16 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
                       <span>GST</span>
                       <span className="font-bold">{inr(computedTotals.taxAmount)}</span>
                     </div>
+                    {computedTotals.roundOff !== 0 && (
+                      <div className="flex justify-between text-sm text-slate-400">
+                        <span>Round Off</span>
+                        <span>{computedTotals.roundOff > 0 ? '+' : ''}{inr(Math.abs(computedTotals.roundOff))}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between pt-3 border-t-2 border-slate-100">
                       <span className="font-black text-slate-900">Grand Total</span>
                       <span className="font-black text-lg" style={{ color: primaryColor }}>
-                        {inr(computedTotals.grandTotal)}
+                        ₹{computedTotals.roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
                       </span>
                     </div>
                   </>
