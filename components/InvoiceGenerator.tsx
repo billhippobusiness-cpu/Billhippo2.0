@@ -22,22 +22,25 @@ const DEFAULT_PROFILE: BusinessProfile = {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-const numberToWords = (num: number) => {
-  const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
-  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  const inWords = (n: any): string => {
-    if ((n = n.toString()).length > 9) return 'overflow';
-    let nArr = ('000000000' + n).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
-    if (!nArr) return '';
-    let str = '';
-    str += (parseInt(nArr[1]) !== 0) ? (a[Number(nArr[1])] || b[Number(nArr[1][0])] + ' ' + a[Number(nArr[1][1])]) + 'Crore ' : '';
-    str += (parseInt(nArr[2]) !== 0) ? (a[Number(nArr[2])] || b[Number(nArr[2][0])] + ' ' + a[Number(nArr[2][1])]) + 'Lakh ' : '';
-    str += (parseInt(nArr[3]) !== 0) ? (a[Number(nArr[3])] || b[Number(nArr[3][0])] + ' ' + a[Number(nArr[3][1])]) + 'Thousand ' : '';
-    str += (parseInt(nArr[4]) !== 0) ? a[Number(nArr[4])] + 'Hundred ' : '';
-    str += (parseInt(nArr[5]) !== 0) ? ((str !== '') ? 'and ' : '') + (a[Number(nArr[5])] || b[Number(nArr[5][0])] + ' ' + a[Number(nArr[5][1])]) + 'Only' : 'Only';
-    return str;
-  };
-  return inWords(Math.floor(num));
+const numberToWords = (amount: number): string => {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen',
+    'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  function conv(n: number): string {
+    if (n === 0) return '';
+    if (n < 20) return ones[n];
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
+    if (n < 1000) return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + conv(n % 100) : '');
+    if (n < 100000) return conv(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + conv(n % 1000) : '');
+    if (n < 10000000) return conv(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + conv(n % 100000) : '');
+    return conv(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + conv(n % 10000000) : '');
+  }
+  const rupees = Math.floor(amount);
+  const paise  = Math.round((amount - rupees) * 100);
+  let result = conv(rupees) + ' Rupees';
+  if (paise > 0) result += ' and ' + conv(paise) + ' Paise';
+  return result + ' Only';
 };
 
 // DD-MM-YYYY display helper
@@ -717,7 +720,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </div>
             <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 font-poppins space-y-2 shadow-sm">
                <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Amount in Words</p>
-               <p className="text-base font-black text-slate-800 leading-tight">{numberToWords(grandTotal)} Only</p>
+               <p className="text-base font-black text-slate-800 leading-tight">{numberToWords(grandTotal)}</p>
             </div>
          </div>
       </div>
@@ -918,7 +921,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </div>
             <div className="pt-3">
               <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Invoice Total (in words)</p>
-              <p className="text-[9px] font-black text-slate-700 italic leading-snug mt-1">{numberToWords(grandTotal)} Only</p>
+              <p className="text-[9px] font-black text-slate-700 italic leading-snug mt-1">{numberToWords(grandTotal)}</p>
             </div>
           </div>
         </div>
