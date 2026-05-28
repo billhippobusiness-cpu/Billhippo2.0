@@ -35,6 +35,8 @@ Font.register({
 
 Font.registerHyphenationCallback(word => [word]);
 
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
 const DARK   = '#1e293b';
 const MID    = '#475569';
 const LIGHT  = '#94a3b8';
@@ -232,9 +234,9 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
             <Text style={[s.tableHeadCell, { width: 65, textAlign: 'right' }]}>Total</Text>
           </View>
           {note.items.map((item, idx) => {
-            const taxable = item.quantity * item.rate;
-            const itemTax = taxable * item.gstRate / 100;
-            const halfTax = itemTax / 2;
+            const taxable = r2(item.quantity * item.rate);
+            const itemTax = r2(taxable * item.gstRate / 100);
+            const halfTax = r2(itemTax / 2);
             return (
               <View key={item.id} wrap={false} style={[s.tableRow, idx % 2 === 0 ? {} : { backgroundColor: ALT }]}>
                 <Text style={[s.tableCell, { width: 20 }]}>{idx + 1}</Text>

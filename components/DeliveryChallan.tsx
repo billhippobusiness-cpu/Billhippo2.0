@@ -39,6 +39,7 @@ import HSNSearchModal, { HSNInput } from './HSNSearchModal';
 import { haptic } from '../lib/haptic';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+const r2 = (n: number) => Math.round(n * 100) / 100;
 const currentYear = new Date().getFullYear();
 
 const DEFAULT_PROFILE: BusinessProfile = {
@@ -228,9 +229,9 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
   const hsnMinDigits = profile.annualTurnover === 'above5cr' ? 6 : 4;
 
   const computedTotals = useMemo(() => {
-    const subTotal   = items.reduce((s, i) => s + i.quantity * i.rate, 0);
-    const taxAmount  = items.reduce((s, i) => s + i.quantity * i.rate * (i.gstRate / 100), 0);
-    const grandTotal = subTotal + taxAmount;
+    const subTotal   = r2(items.reduce((s, i) => s + r2(i.quantity * i.rate), 0));
+    const taxAmount  = r2(items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * (i.gstRate / 100)), 0));
+    const grandTotal = r2(subTotal + taxAmount);
     const totalQty   = items.reduce((s, i) => s + i.quantity, 0);
     return { subTotal, taxAmount, grandTotal, totalQty };
   }, [items]);
@@ -651,8 +652,8 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {items.map((item, idx) => {
-                  const lineTotal = item.quantity * item.rate;
-                  const itemTax   = lineTotal * (item.gstRate / 100);
+                  const lineTotal = r2(item.quantity * item.rate);
+                  const itemTax   = r2(lineTotal * (item.gstRate / 100));
                   return (
                     <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                       <td className="px-4 py-3 text-slate-400 font-bold text-xs">{idx + 1}</td>

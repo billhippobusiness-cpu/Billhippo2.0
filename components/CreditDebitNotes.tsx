@@ -19,6 +19,8 @@ import {
   ArrowLeft, Download, Pencil, Search, X, CheckCircle, Info,
   TrendingDown, TrendingUp, FileCheck2, Package,
 } from 'lucide-react';
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
 import {
   GSTType, CreditDebitNoteItem, CreditNote, DebitNote, Customer, BusinessProfile, InventoryItem,
 } from '../types';
@@ -168,9 +170,9 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [selectedCustomer, profile.state]);
 
-  const subTotal = items.reduce((s, i) => s + i.quantity * i.rate, 0);
-  const taxAmount = items.reduce((s, i) => s + i.quantity * i.rate * i.gstRate / 100, 0);
-  const grandTotal = subTotal + taxAmount;
+  const subTotal  = r2(items.reduce((s, i) => s + r2(i.quantity * i.rate), 0));
+  const taxAmount = r2(items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * i.gstRate / 100), 0));
+  const grandTotal = r2(subTotal + taxAmount);
 
   // ── Item handlers ──
   const handleAddItem = () => {
@@ -270,8 +272,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
 
     setSaving(true); setError(null);
     try {
-      const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
-      const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
+      const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
       const igst = gstType === GSTType.IGST ? taxAmount : 0;
 
       const payload = {
@@ -335,8 +337,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
 
   // ── Build current note for preview ──
   const buildCurrentNote = (): CreditNote | DebitNote => {
-    const cgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
-    const sgst = gstType === GSTType.CGST_SGST ? taxAmount / 2 : 0;
+    const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+    const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
     const igst = gstType === GSTType.IGST ? taxAmount : 0;
     return {
       id: 'preview',
@@ -448,7 +450,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                     <td className="px-4 py-4 text-sm text-slate-700 text-right">{inr(item.rate)}</td>
                     <td className="px-4 py-4 text-sm text-slate-400 text-center">{item.gstRate}%</td>
                     <td className="px-6 py-4 text-sm font-black text-slate-900 text-right">
-                      {inr(item.quantity * item.rate * (1 + item.gstRate / 100))}
+                      {inr(r2(r2(item.quantity * item.rate) * (1 + item.gstRate / 100)))}
                     </td>
                   </tr>
                 ))}
@@ -463,10 +465,10 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
               {gstType === GSTType.CGST_SGST ? (
                 <>
                   <div className="flex justify-between text-sm text-slate-400">
-                    <span>CGST</span><span>{inr(taxAmount / 2)}</span>
+                    <span>CGST</span><span>{inr(r2(taxAmount / 2))}</span>
                   </div>
                   <div className="flex justify-between text-sm text-slate-400">
-                    <span>SGST</span><span>{inr(taxAmount / 2)}</span>
+                    <span>SGST</span><span>{inr(r2(taxAmount / 2))}</span>
                   </div>
                 </>
               ) : (
