@@ -557,7 +557,7 @@ const DeliveryChallanPDF: React.FC<DeliveryChallanPDFProps> = ({
               <Text style={[S.tableFooterText, S.cUnitP]} />
               <Text style={[S.tableFooterText, S.cRateP]} />
               <Text style={[S.tableFooterText, S.cGstP]} />
-              <Text style={[S.tableFooterText, S.cAmtP]}>{fmt(grandTotal)}</Text>
+              <Text style={[S.tableFooterText, S.cAmtP]}>₹{challan.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</Text>
             </>
           ) : (
             <>
@@ -583,9 +583,18 @@ const DeliveryChallanPDF: React.FC<DeliveryChallanPDFProps> = ({
                   <Text style={S.taxValue}>{fmt(val.tax)}</Text>
                 </View>
               ))}
+              {(() => {
+                const roundOff = r2(challan.totalAmount - r2(subTotal + taxAmount));
+                return roundOff !== 0 ? (
+                  <View style={S.taxRow}>
+                    <Text style={S.taxLabel}>Round Off</Text>
+                    <Text style={S.taxValue}>{roundOff > 0 ? '+' : ''}{fmt(Math.abs(roundOff))}</Text>
+                  </View>
+                ) : null;
+              })()}
               <View style={[S.grandRow, { borderTopColor: PRIMARY }]}>
                 <Text style={[S.grandLabel, { color: PRIMARY }]}>Total</Text>
-                <Text style={[S.grandValue, { color: PRIMARY }]}>{fmt(grandTotal)}</Text>
+                <Text style={[S.grandValue, { color: PRIMARY }]}>₹{challan.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</Text>
               </View>
             </View>
           </View>
@@ -595,7 +604,7 @@ const DeliveryChallanPDF: React.FC<DeliveryChallanPDFProps> = ({
         {showPrices ? (
           <View style={S.wordsBox} wrap={false}>
             <Text style={S.wordsLabel}>Total Amount in Words</Text>
-            <Text style={S.wordsText}>{toWords(grandTotal)}</Text>
+            <Text style={S.wordsText}>{toWords(challan.totalAmount)}</Text>
           </View>
         ) : null}
 

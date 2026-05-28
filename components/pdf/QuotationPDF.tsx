@@ -339,9 +339,19 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
                   <Text style={S.totalValue}>{fmt(q.igst)}</Text>
                 </View>
               )}
+              {(() => {
+                const rawTotal = r2(q.totalBeforeTax + q.cgst + q.sgst + q.igst);
+                const roundOff = r2(q.totalAmount - rawTotal);
+                return roundOff !== 0 ? (
+                  <View style={S.totalLine}>
+                    <Text style={S.totalLabel}>Round Off</Text>
+                    <Text style={S.totalValue}>{roundOff > 0 ? '+' : ''}{fmt(Math.abs(roundOff))}</Text>
+                  </View>
+                ) : null;
+              })()}
               <View style={S.grandLine}>
                 <Text style={S.grandLabel}>Total</Text>
-                <Text style={S.grandValue}>{fmt(q.totalAmount)}</Text>
+                <Text style={S.grandValue}>₹{q.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</Text>
               </View>
             </View>
           </View>

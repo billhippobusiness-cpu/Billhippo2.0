@@ -224,6 +224,8 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
   const subTotal  = r2(items.reduce((sum, item) => sum + r2(item.quantity * item.rate), 0));
   const taxAmount = r2(items.reduce((sum, item) => sum + r2(r2(item.quantity * item.rate) * item.gstRate / 100), 0));
   const grandTotal = r2(subTotal + taxAmount);
+  const roundedTotal = Math.round(grandTotal);
+  const roundOff = r2(roundedTotal - grandTotal);
 
   const filteredCustomers = useMemo(
     () => customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())),
@@ -327,7 +329,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
         gstType,
         totalBeforeTax: subTotal,
         cgst, sgst, igst,
-        totalAmount: grandTotal,
+        totalAmount: roundedTotal,
         status: editingQuotation ? editingQuotation.status : 'Draft',
         ...(validUntil ? { validUntil } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -1016,9 +1018,15 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                     <span>IGST</span><span>{inr(taxAmount)}</span>
                   </div>
                 )}
+                {roundOff !== 0 && (
+                  <div className="flex justify-between text-sm text-slate-500">
+                    <span>Round Off</span>
+                    <span>{roundOff > 0 ? '+' : ''}{inr(Math.abs(roundOff))}</span>
+                  </div>
+                )}
                 <div className="border-t border-amber-100 pt-3 flex justify-between font-black text-lg text-slate-900">
                   <span>Grand Total</span>
-                  <span className="text-amber-600">{inr(grandTotal)}</span>
+                  <span className="text-amber-600">₹{roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
                 </div>
               </div>
 
