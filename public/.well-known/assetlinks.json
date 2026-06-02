@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "in.billhippo.app",
+      "sha256_cert_fingerprints": [
+        "A7:6F:37:38:62:98:6D:E8:D9:94:91:B3:F4:B0:F1:75:13:D5:15:BC:D7:B3:3C:0B:4F:F4:D5:93:9C:0F:B4:A8"
+      ]
+    }
+  }
+]
