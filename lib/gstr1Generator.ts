@@ -813,7 +813,7 @@ function buildDOCS(invoices: Invoice[], creditNotes: CreditNote[], debitNotes: D
       ['Delivery Challan in case of supply on approval basis','', '', 0, 0],
       ['Delivery Challan in case of liquid gas',              '', '', 0, 0],
       ['Delivery Challan in cases other than by way of supply (excluding at S no. 9 to 11)', '', '', 0, 0],
-    ],
+    ].filter(row => (row[3] as number) > 0),
   };
 }
 
