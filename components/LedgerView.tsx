@@ -143,8 +143,8 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
             <button onClick={() => setShowPDFModal(true)} className="bg-profee-blue text-white px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"><Download size={18} /> Download PDF</button>
           </div>
         </div>
-        <div className="flex justify-center bg-slate-100 p-12 min-h-screen rounded-[3rem] no-print">
-          <div className="print-area">
+        <div className="bg-slate-100 p-2 sm:p-12 min-h-screen rounded-2xl sm:rounded-[3rem] no-print overflow-x-auto">
+          <div className="print-area mx-auto w-[760px] min-w-[760px] sm:w-full sm:min-w-0 sm:max-w-[850px]">
             <div className="bg-white p-12 min-h-[1100px] flex flex-col space-y-10 w-full max-w-[850px] mx-auto border border-slate-100 shadow-2xl rounded-[2.5rem] font-poppins">
               <div className="flex justify-between items-start border-b-2 border-slate-50 pb-8">
                 <div className="space-y-4"><div className="flex items-center gap-2"><img src={BILLHIPPO_LOGO} alt="BillHippo" className="w-8 h-8 rounded-lg object-contain" /><h1 className="text-xl font-black uppercase tracking-tighter text-slate-800">BillHippo Statement</h1></div>

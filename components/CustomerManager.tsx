@@ -641,18 +641,18 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
 
         {/* ── Summary Cards (per-customer) ── */}
         {ledgerEntries.length > 0 && (
-          <div className="grid grid-cols-3 gap-4 font-poppins">
-            <div className="bg-white rounded-[1.5rem] p-6 premium-shadow border border-slate-50">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 font-poppins">
+            <div className="bg-white rounded-[1.25rem] sm:rounded-[1.5rem] p-5 sm:p-6 premium-shadow border border-slate-50 min-w-0">
               <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2">Total Sales (Dr)</p>
-              <p className="text-2xl font-bold text-rose-500">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-xl sm:text-2xl font-bold text-rose-500 break-words">₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
             </div>
-            <div className="bg-white rounded-[1.5rem] p-6 premium-shadow border border-slate-50">
+            <div className="bg-white rounded-[1.25rem] sm:rounded-[1.5rem] p-5 sm:p-6 premium-shadow border border-slate-50 min-w-0">
               <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">Collections (Cr)</p>
-              <p className="text-2xl font-bold text-emerald-500">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-xl sm:text-2xl font-bold text-emerald-500 break-words">₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
             </div>
-            <div className="bg-slate-900 rounded-[1.5rem] p-6 premium-shadow">
+            <div className="bg-slate-900 rounded-[1.25rem] sm:rounded-[1.5rem] p-5 sm:p-6 premium-shadow min-w-0">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Closing Balance</p>
-              <p className="text-2xl font-bold text-white">
+              <p className="text-xl sm:text-2xl font-bold text-white break-words">
                 ₹{Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 <span className="text-[11px] opacity-50 ml-1">{closingBalance >= 0 ? 'Dr' : 'Cr'}</span>
               </p>
@@ -661,8 +661,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
         )}
 
         {/* Ledger table */}
-        <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 min-h-[400px]">
-          <h3 className="text-xl font-bold font-poppins text-slate-900 mb-8">Account Ledger</h3>
+        <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 min-h-[400px]">
+          <h3 className="text-xl font-bold font-poppins text-slate-900 mb-6 sm:mb-8">Account Ledger</h3>
 
           {loadingLedger ? (
             <div className="flex items-center justify-center h-40">
@@ -674,8 +674,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
               <p className="text-sm font-bold font-poppins text-slate-300">No ledger entries yet. Create an invoice for this customer.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left font-poppins">
+            <div className="overflow-x-auto -mx-5 px-5 sm:mx-0 sm:px-0">
+              <table className="w-full min-w-[640px] text-left font-poppins">
                 <thead>
                   <tr className="bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-widest">
                     {(

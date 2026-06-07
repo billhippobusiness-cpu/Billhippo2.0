@@ -478,9 +478,9 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
             <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins">
               <ArrowLeft size={18} />
             </button>
-            <div>
-              <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Quotation</h1>
-              <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">{q.quotationNumber} &bull; <StatusBadge status={q.status} /></p>
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-4xl font-bold font-poppins text-slate-900 tracking-tight">Quotation</h1>
+              <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest break-words">{q.quotationNumber} &bull; <StatusBadge status={q.status} /></p>
             </div>
           </div>
           {saveSuccess && (
@@ -493,18 +493,18 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* ── Quotation document ── */}
           <div className="lg:col-span-8">
-            <div className="bg-white rounded-[2.5rem] overflow-hidden premium-shadow border border-amber-50">
+            <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden premium-shadow border border-amber-50">
               {/* Amber header */}
-              <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-10 pt-10 pb-8 text-white">
-                <div className="flex justify-between items-start">
-                  <div>
+              <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 sm:px-10 pt-8 sm:pt-10 pb-6 sm:pb-8 text-white">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-5 sm:gap-4">
+                  <div className="min-w-0">
                     <p className="text-amber-100 text-xs font-bold uppercase tracking-widest mb-1">From</p>
-                    <h2 className="text-2xl font-bold font-poppins">{profile.name}</h2>
-                    {profile.gstin && <p className="text-amber-100 text-sm mt-0.5">GSTIN: {profile.gstin}</p>}
-                    {profile.address && <p className="text-amber-100 text-sm mt-0.5">{profile.address}{profile.city ? `, ${profile.city}` : ''}</p>}
+                    <h2 className="text-xl sm:text-2xl font-bold font-poppins break-words">{profile.name}</h2>
+                    {profile.gstin && <p className="text-amber-100 text-sm mt-0.5 break-words">GSTIN: {profile.gstin}</p>}
+                    {profile.address && <p className="text-amber-100 text-sm mt-0.5 break-words">{profile.address}{profile.city ? `, ${profile.city}` : ''}</p>}
                     {profile.state && <p className="text-amber-100 text-sm">{profile.state} {profile.pincode}</p>}
                   </div>
-                  <div className="text-right">
+                  <div className="sm:text-right shrink-0">
                     <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-2xl px-5 py-2 mb-4">
                       <ScrollText size={18} className="text-white" />
                       <span className="text-xl font-black font-poppins tracking-widest">QUOTATION</span>
@@ -523,7 +523,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                 </div>
               </div>
 
-              <div className="px-10 py-8 space-y-8">
+              <div className="px-5 sm:px-10 py-6 sm:py-8 space-y-8">
                 {/* Billed to */}
                 <div className="bg-amber-50 rounded-2xl p-5 border border-amber-100">
                   <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-2">Billed To</p>
@@ -538,7 +538,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                 {/* Items table */}
                 <div>
                   <div className="overflow-x-auto rounded-2xl border border-slate-100">
-                    <table className="w-full text-sm font-poppins">
+                    <table className="w-full min-w-[600px] text-sm font-poppins">
                       <thead>
                         <tr className="bg-slate-800 text-white">
                           <th className="text-left px-4 py-3 font-bold text-xs uppercase tracking-wider rounded-tl-2xl">#</th>
@@ -573,7 +573,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
 
                 {/* Totals */}
                 <div className="flex justify-end">
-                  <div className="w-72 space-y-2">
+                  <div className="w-full sm:w-72 space-y-2">
                     <div className="flex justify-between text-sm text-slate-600 font-poppins">
                       <span>Taxable Amount</span>
                       <span className="font-semibold">{inr(q.totalBeforeTax)}</span>

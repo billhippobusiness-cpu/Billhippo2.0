@@ -1645,7 +1645,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
              </button>
           </div>
         </div>
-        <div className="flex justify-center bg-slate-100 p-12 min-h-screen rounded-[3rem] no-print"><div className="print-area">{invoiceTemplate}</div></div>
+        <div className="bg-slate-100 p-2 sm:p-12 min-h-screen rounded-2xl sm:rounded-[3rem] no-print overflow-x-auto"><div className="print-area mx-auto w-[760px] min-w-[760px] sm:w-full sm:min-w-0 sm:max-w-[850px]">{invoiceTemplate}</div></div>
         <div className="hidden print:block">{invoiceTemplate}</div>
         <style>{`@media print { body * { visibility: hidden; } .print-area, .print-area * { visibility: visible; } .print-area { position: absolute; left: 0; top: 0; padding: 0 !important; width: 100%; box-shadow: none !important; background: white !important; } .no-print { display: none !important; } @page { size: A4; margin: 10mm; } }`}</style>
 
