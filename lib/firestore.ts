@@ -189,6 +189,12 @@ export async function deleteLedgerEntry(userId: string, entryId: string) {
   await deleteDoc(userDoc(userId, 'ledger', entryId));
 }
 
+export async function getLedgerEntryByInvoiceId(userId: string, invoiceId: string): Promise<LedgerEntry | null> {
+  const snap = await getDocs(userCollection(userId, 'ledger'));
+  const entry = snap.docs.find(d => d.data().invoiceId === invoiceId);
+  return entry ? { id: entry.id, ...entry.data() } as LedgerEntry : null;
+}
+
 export async function updateLedgerEntry(userId: string, entryId: string, data: Partial<Omit<LedgerEntry, 'id'>>) {
   await updateDoc(userDoc(userId, 'ledger', entryId), {
     ...data,
