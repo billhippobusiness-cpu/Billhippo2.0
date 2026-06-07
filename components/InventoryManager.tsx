@@ -324,14 +324,14 @@ export default function InventoryManager({ userId }: Props) {
   return (
     <div className="flex flex-col h-full bg-gray-50">
       {/* ── Header ── */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
             <Package className="w-5 h-5 text-amber-600" />
           </div>
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">Inventory</h1>
-            <p className="text-xs text-gray-500">{items.length} item{items.length !== 1 ? 's' : ''} in catalogue</p>
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold text-gray-900 truncate">Inventory</h1>
+            <p className="text-xs text-gray-500 truncate">{items.length} item{items.length !== 1 ? 's' : ''} in catalogue</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -340,23 +340,23 @@ export default function InventoryManager({ userId }: Props) {
               setStatementError(null);
               setShowStatementModal(true);
             }}
-            className="flex items-center gap-2 px-4 py-2 border border-amber-200 text-amber-700 hover:bg-amber-50 text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-amber-200 text-amber-700 hover:bg-amber-50 text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
           >
-            <FileDown className="w-4 h-4" />
-            Inventory Statement
+            <FileDown className="w-4 h-4 shrink-0" />
+            <span className="hidden sm:inline">Inventory </span>Statement
           </button>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 shrink-0" />
             Add Item
           </button>
         </div>
       </div>
 
       {/* ── Search bar ── */}
-      <div className="px-6 py-3 bg-white border-b border-gray-100">
+      <div className="px-4 sm:px-6 py-3 bg-white border-b border-gray-100">
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -378,7 +378,7 @@ export default function InventoryManager({ userId }: Props) {
       </div>
 
       {/* ── Table ── */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="flex-1 overflow-auto px-3 sm:px-6 py-4">
         {loading ? (
           <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
             Loading inventory…
@@ -392,7 +392,8 @@ export default function InventoryManager({ userId }: Props) {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Item Name</th>
@@ -461,9 +462,10 @@ export default function InventoryManager({ userId }: Props) {
                 ))}
               </tbody>
             </table>
+            </div>
 
             {/* ── Footer summary ── */}
-            <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 flex items-center justify-between">
+            <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 flex items-center justify-between gap-2 flex-wrap">
               <span className="text-xs text-amber-700 font-medium">
                 {filtered.length} item{filtered.length !== 1 ? 's' : ''} shown
               </span>

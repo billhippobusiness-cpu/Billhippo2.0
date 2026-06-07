@@ -298,13 +298,13 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
 
           {filterMode === 'fy' ? (
             /* FY Dropdown */
-            <div className="flex items-center gap-3">
-              <Calendar size={18} className="text-profee-blue" />
-              <div className="relative">
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <Calendar size={18} className="text-profee-blue shrink-0" />
+              <div className="relative flex-1 md:flex-none">
                 <select
                   value={selectedFY}
                   onChange={(e) => handleFYChange(e.target.value)}
-                  className="appearance-none bg-slate-50 border-none rounded-2xl px-6 py-3 pr-12 font-bold text-sm text-slate-700 focus:ring-2 ring-indigo-50 font-poppins cursor-pointer"
+                  className="w-full md:w-auto appearance-none bg-slate-50 border-none rounded-2xl px-5 sm:px-6 py-3 pr-12 font-bold text-sm text-slate-700 focus:ring-2 ring-indigo-50 font-poppins cursor-pointer"
                 >
                   {fyOptions.map(fy => (
                     <option key={fy} value={fy}>FY {fy} (Apr {fy.split('-')[0]} – Mar {parseInt(fy.split('-')[0]) + 1})</option>

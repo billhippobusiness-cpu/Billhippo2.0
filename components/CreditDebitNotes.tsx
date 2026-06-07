@@ -374,8 +374,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     const custObj = selectedCustomer || null;
     return (
       <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20 font-poppins">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+          <div className="flex items-center gap-3 sm:gap-4">
             <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors">
               <ArrowLeft size={18} /> All Notes
             </button>
@@ -384,22 +384,22 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
               <Pencil size={18} /> Edit Note
             </button>
           </div>
-          <div className="flex gap-4 items-center">
+          <div className="flex gap-2 sm:gap-4 items-center flex-wrap">
             {saveSuccess && (
-              <div className="flex items-center gap-2 text-emerald-500 px-4">
+              <div className="flex items-center gap-2 text-emerald-500 px-2 sm:px-4">
                 <CheckCircle size={18} />
                 <span className="text-sm font-bold">Note Saved!</span>
               </div>
             )}
             <button
               onClick={() => openPDFModal(note, activeTab, custObj)}
-              className="bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all"
+              className="flex-1 sm:flex-none justify-center bg-white border border-slate-200 text-slate-700 px-5 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-slate-50 transition-all whitespace-nowrap"
             >
               <Eye size={18} /> Preview PDF
             </button>
             <button
               onClick={() => setDownloadTarget({ note, noteType: activeTab, customer: custObj })}
-              className="bg-profee-blue text-white px-10 py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+              className="flex-1 sm:flex-none justify-center bg-profee-blue text-white px-5 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 whitespace-nowrap"
             >
               <Download size={18} /> Download PDF
             </button>
@@ -407,22 +407,22 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
         </div>
 
         {/* Saved note detail card */}
-        <div className={`bg-white rounded-[2.5rem] p-12 premium-shadow border-2 ${activeTab === 'credit' ? 'border-emerald-100' : 'border-amber-100'}`}>
-          <div className="flex justify-between items-start mb-8">
-            <div>
+        <div className={`bg-white rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-12 premium-shadow border-2 ${activeTab === 'credit' ? 'border-emerald-100' : 'border-amber-100'}`}>
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-8">
+            <div className="min-w-0">
               <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm mb-4 ${activeTab === 'credit' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                 {activeTab === 'credit' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
                 {activeTab === 'credit' ? 'Credit Note' : 'Debit Note'}
               </div>
-              <h2 className="text-3xl font-bold text-slate-900">{noteNumber}</h2>
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 break-words">{noteNumber}</h2>
               <p className="text-sm text-slate-400 mt-1">{formatDate(noteDate)} · {selectedCustomer?.name}</p>
               {originalInvoiceNumber && (
                 <p className="text-xs text-slate-400 mt-1">Ref. Invoice: {originalInvoiceNumber}</p>
               )}
             </div>
-            <div className="text-right">
+            <div className="sm:text-right shrink-0">
               <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Total Amount</p>
-              <p className={`text-4xl font-black ${activeTab === 'credit' ? 'text-emerald-600' : 'text-amber-600'}`}>
+              <p className={`text-3xl sm:text-4xl font-black break-words ${activeTab === 'credit' ? 'text-emerald-600' : 'text-amber-600'}`}>
                 {inr(grandTotal)}
               </p>
             </div>
@@ -431,8 +431,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
             <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Reason</p>
             <p className="text-sm font-medium text-slate-700">{reason}</p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+          <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
+            <table className="w-full min-w-[560px] text-left">
               <thead>
                 <tr className={`text-white text-[10px] font-black uppercase tracking-widest ${activeTab === 'credit' ? 'bg-emerald-500' : 'bg-amber-500'}`}>
                   <th className="px-6 py-4 rounded-tl-xl">Description</th>
@@ -460,7 +460,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
             </table>
           </div>
           <div className="mt-6 flex justify-end">
-            <div className="space-y-2 w-64">
+            <div className="space-y-2 w-full sm:w-64">
               <div className="flex justify-between text-sm font-bold text-slate-500">
                 <span>Sub Total</span><span className="text-slate-900">{inr(subTotal)}</span>
               </div>
