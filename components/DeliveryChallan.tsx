@@ -359,7 +359,7 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
   };
 
   const buildCurrentChallan = (): DeliveryChallanType => {
-    const { subTotal, taxAmount, grandTotal, totalQty } = computedTotals;
+    const { subTotal, taxAmount, grandTotal, roundedTotal, totalQty } = computedTotals;
     return {
       id: editingChallan?.id || 'preview',
       challanNumber,
