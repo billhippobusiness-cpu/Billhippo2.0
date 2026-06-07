@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, Download, Search, Plus, Eye, Printer, Edit3, Loader2, Save, X, Receipt, MessageCircle } from 'lucide-react';
 import { Customer, LedgerEntry } from '../types';
-import { getCustomers, getLedgerEntries, addLedgerEntry, getBusinessProfile } from '../lib/firestore';
+import { getCustomers, getLedgerEntries, addLedgerEntry, deleteLedgerEntry, updateCustomer, getDeletedInvoices, getBusinessProfile } from '../lib/firestore';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import LedgerPDF from './pdf/LedgerPDF';
 import ReceiptPDF, { type ReceiptEntry } from './pdf/ReceiptPDF';
@@ -48,8 +48,24 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
 
   const loadEntries = async (customerId: string) => {
     try {
-      const data = await getLedgerEntries(userId, customerId);
-      setEntries(data);
+      const [data, deletedInvoices] = await Promise.all([
+        getLedgerEntries(userId, customerId),
+        getDeletedInvoices(userId),
+      ]);
+      const deletedInvoiceIds = new Set(deletedInvoices.map(inv => inv.id));
+      // Auto-clean stale ledger entries whose invoice was deleted before the fix was deployed
+      const staleEntries = data.filter(e => e.invoiceId && deletedInvoiceIds.has(e.invoiceId));
+      if (staleEntries.length > 0) {
+        const staleTotal = staleEntries.reduce((sum, e) => sum + e.amount, 0);
+        await Promise.all(staleEntries.map(e => deleteLedgerEntry(userId, e.id)));
+        const custList = await getCustomers(userId);
+        const cust = custList.find(c => c.id === customerId);
+        if (cust) {
+          await updateCustomer(userId, customerId, { balance: (cust.balance || 0) - staleTotal });
+          setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, balance: (c.balance || 0) - staleTotal } : c));
+        }
+      }
+      setEntries(data.filter(e => !e.invoiceId || !deletedInvoiceIds.has(e.invoiceId)));
     } catch (err) { console.error(err); }
   };
 

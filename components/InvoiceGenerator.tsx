@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import { haptic } from '../lib/haptic';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
@@ -299,6 +299,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       if (inv.stockApplied) {
         await applyStockAdjustments(userId, inv.items, 'inward');
       }
+      // Remove the ledger entry created when this invoice was saved, and reverse the customer balance
+      const ledgerEntry = await getLedgerEntryByInvoiceId(userId, inv.id);
+      if (ledgerEntry) {
+        await deleteLedgerEntry(userId, ledgerEntry.id);
+        if (inv.customerId) {
+          const cust = customers.find(c => c.id === inv.customerId);
+          if (cust) {
+            await updateCustomer(userId, inv.customerId, { balance: (cust.balance || 0) - ledgerEntry.amount });
+            setCustomers(prev => prev.map(c => c.id === inv.customerId ? { ...c, balance: (c.balance || 0) - ledgerEntry.amount } : c));
+          }
+        }
+      }
       setAllInvoices(prev => prev.filter(i => i.id !== inv.id));
       setDeletedInvoices(prev => [{ ...inv, deleted: true, deletedAt: new Date().toISOString().split('T')[0] }, ...prev]);
       setDeletingInvoiceId(null);
@@ -311,6 +323,19 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     // Re-apply stock decrement when restoring a soft-deleted invoice
     if (inv.stockApplied) {
       await applyStockAdjustments(userId, inv.items, 'outward');
+    }
+    // Re-create the ledger entry that was removed when the invoice was deleted, and restore the customer balance
+    const existing = await getLedgerEntryByInvoiceId(userId, inv.id);
+    if (!existing && inv.customerId && inv.total) {
+      await addLedgerEntry(userId, {
+        date: inv.date, type: 'Debit', amount: inv.total,
+        description: `Sale - ${inv.invoiceNumber}`, invoiceId: inv.id, customerId: inv.customerId,
+      });
+      const cust = customers.find(c => c.id === inv.customerId);
+      if (cust) {
+        await updateCustomer(userId, inv.customerId, { balance: (cust.balance || 0) + inv.total });
+        setCustomers(prev => prev.map(c => c.id === inv.customerId ? { ...c, balance: (c.balance || 0) + inv.total } : c));
+      }
     }
     setDeletedInvoices(prev => prev.filter(i => i.id !== inv.id));
     setAllInvoices(prev => [{ ...inv, deleted: false, deletedAt: undefined }, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
