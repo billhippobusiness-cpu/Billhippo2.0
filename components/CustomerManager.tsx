@@ -9,7 +9,7 @@ import {
 import { Customer, LedgerEntry, Invoice, BusinessProfile, CreditNote, DebitNote } from '../types';
 import {
   getCustomers, addCustomer, updateCustomer, deleteCustomer,
-  getLedgerEntries, getInvoices, getBusinessProfile,
+  getLedgerEntries, getInvoices, getDeletedInvoices, getBusinessProfile,
   getCreditNotes, getDebitNotes, addLedgerEntry,
   deleteLedgerEntry, updateLedgerEntry,
 } from '../lib/firestore';
@@ -205,13 +205,27 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     setSelectedCustomer(customer);
     setLoadingLedger(true);
     try {
-      const [entries, allInvoices, allCreditNotes, allDebitNotes] = await Promise.all([
+      const [entries, allInvoices, deletedInvoices, allCreditNotes, allDebitNotes] = await Promise.all([
         getLedgerEntries(userId, customer.id),
         getInvoices(userId),
+        getDeletedInvoices(userId),
         getCreditNotes(userId),
         getDebitNotes(userId),
       ]);
-      setLedgerEntries(entries);
+      // Auto-clean stale ledger entries whose invoice was deleted, and correct the customer balance
+      const deletedInvoiceIds = new Set(deletedInvoices.map(inv => inv.id));
+      const staleEntries = entries.filter(e => e.invoiceId && deletedInvoiceIds.has(e.invoiceId));
+      let liveEntries = entries;
+      if (staleEntries.length > 0) {
+        const staleTotal = staleEntries.reduce((sum, e) => sum + (e.type === 'Debit' ? e.amount : -e.amount), 0);
+        await Promise.all(staleEntries.map(e => deleteLedgerEntry(userId, e.id)));
+        const newBalance = (customer.balance || 0) - staleTotal;
+        await updateCustomer(userId, customer.id, { balance: newBalance });
+        setSelectedCustomer({ ...customer, balance: newBalance });
+        setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, balance: newBalance } : c));
+        liveEntries = entries.filter(e => !e.invoiceId || !deletedInvoiceIds.has(e.invoiceId));
+      }
+      setLedgerEntries(liveEntries);
       const map: Record<string, Invoice> = {};
       allInvoices.forEach(inv => { map[inv.id] = inv; });
       setInvoicesMap(map);
