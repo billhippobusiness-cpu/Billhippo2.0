@@ -60,9 +60,12 @@ interface InvoiceGeneratorProps {
   onInvoiceConsumed?: () => void;
   /** Called when the user wants to create a Delivery Challan from the current invoice. */
   onCreateChallan?: (invoice: Invoice) => void;
+  /** When true, open straight into the new-invoice creation form. */
+  startInCreate?: boolean;
+  onCreateConsumed?: () => void;
 }
 
-const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuotation, onQuotationConsumed, initialInvoiceId, onInvoiceConsumed, onCreateChallan }) => {
+const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuotation, onQuotationConsumed, initialInvoiceId, onInvoiceConsumed, onCreateChallan, startInCreate, onCreateConsumed }) => {
   const [mode, setMode] = useState<'list' | 'editing' | 'preview'>('list');
   const [sourceQuotationId, setSourceQuotationId] = useState<string | null>(null);
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
@@ -177,6 +180,13 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       onInvoiceConsumed?.();
     }
   }, [initialInvoiceId, allInvoices]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Open straight into the new-invoice creation form when navigated with intent
+  useEffect(() => {
+    if (!startInCreate) return;
+    handleNewInvoice();
+    onCreateConsumed?.();
+  }, [startInCreate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     try {

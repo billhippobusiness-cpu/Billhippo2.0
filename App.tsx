@@ -54,6 +54,8 @@ const App: React.FC = () => {
   const [pendingQuotation, setPendingQuotation] = useState<Quotation | null>(null);
   // Customer → Invoice navigation: stores invoice ID to open in preview from CustomerManager
   const [pendingInvoiceId, setPendingInvoiceId] = useState<string | null>(null);
+  // Dashboard "Create Invoice" → open the new-invoice form directly
+  const [pendingNewInvoice, setPendingNewInvoice] = useState(false);
   // Invoice → Delivery Challan handoff
   const [pendingChallanInvoice, setPendingChallanInvoice] = useState<Invoice | null>(null);
 
@@ -307,7 +309,7 @@ const App: React.FC = () => {
   const renderContent = () => {
     const userId = user.uid;
     switch (activeTab) {
-      case 'dashboard':   return <Dashboard userId={userId} onNavigate={setActiveTab} />;
+      case 'dashboard':   return <Dashboard userId={userId} onNavigate={setActiveTab} onCreateInvoice={() => { setPendingNewInvoice(true); setActiveTab('invoices'); }} />;
       case 'customers':   return (
         <CustomerManager
           userId={userId}
@@ -321,6 +323,8 @@ const App: React.FC = () => {
           onQuotationConsumed={() => setPendingQuotation(null)}
           initialInvoiceId={pendingInvoiceId}
           onInvoiceConsumed={() => setPendingInvoiceId(null)}
+          startInCreate={pendingNewInvoice}
+          onCreateConsumed={() => setPendingNewInvoice(false)}
           onCreateChallan={(inv) => { setPendingChallanInvoice(inv); setActiveTab('challans'); }}
         />
       );

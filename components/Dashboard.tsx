@@ -10,7 +10,7 @@ import { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import PWAInstallButton from './PWAInstallButton';
 
-interface DashboardProps { userId: string; onNavigate?: (tab: string) => void; }
+interface DashboardProps { userId: string; onNavigate?: (tab: string) => void; onCreateInvoice?: () => void; }
 
 const COLORS_PIE = ['#10b981', '#f43f5e', '#f59e0b'];
 
@@ -43,7 +43,7 @@ function generateFYOptions(): string[] {
   return options;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
+const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate, onCreateInvoice }) => {
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [allLedgerEntries, setAllLedgerEntries] = useState<LedgerEntry[]>([]);
@@ -350,11 +350,11 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate }) => {
           )}
 
           {/* Create Invoice CTA */}
-          <div className="ml-auto hidden md:flex items-center gap-2">
+          <div className="md:ml-auto flex items-center gap-2 w-full md:w-auto">
             <button
               type="button"
-              onClick={() => onNavigate?.('invoices')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-profee-blue text-white text-[10px] font-black uppercase tracking-wider font-poppins shadow-lg shadow-indigo-100 hover:scale-105 transition-all"
+              onClick={() => (onCreateInvoice ? onCreateInvoice() : onNavigate?.('invoices'))}
+              className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 md:py-2 rounded-2xl md:rounded-xl bg-profee-blue text-white text-xs md:text-[10px] font-black uppercase tracking-wider font-poppins shadow-lg shadow-indigo-100 hover:scale-105 active:scale-95 transition-all"
             >
               <Plus size={14} strokeWidth={3} />
               Create Invoice
