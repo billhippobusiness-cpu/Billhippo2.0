@@ -33,6 +33,7 @@ import {
   updateDeliveryChallan,
   deleteDeliveryChallan,
 } from '../lib/firestore';
+import { pdf } from '@react-pdf/renderer';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import DeliveryChallanPDF from './pdf/DeliveryChallanPDF';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
@@ -168,6 +169,7 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
     challan: DeliveryChallanType;
     customer: Customer | null;
   } | null>(null);
+  const [waLoading, setWaLoading] = useState(false);
 
   // ── HSN modal ──
   const [hsnModalItemId, setHsnModalItemId] = useState<string | null>(null);
@@ -457,6 +459,31 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
   const buildWhatsAppMessage = (challan: DeliveryChallanType) =>
     `Dear ${challan.customerName},\n\nPlease find attached the Delivery Challan *${challan.challanNumber}* dated ${formatDate(challan.date)} for ${challan.totalQuantity} item(s).\n\nRegards,\n${profile.name}`;
 
+  const handleWhatsAppChallan = async (challan: DeliveryChallanType, custObj: Customer | null) => {
+    setWaLoading(true);
+    try {
+      const phone = custObj?.phone?.replace(/\D/g, '');
+      const message = buildWhatsAppMessage(challan);
+      const fileName = `Challan-${challan.challanNumber.replace(/\//g, '-')}.pdf`;
+      const blob = await pdf(
+        <DeliveryChallanPDF challan={challan} business={profile} customer={custObj || { id: '', name: challan.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }} showPrices={showPrices} />
+      ).toBlob();
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: message });
+      } else {
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = blobUrl; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+        const waText = `${message}\n\n(PDF downloaded — please attach it to this chat)`;
+        const waUrl = phone ? `https://wa.me/91${phone}?text=${encodeURIComponent(waText)}` : `https://wa.me/?text=${encodeURIComponent(waText)}`;
+        window.open(waUrl, '_blank');
+      }
+    } catch (err) { console.error('WhatsApp share failed:', err); }
+    finally { setWaLoading(false); }
+  };
+
   // ─── Loading state ─────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -516,17 +543,14 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
             </button>
 
             {/* WhatsApp */}
-            {custObj?.phone && (
-              <a
-                href={`https://wa.me/91${custObj.phone.replace(/\D/g, '')}?text=${encodeURIComponent(buildWhatsAppMessage(challan))}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
-                style={{ backgroundColor: '#25D366' }}
-              >
-                <ExternalLink size={15} /> WhatsApp
-              </a>
-            )}
+            <button
+              onClick={() => { haptic('medium'); handleWhatsAppChallan(challan, custObj); }}
+              disabled={waLoading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
+              style={{ backgroundColor: '#25D366' }}
+            >
+              {waLoading ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />} WhatsApp
+            </button>
 
             {/* Preview PDF */}
             <button

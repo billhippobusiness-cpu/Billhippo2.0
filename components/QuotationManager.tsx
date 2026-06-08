@@ -11,6 +11,7 @@ import {
   getQuotations, addQuotation, updateQuotation, deleteQuotation, getTotalQuotationCount,
   getInvoices,
 } from '../lib/firestore';
+import { pdf } from '@react-pdf/renderer';
 import { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import QuotationPDF from './pdf/QuotationPDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -432,14 +433,26 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     setMode('preview');
   };
 
-  const handleWhatsAppShare = (q: Quotation) => {
-    const customer = customers.find(c => c.id === q.customerId);
-    const phone = customer?.phone?.replace(/\D/g, '');
+  const handleWhatsAppShare = async (q: Quotation) => {
+    const customer = customers.find(c => c.id === q.customerId) ?? { id: '', name: q.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 };
+    const phone = customer.phone?.replace(/\D/g, '');
     const message = `Dear ${q.customerName},\n\nPlease find your Quotation *${q.quotationNumber}* for ₹${q.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}${q.validUntil ? `\nValid Until: ${formatDate(q.validUntil)}` : ''}.\n\nKindly confirm your acceptance at your earliest convenience.\n\nRegards,\n${profile.name}`;
-    const url = phone
-      ? `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`
-      : `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
+    const fileName = `Quotation-${q.quotationNumber.replace(/\//g, '-')}.pdf`;
+    try {
+      const blob = await pdf(<QuotationPDF quotation={q} business={profile} customer={customer} />).toBlob();
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: message });
+      } else {
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = blobUrl; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+        const waText = `${message}\n\n(PDF downloaded — please attach it to this chat)`;
+        const url = phone ? `https://wa.me/91${phone}?text=${encodeURIComponent(waText)}` : `https://wa.me/?text=${encodeURIComponent(waText)}`;
+        window.open(url, '_blank');
+      }
+    } catch (err) { console.error('WhatsApp share failed:', err); }
   };
 
   const handleConvertToInvoice = (q: Quotation) => {
