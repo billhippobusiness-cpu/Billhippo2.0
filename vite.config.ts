@@ -61,13 +61,26 @@ export default defineConfig(({ mode }) => {
             ],
           },
           workbox: {
-            // Pre-cache all built assets
-            globPatterns: ['**/*.{js,css,html,woff,woff2,ttf,svg,png}'],
+            // Pre-cache JS/CSS/fonts/images — but NOT html (handled via NetworkFirst below)
+            globPatterns: ['**/*.{js,css,woff,woff2,ttf,svg,png}'],
             // Main bundle exceeds 2 MiB due to @react-pdf/renderer — raise the limit
             maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+            // Remove caches from previous SW versions so stale bundles don't linger
+            cleanupOutdatedCaches: true,
             navigateFallback: '/index.html',
             navigateFallbackDenylist: [/^\/api\//],
             runtimeCaching: [
+              // HTML navigation — always try network first so the freshest
+              // index.html (with the latest hashed JS filenames) is served.
+              {
+                urlPattern: ({ request }: { request: Request }) => request.mode === 'navigate',
+                handler: 'NetworkFirst',
+                options: {
+                  cacheName: 'html-navigation',
+                  networkTimeoutSeconds: 5,
+                  cacheableResponse: { statuses: [0, 200] },
+                },
+              },
               // Google Fonts — cache for a year
               {
                 urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,

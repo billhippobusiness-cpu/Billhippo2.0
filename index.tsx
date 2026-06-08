@@ -4,6 +4,20 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 
+// ── Service Worker auto-reload ─────────────────────────────────────────────
+// When the new SW calls skipWaiting() and takes control, `controllerchange`
+// fires. We reload so the page runs the freshly cached JS instead of the old
+// bundle that was served on first load.
+if ('serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
+}
+
 /**
  * Error Boundary — catches any synchronous render errors in the component
  * tree and shows a recovery UI instead of a blank white page.
