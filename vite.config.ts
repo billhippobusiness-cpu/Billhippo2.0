@@ -61,8 +61,12 @@ export default defineConfig(({ mode }) => {
             ],
           },
           workbox: {
+            // Import the force-reload helper so every SW update auto-reloads open tabs
+            importScripts: ['sw-force-reload.js'],
             // Pre-cache JS/CSS/fonts/images — but NOT html (handled via NetworkFirst below)
             globPatterns: ['**/*.{js,css,woff,woff2,ttf,svg,png}'],
+            // Exclude the helper script itself from precaching
+            globIgnores: ['sw-force-reload.js', 'sw.js'],
             // Main bundle exceeds 2 MiB due to @react-pdf/renderer — raise the limit
             maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
             // Remove caches from previous SW versions so stale bundles don't linger
