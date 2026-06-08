@@ -28,7 +28,8 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
   const [showPDFModal, setShowPDFModal] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
   const [receiptModal, setReceiptModal] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
-  const [receiptPdfData, setReceiptPdfData] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
+  const [receiptInlinePreview, setReceiptInlinePreview] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
+  const [receiptWaLoading, setReceiptWaLoading] = useState(false);
   const [downloadTarget, setDownloadTarget] = useState<{ document: React.ReactElement; fileName: string } | null>(null);
 
   useEffect(() => { loadCustomers(); }, [userId]);
@@ -117,6 +118,31 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
   };
 
   const filteredCustomers = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+
+  const handleReceiptWhatsApp = async (entry: ReceiptEntry, customer: Customer) => {
+    setReceiptWaLoading(true);
+    try {
+      const phone = customer.phone?.replace(/\D/g, '');
+      const message = `Dear ${customer.name},\n\nYour payment of ₹${entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} has been received. Please find your receipt attached.\n\nRegards,\n${businessName}`;
+      const fileName = `Receipt-${customer.name.replace(/\s+/g, '-')}-${entry.date}.pdf`;
+      const blob = await pdf(
+        <ReceiptPDF entry={entry} customer={customer} businessName={businessName} businessInfo={businessInfo} logoUrl={logoUrl} />
+      ).toBlob();
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], text: message });
+      } else {
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = blobUrl; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+        const waText = `${message}\n\n(PDF downloaded — please attach it to this chat)`;
+        const url = phone ? `https://wa.me/91${phone}?text=${encodeURIComponent(waText)}` : `https://wa.me/?text=${encodeURIComponent(waText)}`;
+        window.open(url, '_blank');
+      }
+    } catch (err) { console.error('WhatsApp receipt share failed:', err); }
+    finally { setReceiptWaLoading(false); }
+  };
 
   if (loading) {
     return (<div className="flex items-center justify-center min-h-[400px]"><Loader2 className="w-8 h-8 animate-spin text-profee-blue mx-auto" /></div>);
@@ -348,68 +374,198 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
                 </span>
               </div>
             </div>
-            <div className="flex gap-3 mt-8">
-              <button
-                onClick={() => setReceiptModal({ open: false, entry: null })}
-                className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100"
-              >
-                Close
-              </button>
+            <div className="grid grid-cols-2 gap-3 mt-8">
               <button
                 onClick={() => {
-                  const entry = receiptModal.entry;
+                  const entry = receiptModal.entry!;
                   setReceiptModal({ open: false, entry: null });
-                  setReceiptPdfData({ open: true, entry });
+                  setReceiptInlinePreview({ open: true, entry });
                 }}
-                className="flex-1 py-4 rounded-2xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                className="py-4 rounded-2xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 text-sm"
               >
-                <Eye size={16} /> View PDF
+                <Eye size={15} /> View
+              </button>
+              <button
+                onClick={() => { if (receiptModal.entry && selectedCustomer) handleReceiptWhatsApp(receiptModal.entry, selectedCustomer); }}
+                disabled={receiptWaLoading}
+                className="py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-60"
+                style={{ backgroundColor: '#25D366' }}
+              >
+                {receiptWaLoading
+                  ? <Loader2 size={15} className="animate-spin" />
+                  : <svg width={15} height={15} viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" /></svg>
+                }
+                WA
               </button>
               <button
                 onClick={() => {
                   const entry = receiptModal.entry!;
                   setReceiptModal({ open: false, entry: null });
                   setDownloadTarget({
-                    document: (
-                      <ReceiptPDF
-                        entry={entry}
-                        customer={selectedCustomer}
-                        businessName={businessName}
-                        businessInfo={businessInfo}
-                        logoUrl={logoUrl}
-                      />
-                    ),
-                    fileName: `Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${entry.date}.pdf`,
+                    document: <ReceiptPDF entry={entry} customer={selectedCustomer!} businessName={businessName} businessInfo={businessInfo} logoUrl={logoUrl} />,
+                    fileName: `Receipt-${selectedCustomer!.name.replace(/\s+/g, '-')}-${entry.date}.pdf`,
                   });
                 }}
-                className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100"
+                className="py-4 rounded-2xl font-bold bg-profee-blue text-white hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 text-sm"
               >
-                <Download size={16} /> Download
+                <Download size={15} /> Download
+              </button>
+              <button
+                onClick={() => setReceiptModal({ open: false, entry: null })}
+                className="py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100 text-sm"
+              >
+                Close
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Receipt PDF preview modal */}
-      {receiptPdfData.open && receiptPdfData.entry && selectedCustomer && (
-        <PDFPreviewModal
-          open={receiptPdfData.open}
-          onClose={() => setReceiptPdfData({ open: false, entry: null })}
-          document={
-            <ReceiptPDF
-              entry={receiptPdfData.entry}
-              customer={selectedCustomer}
-              businessName={businessName}
-              businessInfo={businessInfo}
-              logoUrl={logoUrl}
-            />
-          }
-          fileName={`Receipt-${selectedCustomer.name.replace(/\s+/g, '-')}-${receiptPdfData.entry.date}.pdf`}
-          customerPhone={selectedCustomer.phone}
-          whatsappMessage={`Dear ${selectedCustomer.name},\n\nYour payment of ₹${receiptPdfData.entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} has been received. Please find your receipt attached.\n\nRegards,\n${businessName}`}
-        />
-      )}
+      {/* Inline receipt preview (no PDF viewer — rendered as HTML card) */}
+      {receiptInlinePreview.open && receiptInlinePreview.entry && selectedCustomer && (() => {
+        const e = receiptInlinePreview.entry;
+        const drCr = e.runningBalance >= 0 ? 'Dr' : 'Cr';
+        const receiptId = `RCP-${(e.id ?? Date.now().toString()).slice(-6).toUpperCase()}`;
+        const fmtDate = (d: string) => { const p = d.split('-'); return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : d; };
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}>
+            {/* toolbar */}
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 shrink-0" style={{ backgroundColor: '#0f172a', borderBottom: '1px solid #334155' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(76,45,224,0.2)' }}>
+                  <Receipt size={16} style={{ color: '#4c2de0' }} />
+                </div>
+                <div>
+                  <p className="font-bold text-sm font-poppins truncate max-w-[180px] sm:max-w-xs" style={{ color: '#f1f5f9' }}>Payment Receipt</p>
+                  <p className="text-[10px] font-medium" style={{ color: '#64748b' }}>{receiptId} · {fmtDate(e.date)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { if (selectedCustomer) handleReceiptWhatsApp(e, selectedCustomer); }}
+                  disabled={receiptWaLoading}
+                  className="flex items-center gap-2 font-bold text-sm px-3 sm:px-4 py-2.5 rounded-xl transition-all font-poppins disabled:opacity-60"
+                  style={{ backgroundColor: '#25D366', color: '#fff' }}
+                >
+                  {receiptWaLoading
+                    ? <Loader2 size={15} className="animate-spin" />
+                    : <svg width={15} height={15} viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" /></svg>
+                  }
+                  <span className="hidden sm:inline">Share</span>
+                </button>
+                <a
+                  href="#"
+                  onClick={e2 => {
+                    e2.preventDefault();
+                    setReceiptInlinePreview({ open: false, entry: null });
+                    setDownloadTarget({
+                      document: <ReceiptPDF entry={e} customer={selectedCustomer!} businessName={businessName} businessInfo={businessInfo} logoUrl={logoUrl} />,
+                      fileName: `Receipt-${selectedCustomer!.name.replace(/\s+/g, '-')}-${e.date}.pdf`,
+                    });
+                  }}
+                  className="flex items-center gap-2 font-bold text-sm px-3 sm:px-5 py-2.5 rounded-xl transition-all font-poppins"
+                  style={{ backgroundColor: '#4c2de0', color: '#fff', textDecoration: 'none' }}
+                >
+                  <Download size={15} />
+                  <span className="hidden sm:inline">Download PDF</span>
+                  <span className="sm:hidden">PDF</span>
+                </a>
+                <button
+                  onClick={() => setReceiptInlinePreview({ open: false, entry: null })}
+                  className="p-2 rounded-xl transition-all"
+                  style={{ color: '#94a3b8' }}
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* receipt card */}
+            <div className="flex-1 overflow-y-auto py-8 px-4" style={{ backgroundColor: '#475569' }}>
+              <div className="bg-white rounded-[2rem] p-8 sm:p-12 w-full max-w-2xl mx-auto shadow-2xl font-poppins space-y-6">
+                {/* Header */}
+                <div className="flex justify-between items-start border-b-2 border-slate-100 pb-6">
+                  <div className="flex items-center gap-3">
+                    {logoUrl
+                      ? <img src={logoUrl} alt={businessName} className="w-14 h-14 rounded-xl object-contain border border-slate-100" />
+                      : <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-black text-white" style={{ backgroundColor: '#4c2de0' }}>{businessName.charAt(0).toUpperCase()}</div>
+                    }
+                    <div>
+                      <p className="text-base font-black text-slate-800">{businessName}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5 max-w-[200px]">{businessInfo.address}</p>
+                      {businessInfo.gstin && <p className="text-[10px] font-bold mt-0.5" style={{ color: '#4c2de0' }}>GSTIN: {businessInfo.gstin}</p>}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-black text-slate-800 uppercase tracking-tight">Payment Receipt</p>
+                    <p className="text-[10px] text-slate-400 mt-1 font-bold uppercase tracking-widest">Receipt ID</p>
+                    <p className="text-sm font-black" style={{ color: '#4c2de0' }}>{receiptId}</p>
+                    <p className="text-[10px] text-slate-400 mt-1 font-bold uppercase tracking-widest">Date</p>
+                    <p className="text-sm font-black text-slate-700">{fmtDate(e.date)}</p>
+                  </div>
+                </div>
+
+                {/* From / To */}
+                <div className="flex justify-between items-start bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">From (Supplier)</p>
+                    <p className="text-sm font-black text-slate-800">{businessName}</p>
+                    {businessInfo.gstin && <p className="text-[10px] font-bold mt-0.5" style={{ color: '#4c2de0' }}>GSTIN: {businessInfo.gstin}</p>}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Received From</p>
+                    <p className="text-sm font-black text-slate-800">{selectedCustomer.name}</p>
+                    {selectedCustomer.city && <p className="text-[10px] text-slate-500 mt-0.5">{selectedCustomer.city}, {selectedCustomer.state}</p>}
+                    {selectedCustomer.phone && <p className="text-[10px] text-slate-500">Ph: {selectedCustomer.phone}</p>}
+                  </div>
+                </div>
+
+                {/* Description / Date */}
+                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 space-y-3">
+                  <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Description / Narration</span>
+                    <span className="text-sm font-bold text-slate-700">{e.description}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Payment Date</span>
+                    <span className="text-sm font-bold text-slate-700">{fmtDate(e.date)}</span>
+                  </div>
+                </div>
+
+                {/* Amount received */}
+                <div className="flex justify-between items-center rounded-2xl p-5 border border-emerald-200" style={{ backgroundColor: '#f0fdf4' }}>
+                  <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#16a34a' }}>Amount Received</span>
+                  <span className="text-2xl font-black" style={{ color: '#16a34a' }}>₹{e.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+
+                {/* Balance after */}
+                <div className="flex justify-between items-center bg-slate-900 rounded-2xl p-5">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Outstanding Balance After Payment</span>
+                  <span className="text-lg font-black text-white">
+                    ₹{Math.abs(e.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    <span className="text-[10px] text-slate-400 ml-1">{drCr}</span>
+                  </span>
+                </div>
+
+                {/* Footer */}
+                <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                  <p className="text-[9px] text-slate-300 font-medium">Generated by BillHippo</p>
+                  <p className="text-[9px] text-slate-300 font-medium">This is a computer-generated receipt</p>
+                </div>
+              </div>
+            </div>
+
+            {/* bottom hint */}
+            <div className="shrink-0 px-6 py-2 flex items-center justify-between" style={{ backgroundColor: '#0f172a', borderTop: '1px solid #334155' }}>
+              <p className="text-[10px] font-medium font-poppins" style={{ color: '#475569' }}>
+                <strong style={{ color: '#25D366' }}>Share</strong> to WhatsApp · <strong style={{ color: '#94a3b8' }}>Download PDF</strong> to save
+              </p>
+              <p className="text-[10px] font-medium font-poppins" style={{ color: '#334155' }}>Powered by BillHippo</p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Headless PDF direct-download (no modal shown) */}
       {downloadTarget && (
