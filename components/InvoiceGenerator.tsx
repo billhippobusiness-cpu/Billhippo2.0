@@ -1642,7 +1642,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
              )}
              <button onClick={() => { haptic('light'); window.print(); }} className="hidden sm:flex flex-1 sm:flex-none bg-white border border-slate-200 px-4 sm:px-10 py-3 sm:py-4 rounded-2xl text-xs font-bold items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all shadow-sm"><Printer size={16} /> Print</button>
              <button
-               onClick={() => { haptic('light'); handleWhatsAppInvoice(buildCurrentInvoice(), selectedCustomer || null); }}
+               onClick={() => { haptic('light'); handleShareInvoiceWhatsApp(buildCurrentInvoice(), selectedCustomer || null); }}
                className="flex-1 sm:flex-none bg-emerald-500 text-white px-4 sm:px-8 py-3 sm:py-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 active:scale-95 transition-all shadow-lg shadow-emerald-100"
              >
                <MessageCircle size={16} /> <span className="hidden sm:inline">WhatsApp</span><span className="sm:hidden">WA</span>

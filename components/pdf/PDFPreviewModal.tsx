@@ -55,10 +55,23 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
       }
     }
 
-    // Desktop fallback: open WhatsApp with text message
+    // Desktop fallback: download PDF first, then open WhatsApp so user can attach it
+    if (instance.url) {
+      try {
+        const resp = await fetch(instance.url);
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = window.document.createElement('a');
+        a.href = blobUrl; a.download = fileName;
+        window.document.body.appendChild(a); a.click();
+        window.document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      } catch (_) { /* ignore download errors */ }
+    }
+    const waText = `${text}\n\n(PDF downloaded — please attach it to this chat)`;
     const url = phone
-      ? `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+      ? `https://wa.me/91${phone}?text=${encodeURIComponent(waText)}`
+      : `https://wa.me/?text=${encodeURIComponent(waText)}`;
     window.open(url, '_blank');
   };
 
