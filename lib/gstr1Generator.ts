@@ -242,7 +242,14 @@ function buildB2BSEZDE(invoices: Invoice[], custMap: Map<string, Customer>, prof
     const st   = resolveSupplyType(inv, cust, profileState);
     if (!eligible.includes(st)) continue;
     const pos = stateCode(cust?.state || profileState);
+
+    // Group items by GST rate — one row per rate per invoice
+    const rateGroups = new Map<number, number>();
     for (const item of inv.items) {
+      rateGroups.set(item.gstRate, (rateGroups.get(item.gstRate) ?? 0) + r2(item.quantity * item.rate));
+    }
+
+    for (const [rate, taxableValue] of rateGroups) {
       data.push([
         cust?.gstin || '',
         inv.customerName,
@@ -254,8 +261,8 @@ function buildB2BSEZDE(invoices: Invoice[], custMap: Map<string, Customer>, prof
         '',                                  // Applicable % of Tax Rate
         invTypeLabel(st),
         '',                                  // E-Commerce GSTIN
-        item.gstRate,
-        r2(item.quantity * item.rate),
+        rate,
+        r2(taxableValue),
         0,
       ]);
     }
