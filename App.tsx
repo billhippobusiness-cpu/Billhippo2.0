@@ -29,6 +29,7 @@ import ProRegister from './components/pro/ProRegister';
 import InviteAccept from './components/pro/InviteAccept';
 import BusinessInviteNotice from './components/BusinessInviteNotice';
 import PWAInstallBanner from './components/PWAInstallBanner';
+import MediaStudio from './components/MediaStudio';
 
 const App: React.FC = () => {
   const {
@@ -348,6 +349,7 @@ const App: React.FC = () => {
       case 'settings':    return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
       case 'inventory':   return <InventoryManager userId={userId} />;
       case 'purchases':   return <PurchaseManager userId={userId} />;
+      case 'ai-studio':   return <MediaStudio />;
       default:            return <Dashboard userId={userId} onNavigate={setActiveTab} />;
     }
   };
