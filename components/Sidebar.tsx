@@ -29,7 +29,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
     { id: 'challans', icon: Truck, label: 'Delivery Challan' },
     { id: 'quotations', icon: ScrollText, label: 'Quotations' },
     { id: 'gst', icon: FileText, label: 'Tax Reports' },
-    { id: 'accounts', icon: Landmark, label: 'Accounts' },
+    // Tally integration — hidden until the desktop connector ships (feature flag).
+    ...(import.meta.env.VITE_TALLY_ENABLED === 'true'
+      ? [{ id: 'accounts', icon: Landmark, label: 'Accounts' }]
+      : []),
     { id: 'ai-studio', icon: Sparkles, label: 'AI Studio' },
     { id: 'theme', icon: Palette, label: 'Invoice Theme' },
     { id: 'settings', icon: Settings, label: 'Settings' },
