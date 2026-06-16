@@ -30,6 +30,7 @@ import InviteAccept from './components/pro/InviteAccept';
 import BusinessInviteNotice from './components/BusinessInviteNotice';
 import PWAInstallBanner from './components/PWAInstallBanner';
 import MediaStudio from './components/MediaStudio';
+import Accounts from './components/Accounts';
 
 const App: React.FC = () => {
   const {
@@ -345,6 +346,7 @@ const App: React.FC = () => {
         />
       );
       case 'gst':         return <GSTReports userId={userId} onNavigate={setActiveTab} />;
+      case 'accounts':    return <Accounts userId={userId} />;
       case 'theme':       return <InvoiceTheme userId={userId} />;
       case 'settings':    return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
       case 'inventory':   return <InventoryManager userId={userId} />;

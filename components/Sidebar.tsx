@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight, Briefcase, ScrollText, ShoppingBag, Truck, Sparkles } from 'lucide-react';
+import { LayoutDashboard, IndianRupee, FileText, Settings, ChevronRight, Palette, UserCircle, Package, ArrowLeftRight, Briefcase, ScrollText, ShoppingBag, Truck, Sparkles, Landmark } from 'lucide-react';
 import { type User } from 'firebase/auth';
 import type { UserRole } from '../types';
 import { haptic } from '../lib/haptic';
@@ -29,6 +29,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
     { id: 'challans', icon: Truck, label: 'Delivery Challan' },
     { id: 'quotations', icon: ScrollText, label: 'Quotations' },
     { id: 'gst', icon: FileText, label: 'Tax Reports' },
+    // Tally integration — hidden until the desktop connector ships (feature flag).
+    ...(import.meta.env.VITE_TALLY_ENABLED === 'true'
+      ? [{ id: 'accounts', icon: Landmark, label: 'Accounts' }]
+      : []),
     { id: 'ai-studio', icon: Sparkles, label: 'AI Studio' },
     { id: 'theme', icon: Palette, label: 'Invoice Theme' },
     { id: 'settings', icon: Settings, label: 'Settings' },

@@ -170,6 +170,13 @@ export interface Customer {
   state: string;
   pincode: string;
   balance: number;
+  // ── Tally integration ──
+  // The exact party-ledger name this customer resolves to in Tally. Set once a
+  // ledger is matched (by GSTIN or name) or manually mapped, so subsequent
+  // pushes always use the Tally-side name even when it differs from `name`.
+  tallyLedgerName?: string;
+  // How the resolution was made: 'gstin' (authoritative) or 'name'.
+  tallyMatchType?: 'gstin' | 'name';
 }
 
 export interface InvoiceItem {
@@ -364,4 +371,54 @@ export interface DeliveryChallan {
   transportMode?: string;
   notes?: string;
   status: 'Draft' | 'Dispatched' | 'Delivered';
+}
+
+// ── Tally Integration ──────────────────────────────────────────────────────
+// The BillHippo Desktop Connector (Electron tray app) bridges Firestore and a
+// local Tally Prime instance (HTTP XML gateway on localhost:9000). The web app
+// and connector communicate exclusively through these Firestore documents:
+//   users/{uid}/tallyConfig/main   → settings + connector heartbeat
+//   users/{uid}/tallyLedgers/{id}  → mirror of ledgers that exist in Tally
+//   users/{uid}/syncJobs/{id}      → the work queue (push invoice / fetch / create)
+
+export type SyncJobType = 'PUSH_INVOICE' | 'FETCH_LEDGERS' | 'CREATE_LEDGER';
+export type SyncJobStatus = 'pending' | 'processing' | 'success' | 'failed';
+
+export interface TallyConfig {
+  enabled: boolean;
+  companyName: string;          // exact Tally company name to import into
+  tallyPort: number;            // default 9000
+  salesLedgerName: string;      // e.g. "Sales @ 18%" or "Sales Accounts"
+  defaultRoundOffLedger?: string;
+  connectorStatus?: 'online' | 'offline';
+  connectorVersion?: string;
+  lastHeartbeat?: unknown;      // Firestore Timestamp — connector writes ~every 30s
+  lastLedgerSyncAt?: unknown;   // Firestore Timestamp — last successful FETCH_LEDGERS
+  pairingCode?: string;         // one-time code to link a connector (Phase 2)
+  pairingCodeExpiresAt?: number;
+}
+
+export interface TallyLedger {
+  id: string;
+  name: string;                 // ledger name exactly as stored in Tally
+  parent: string;               // group, e.g. "Sundry Debtors", "Sales Accounts"
+  gstin?: string;               // party GSTIN — the authoritative match key
+  syncedAt?: unknown;           // Firestore Timestamp
+}
+
+export interface SyncJob {
+  id: string;
+  type: SyncJobType;
+  status: SyncJobStatus;
+  invoiceId?: string;           // ref to users/{uid}/invoices/{id} (PUSH_INVOICE)
+  customerId?: string;          // ref to users/{uid}/customers/{id} (CREATE_LEDGER)
+  // Denormalised snapshot of the source data at queue time. Keeps the job
+  // self-contained/auditable and limits what the connector must read.
+  payloadSnapshot?: Record<string, unknown>;
+  attempts: number;
+  tallyVoucherId?: string;      // Tally MASTERID / remote id on success
+  error?: string;               // human-readable failure reason
+  createdAt?: unknown;          // Firestore Timestamp
+  updatedAt?: unknown;          // Firestore Timestamp
+  createdBy?: string;           // uid that enqueued the job
 }
