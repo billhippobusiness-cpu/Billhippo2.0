@@ -558,3 +558,6 @@ function buildInvoiceEmail(p: {
 
 // ─── WhiteBooks GST API Functions ─────────────────────────────────────────────
 export { wbLookupGSTIN, wbInitSession, wbVerifyOTP, wbFetchGSTR2B, wbFetchGSTR3B, wbFetchGSTR1 } from "./whitebooks";
+
+// ─── Tally Connector Pairing Functions ────────────────────────────────────────
+export { tallyCreatePairingCode, tallyExchangePairingCode } from "./tally";
