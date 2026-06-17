@@ -5,11 +5,12 @@ a local **Tally Prime** instance. It signs in to Firebase as the user, watches
 Firestore for pending sync jobs, talks to Tally's XML gateway on
 `http://localhost:9000`, and reports results back to Firestore.
 
-> **Status: Milestone B (skeleton).** Pairing, Firebase auth with on-disk
-> persistence, the heartbeat (drives the web "Connector online" pill), and the
-> job-watcher lifecycle are implemented. The Tally job handlers
-> (`FETCH_LEDGERS`, `PUSH_INVOICE`, `CREATE_LEDGER`) are registered as stubs and
-> filled in during Milestone C.
+> **Status: Milestone C.** Pairing, Firebase auth with on-disk persistence, the
+> heartbeat (drives the web "Connector online" pill), the job-watcher lifecycle,
+> and all three Tally job handlers (`FETCH_LEDGERS`, `PUSH_INVOICE`,
+> `CREATE_LEDGER`) with their XML request builders and response parsers are
+> implemented. Remaining for Milestone D: a signed Windows installer, app icon,
+> auto-update feed, and flipping the web feature flag on.
 
 ## How pairing works
 
@@ -33,6 +34,10 @@ src/
   heartbeat.ts     Writes tallyConfig.lastHeartbeat every 30s + Tally ping
   jobWatcher.ts    Subscribes to pending syncJobs, claims + dispatches them
   tally/client.ts  HTTP client for the Tally XML gateway (ping + postXml)
+  tally/xml.ts     Escaping, date/amount formatting, ledger doc-id hashing
+  tally/builders.ts  Build XML: ledger-list export, sales voucher, ledger master
+  tally/parse.ts   Parse XML: ledger list, import result (throws on Tally errors)
+  tally/handlers.ts  FETCH_LEDGERS / PUSH_INVOICE / CREATE_LEDGER handlers
   shared/types.ts  Firestore doc shapes (mirrors the web app)
 renderer/
   index.html       Settings UI

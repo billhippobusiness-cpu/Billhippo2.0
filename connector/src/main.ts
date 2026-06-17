@@ -14,6 +14,7 @@ import type { User } from "firebase/auth";
 import { initFirebase, watchAuth, pairWithCode, signOutConnector, getCurrentUser } from "./firebaseClient";
 import { startHeartbeat, stopHeartbeat, markOffline } from "./heartbeat";
 import { startJobWatcher, stopJobWatcher } from "./jobWatcher";
+import { registerTallyHandlers } from "./tally/handlers";
 import { getSettings, setSettings, CONNECTOR_VERSION, type LocalSettings } from "./config";
 
 // Placeholder 1x1 tray icon — a real .ico is bundled in Milestone D.
@@ -124,6 +125,7 @@ if (!app.requestSingleInstanceLock()) {
     tray = new Tray(TRAY_ICON);
     buildTrayMenu();
 
+    registerTallyHandlers();
     initFirebase();
     watchAuth(onUser);
 
