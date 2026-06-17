@@ -14,6 +14,7 @@
 import { initializeApp, type FirebaseApp } from "firebase/app";
 import {
   initializeAuth,
+  inMemoryPersistence,
   signInWithCustomToken,
   onAuthStateChanged,
   type Auth,
@@ -57,9 +58,19 @@ let functions: Functions;
 
 export function initFirebase(): { auth: Auth; db: Firestore } {
   app = initializeApp(firebaseConfig);
-  auth = initializeAuth(app, { persistence: electronPersistence });
+  // Assign db + functions FIRST so a persistence hiccup in auth init can never
+  // leave them undefined (that previously surfaced as a "_url" error on pairing).
   db = getFirestore(app);
   functions = getFunctions(app, FUNCTIONS_REGION);
+  // Prefer the on-disk persistence (stays signed in across restarts); if the
+  // SDK rejects the custom persistence in this environment, fall back to
+  // in-memory so the connector still works (re-pair needed after a restart).
+  try {
+    auth = initializeAuth(app, { persistence: electronPersistence });
+  } catch (err) {
+    console.error("[firebase] custom persistence unavailable; using in-memory:", err);
+    auth = initializeAuth(app, { persistence: inMemoryPersistence });
+  }
   return { auth, db };
 }
 
@@ -70,6 +81,9 @@ export function watchAuth(cb: (user: User | null) => void): () => void {
 
 /** Exchange a pairing code for a custom token and sign in. */
 export async function pairWithCode(code: string): Promise<User> {
+  if (!functions || !auth) {
+    throw new Error("Connector not initialized yet — please restart the app and try again.");
+  }
   const callable = httpsCallable<{ code: string }, { token: string }>(
     functions,
     "tallyExchangePairingCode",
