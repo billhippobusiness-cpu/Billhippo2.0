@@ -1,19 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Landmark, Download, RefreshCw, CheckCircle2, AlertTriangle, Clock,
-  Wifi, WifiOff, BookOpen, Send, Info, Search, Loader2,
+  Wifi, WifiOff, BookOpen, Send, Info, Search, Loader2, KeyRound, Copy,
 } from 'lucide-react';
+import { httpsCallable } from 'firebase/functions';
 import type { TallyConfig, TallyLedger, SyncJob, Customer, Invoice } from '../types';
 import {
   subscribeTallyConfig, saveTallyConfig, subscribeTallyLedgers,
   subscribeSyncJobs, enqueueSyncJob, isConnectorOnline,
 } from '../lib/tally';
 import { getCustomers, getInvoices, updateCustomer } from '../lib/firestore';
+import { functions } from '../lib/firebase';
 import { resolvePartyLedger, ledgerExistsByName, matchStatusLabel, type PartyMatchResult } from '../lib/tallyMatch';
 import { haptic } from '../lib/haptic';
 
-// Wired up in Milestone D once the signed installer is hosted.
-const CONNECTOR_DOWNLOAD_URL = '';
+// Set VITE_CONNECTOR_DOWNLOAD_URL in the build env once the signed installer is hosted.
+const CONNECTOR_DOWNLOAD_URL = import.meta.env.VITE_CONNECTOR_DOWNLOAD_URL || '';
 
 type TabId = 'connector' | 'ledgers' | 'push';
 
@@ -127,6 +129,93 @@ const ConnectorPill: React.FC<{ online: boolean }> = ({ online }) => (
   </span>
 );
 
+// ── Pairing code generator ────────────────────────────────────────────────────
+
+const PairingCode: React.FC<{ userId: string; online: boolean }> = ({ online }) => {
+  const [code, setCode] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number>(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  // Tick so the "expires in" countdown stays live while a code is shown.
+  useEffect(() => {
+    if (!code) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [code]);
+
+  const secondsLeft = code ? Math.max(0, Math.round((expiresAt - now) / 1000)) : 0;
+  const expired = code !== null && secondsLeft <= 0;
+
+  const generate = async () => {
+    setLoading(true);
+    setError(null);
+    setCopied(false);
+    try {
+      const fn = httpsCallable<unknown, { code: string; expiresAt: number }>(functions, 'tallyCreatePairingCode');
+      const res = await fn();
+      setCode(res.data.code);
+      setExpiresAt(res.data.expiresAt);
+      setNow(Date.now());
+    } catch (e: any) {
+      setError(e?.message?.replace('FirebaseError: ', '') || 'Could not generate a code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  return (
+    <div className="mt-6 pt-5 border-t border-slate-100">
+      <div className="flex items-center gap-2 mb-2">
+        <KeyRound size={16} className="text-profee-blue" />
+        <h3 className="font-bold text-slate-700 font-poppins text-sm">Pairing code</h3>
+      </div>
+      <p className="text-xs text-slate-500 font-poppins mb-3">
+        Generate a one-time code, then paste it into the connector's Settings window to link this account.
+      </p>
+
+      {code && !expired ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="font-mono font-bold text-xl tracking-[0.3em] text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+            {code}
+          </span>
+          <button onClick={copy} className="inline-flex items-center gap-1.5 text-xs font-bold font-poppins text-profee-blue hover:underline">
+            <Copy size={14} /> {copied ? 'Copied!' : 'Copy'}
+          </button>
+          <span className="text-xs text-slate-400 font-poppins">expires in {secondsLeft}s</span>
+        </div>
+      ) : (
+        <button
+          onClick={generate}
+          disabled={loading}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-800 text-white font-bold font-poppins text-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
+        >
+          {loading ? <Loader2 size={16} className="animate-spin" /> : <KeyRound size={16} />}
+          {expired ? 'Generate a new code' : 'Generate pairing code'}
+        </button>
+      )}
+
+      {error && <p className="text-xs text-rose-500 font-poppins mt-2">{error}</p>}
+      {!online && code && !expired && (
+        <p className="text-[11px] text-slate-400 font-poppins mt-2">
+          Once the connector signs in with this code, the status above turns green.
+        </p>
+      )}
+    </div>
+  );
+};
+
 // ── Connector tab ─────────────────────────────────────────────────────────────
 
 const ConnectorTab: React.FC<{
@@ -201,6 +290,8 @@ const ConnectorTab: React.FC<{
           <li>Keep the company you sync to <b>open</b> in Tally.</li>
           <li>Install &amp; launch the BillHippo connector, then paste your pairing code.</li>
         </ol>
+
+        <PairingCode userId={userId} online={online} />
       </div>
 
       {/* Settings card */}

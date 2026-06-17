@@ -10,6 +10,7 @@
 
 import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } from "electron";
 import * as path from "path";
+import { autoUpdater } from "electron-updater";
 import type { User } from "firebase/auth";
 import { initFirebase, watchAuth, pairWithCode, signOutConnector, getCurrentUser } from "./firebaseClient";
 import { startHeartbeat, stopHeartbeat, markOffline } from "./heartbeat";
@@ -128,6 +129,15 @@ if (!app.requestSingleInstanceLock()) {
     registerTallyHandlers();
     initFirebase();
     watchAuth(onUser);
+
+    // Background auto-update check (no-op in dev / when no publish feed is
+    // reachable). Failures must never crash the tray app.
+    try {
+      autoUpdater.autoDownload = true;
+      void autoUpdater.checkForUpdatesAndNotify();
+    } catch (err) {
+      console.error("[autoUpdater] check failed:", err);
+    }
 
     // Tray app: keep running when no windows are open (override the default
     // "quit on all windows closed" behaviour with a no-op).

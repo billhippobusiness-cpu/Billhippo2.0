@@ -16,7 +16,8 @@ files:
 win:
   target:
     - nsis
-  # icon: build/icon.ico   # add a 256x256 .ico before the first signed release
+  # Drop a 256x256 (or larger) icon at connector/build/icon.ico, then uncomment:
+  # icon: build/icon.ico
 
 nsis:
   oneClick: false
@@ -25,7 +26,9 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
 
-# Auto-update feed is configured in Milestone D (e.g. generic/S3/GitHub provider).
-# publish:
-#   provider: generic
-#   url: https://downloads.billhippo.in/connector/
+# Auto-update feed. electron-builder publishes update metadata (latest.yml) and
+# the installer here; electron-updater reads from the same URL at runtime.
+# Point this at wherever you host the signed installer, then `npm run dist`.
+publish:
+  provider: generic
+  url: https://downloads.billhippo.in/connector/
