@@ -389,6 +389,10 @@ export interface TallyConfig {
   companyName: string;          // exact Tally company name to import into
   tallyPort: number;            // default 9000
   salesLedgerName: string;      // e.g. "Sales @ 18%" or "Sales Accounts"
+  // GST tax ledger names in Tally (default to CGST / SGST / IGST if unset).
+  cgstLedgerName?: string;
+  sgstLedgerName?: string;
+  igstLedgerName?: string;
   defaultRoundOffLedger?: string;
   connectorStatus?: 'online' | 'offline';
   connectorVersion?: string;
