@@ -398,6 +398,8 @@ export interface TallyConfig {
   connectorVersion?: string;
   lastHeartbeat?: unknown;      // Firestore Timestamp — connector writes ~every 30s
   lastLedgerSyncAt?: unknown;   // Firestore Timestamp — last successful FETCH_LEDGERS
+  discoveredCompanies?: string[]; // companies open in Tally (connector-reported)
+  discoveredAt?: unknown;       // Firestore Timestamp — last company/ledger discovery
   pairingCode?: string;         // one-time code to link a connector (Phase 2)
   pairingCodeExpiresAt?: number;
 }

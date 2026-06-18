@@ -13,7 +13,7 @@ const parser = new XMLParser({
   attributeNamePrefix: "@_",
   parseTagValue: true,
   trimValues: true,
-  isArray: (name) => name === "LEDGER",
+  isArray: (name) => name === "LEDGER" || name === "COMPANY",
 });
 
 function asArray<T>(v: T | T[] | undefined): T[] {
@@ -36,6 +36,25 @@ function findGstin(node: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+/** Parse a "List of Companies" export into the open company names. */
+export function parseCompanies(xml: string): string[] {
+  const obj = parser.parse(xml) as Record<string, any>;
+  const collection = obj?.ENVELOPE?.BODY?.DATA?.COLLECTION ?? obj?.ENVELOPE?.BODY?.DATA ?? {};
+  const companies = asArray<Record<string, any>>(collection?.COMPANY);
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const c of companies) {
+    const name = cleanText(c?.["@_NAME"] ?? c?.NAME);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
 }
 
 export function parseLedgers(xml: string): TallyLedger[] {
