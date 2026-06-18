@@ -95,7 +95,7 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
         ))}
       </div>
 
-      {tab === 'connector' && <ConnectorTab userId={userId} config={config} online={online} />}
+      {tab === 'connector' && <ConnectorTab userId={userId} config={config} ledgers={ledgers} online={online} />}
       {tab === 'ledgers' && (
         <LedgersTab userId={userId} config={config} ledgers={ledgers} online={online} />
       )}
@@ -221,26 +221,54 @@ const PairingCode: React.FC<{ userId: string; online: boolean }> = ({ online }) 
 const ConnectorTab: React.FC<{
   userId: string;
   config: TallyConfig | null;
+  ledgers: TallyLedger[];
   online: boolean;
-}> = ({ userId, config, online }) => {
+}> = ({ userId, config, ledgers, online }) => {
   const [form, setForm] = useState({
     companyName: '', tallyPort: 9000, salesLedgerName: '',
     cgstLedgerName: '', sgstLedgerName: '', igstLedgerName: '',
   });
   const [saved, setSaved] = useState(false);
+  const [detecting, setDetecting] = useState(false);
 
+  // Companies the connector found open in Tally (drives the company dropdown).
+  const companies = config?.discoveredCompanies || [];
+
+  // Ledger options grouped by their Tally group, with a fallback to "all" when
+  // a group can't be identified, so the user can always pick something.
+  const salesOptions = useMemo(() => {
+    const sales = ledgers.filter((l) => /sales/i.test(l.parent || ''));
+    return (sales.length ? sales : ledgers).map((l) => l.name);
+  }, [ledgers]);
+  const taxOptions = useMemo(() => {
+    const tax = ledgers.filter((l) => /(dut|tax|gst)/i.test(l.parent || ''));
+    return (tax.length ? tax : ledgers).map((l) => l.name);
+  }, [ledgers]);
+
+  // Load saved config; pre-select GST ledgers by name when the user hasn't
+  // chosen yet (e.g. a ledger literally named "CGST" / "Output CGST").
   useEffect(() => {
-    if (config) {
-      setForm({
-        companyName: config.companyName || '',
-        tallyPort: config.tallyPort || 9000,
-        salesLedgerName: config.salesLedgerName || '',
-        cgstLedgerName: config.cgstLedgerName || '',
-        sgstLedgerName: config.sgstLedgerName || '',
-        igstLedgerName: config.igstLedgerName || '',
-      });
+    if (!config) return;
+    const guess = (re: RegExp) => taxOptions.find((n) => re.test(n)) || '';
+    setForm((prev) => ({
+      companyName: config.companyName || prev.companyName,
+      tallyPort: config.tallyPort || 9000,
+      salesLedgerName: config.salesLedgerName || prev.salesLedgerName,
+      cgstLedgerName: config.cgstLedgerName || prev.cgstLedgerName || guess(/cgst/i),
+      sgstLedgerName: config.sgstLedgerName || prev.sgstLedgerName || guess(/sgst|utgst/i),
+      igstLedgerName: config.igstLedgerName || prev.igstLedgerName || guess(/igst/i),
+    }));
+  }, [config, taxOptions]);
+
+  const handleDetect = async () => {
+    setDetecting(true);
+    try {
+      await enqueueSyncJob(userId, { type: 'FETCH_LEDGERS', createdBy: userId });
+    } finally {
+      // Live config/ledger subscriptions repopulate the dropdowns shortly after.
+      setTimeout(() => setDetecting(false), 1800);
     }
-  }, [config]);
+  };
 
   const handleSave = async () => {
     await saveTallyConfig(userId, {
@@ -297,25 +325,54 @@ const ConnectorTab: React.FC<{
       {/* Settings card */}
       <div className="bg-white rounded-3xl border border-slate-100 p-7 shadow-sm">
         <h2 className="text-lg font-bold text-slate-800 font-poppins mb-1">2. Tally settings</h2>
-        <p className="text-sm text-slate-500 font-poppins mb-5">
-          These tell the connector which company and ledgers to post into.
+        <p className="text-sm text-slate-500 font-poppins mb-4">
+          Click <b>Detect from Tally</b> and pick from the lists — no typing exact names.
         </p>
 
-        <div className="space-y-4">
-          <Field label="Tally company name" hint="Exactly as it appears in Tally">
-            <input
+        {/* Detect: pulls open companies + ledgers from Tally into the dropdowns. */}
+        <button
+          onClick={handleDetect}
+          disabled={!online || detecting}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold font-poppins text-sm transition-all ${
+            online && !detecting
+              ? 'bg-slate-800 text-white hover:opacity-90 active:scale-95'
+              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+          }`}
+        >
+          <RefreshCw size={16} className={detecting ? 'animate-spin' : ''} />
+          {detecting ? 'Detecting…' : 'Detect from Tally'}
+        </button>
+        {!online ? (
+          <p className="text-xs text-amber-600 font-poppins mt-2 flex items-center gap-1.5">
+            <Clock size={13} /> Pair the connector and keep Tally open, then detect.
+          </p>
+        ) : companies.length === 0 && ledgers.length === 0 ? (
+          <p className="text-xs text-slate-400 font-poppins mt-2">
+            Loads the company open in Tally and its ledgers into the lists below.
+          </p>
+        ) : companies.length > 1 && !form.companyName ? (
+          <p className="text-xs text-amber-600 font-poppins mt-2">
+            Multiple companies are open — pick the one to sync below, then Save &amp; Detect again.
+          </p>
+        ) : null}
+
+        <div className="space-y-4 mt-5">
+          <Field label="Tally company" hint={companies.length ? 'Detected from Tally' : 'Detect first, or type it exactly'}>
+            <LedgerSelect
               value={form.companyName}
-              onChange={(e) => setForm({ ...form, companyName: e.target.value })}
-              placeholder="e.g. Acme Traders Pvt Ltd"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30"
+              onChange={(v) => setForm({ ...form, companyName: v })}
+              options={companies}
+              placeholder="Select company"
+              emptyText="e.g. Acme Traders Pvt Ltd"
             />
           </Field>
-          <Field label="Default sales ledger" hint="The credit ledger for sales, e.g. 'Sales Accounts'">
-            <input
+          <Field label="Default sales ledger" hint="The credit ledger sales post to (pick your usual one)">
+            <LedgerSelect
               value={form.salesLedgerName}
-              onChange={(e) => setForm({ ...form, salesLedgerName: e.target.value })}
-              placeholder="e.g. Sales Accounts"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30"
+              onChange={(v) => setForm({ ...form, salesLedgerName: v })}
+              options={salesOptions}
+              placeholder="Select sales ledger"
+              emptyText="e.g. Sales Accounts"
             />
           </Field>
           <Field label="Gateway port" hint="Default is 9000">
@@ -327,26 +384,11 @@ const ConnectorTab: React.FC<{
             />
           </Field>
 
-          <Field label="GST tax ledgers" hint="Leave blank to use the defaults CGST / SGST / IGST">
+          <Field label="GST tax ledgers" hint="Auto-detected by name — change any that differ in your Tally">
             <div className="grid grid-cols-3 gap-2">
-              <input
-                value={form.cgstLedgerName}
-                onChange={(e) => setForm({ ...form, cgstLedgerName: e.target.value })}
-                placeholder="CGST"
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30"
-              />
-              <input
-                value={form.sgstLedgerName}
-                onChange={(e) => setForm({ ...form, sgstLedgerName: e.target.value })}
-                placeholder="SGST"
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30"
-              />
-              <input
-                value={form.igstLedgerName}
-                onChange={(e) => setForm({ ...form, igstLedgerName: e.target.value })}
-                placeholder="IGST"
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30"
-              />
+              <LedgerSelect value={form.cgstLedgerName} onChange={(v) => setForm({ ...form, cgstLedgerName: v })} options={taxOptions} placeholder="CGST" emptyText="CGST" compact />
+              <LedgerSelect value={form.sgstLedgerName} onChange={(v) => setForm({ ...form, sgstLedgerName: v })} options={taxOptions} placeholder="SGST" emptyText="SGST" compact />
+              <LedgerSelect value={form.igstLedgerName} onChange={(v) => setForm({ ...form, igstLedgerName: v })} options={taxOptions} placeholder="IGST" emptyText="IGST" compact />
             </div>
           </Field>
 
@@ -701,6 +743,50 @@ const JobStatus: React.FC<{ job?: SyncJob }> = ({ job }) => {
 };
 
 // ── Small shared UI helpers ───────────────────────────────────────────────────
+
+// A dropdown sourced from Tally-detected names. Before detection (no options)
+// it degrades to a plain text input so the field is never a dead end. Any saved
+// value not present in the list is preserved as a selectable option.
+const LedgerSelect: React.FC<{
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
+  emptyText?: string;
+  compact?: boolean;
+}> = ({ value, onChange, options, placeholder, emptyText, compact }) => {
+  const opts = useMemo(() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const o of [...options, value]) {
+      if (o && !seen.has(o)) { seen.add(o); list.push(o); }
+    }
+    return list.sort((a, b) => a.localeCompare(b));
+  }, [options, value]);
+
+  const cls = `w-full rounded-xl border border-slate-200 font-poppins text-sm bg-white focus:outline-none focus:ring-2 focus:ring-profee-blue/30 ${
+    compact ? 'px-3 py-2.5' : 'px-4 py-3'
+  }`;
+
+  if (opts.length === 0) {
+    return (
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={emptyText || placeholder}
+        className={cls}
+      />
+    );
+  }
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
+      <option value="">{placeholder}</option>
+      {opts.map((o) => (
+        <option key={o} value={o}>{o}</option>
+      ))}
+    </select>
+  );
+};
 
 const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
   <div>

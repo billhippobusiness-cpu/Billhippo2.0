@@ -11,13 +11,19 @@ import {
   getDoc,
   getDocs,
   serverTimestamp,
+  setDoc,
   writeBatch,
 } from "firebase/firestore";
 import { getDb } from "../firebaseClient";
 import { getSettings } from "../config";
 import { postXml } from "./client";
-import { buildLedgerListRequest, buildSalesVoucher, buildLedgerMaster } from "./builders";
-import { parseLedgers, parseImportResult } from "./parse";
+import {
+  buildCompanyListRequest,
+  buildLedgerListRequest,
+  buildSalesVoucher,
+  buildLedgerMaster,
+} from "./builders";
+import { parseCompanies, parseLedgers, parseImportResult } from "./parse";
 import { ledgerDocId } from "./xml";
 import { registerHandler } from "../jobWatcher";
 import type { SyncJob, TallyLedger } from "../shared/types";
@@ -55,21 +61,60 @@ function tallyTarget() {
 // ── FETCH_LEDGERS ─────────────────────────────────────────────────────────────
 
 async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: string }> {
-  const cfg = await readConfig(uid);
   const { host, port } = tallyTarget();
-  const responseXml = await postXml(host, port, buildLedgerListRequest(cfg.companyName));
-  const ledgers = parseLedgers(responseXml);
+  const configRef = doc(getDb(), "users", uid, "tallyConfig", "main");
 
+  // 1. Discover the companies currently open in Tally so the web UI can offer a
+  //    dropdown (and so we can auto-select when only one company is open).
+  let openCompanies: string[] = [];
+  try {
+    openCompanies = parseCompanies(await postXml(host, port, buildCompanyListRequest()));
+  } catch {
+    // Non-fatal — fall back to whatever company the user has already configured.
+  }
+
+  // 2. Resolve which company to read ledgers from.
+  const snap = await getDoc(configRef);
+  const cfg = (snap.exists() ? snap.data() : {}) as Partial<TallyConfigDoc>;
+  const configured = (cfg.companyName || "").trim();
+  const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+  let companyName = "";
+  if (configured && openCompanies.some((c) => eq(c, configured))) {
+    companyName = configured; // user's choice is open — use it
+  } else if (openCompanies.length === 1) {
+    companyName = openCompanies[0]; // exactly one open → auto-select
+  } else if (configured && openCompanies.length === 0) {
+    companyName = configured; // company list unavailable — trust the config
+  }
+
+  // 3. Persist the discovered companies (+ resolved company) so the UI updates
+  //    even if we can't proceed to a ledger fetch yet.
+  await setDoc(
+    configRef,
+    {
+      discoveredCompanies: openCompanies,
+      discoveredAt: serverTimestamp(),
+      ...(companyName ? { companyName } : {}),
+    },
+    { merge: true },
+  );
+
+  if (!companyName) {
+    throw new Error(
+      openCompanies.length === 0
+        ? "No open company found in Tally. Open your company in Tally, then click Detect again."
+        : `${openCompanies.length} companies are open in Tally. Pick the one to sync in ` +
+          "BillHippo → Accounts → Connector, then click Detect again.",
+    );
+  }
+
+  // 4. Pull the ledgers for the resolved company.
+  const ledgers = parseLedgers(await postXml(host, port, buildLedgerListRequest(companyName)));
   await syncLedgersToFirestore(uid, ledgers);
 
   // Stamp the config so the web UI can show "last synced".
-  const batch = writeBatch(getDb());
-  batch.set(
-    doc(getDb(), "users", uid, "tallyConfig", "main"),
-    { lastLedgerSyncAt: serverTimestamp() },
-    { merge: true },
-  );
-  await batch.commit();
+  await setDoc(configRef, { lastLedgerSyncAt: serverTimestamp() }, { merge: true });
   return {};
 }
 

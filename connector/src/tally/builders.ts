@@ -43,6 +43,37 @@ function staticVars(company: string): string {
   return `<STATICVARIABLES><SVCURRENTCOMPANY>${escapeXml(company)}</SVCURRENTCOMPANY></STATICVARIABLES>`;
 }
 
+/**
+ * Export request for the companies currently OPEN in Tally. A Collection of
+ * TYPE "Company" (with no SVCURRENTCOMPANY) returns the loaded companies, so the
+ * web UI can offer them as a dropdown instead of asking the user to type a name.
+ */
+export function buildCompanyListRequest(): string {
+  return `<ENVELOPE>
+ <HEADER>
+  <VERSION>1</VERSION>
+  <TALLYREQUEST>Export</TALLYREQUEST>
+  <TYPE>Collection</TYPE>
+  <ID>BH List of Companies</ID>
+ </HEADER>
+ <BODY>
+  <DESC>
+   <STATICVARIABLES>
+    <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+   </STATICVARIABLES>
+   <TDL>
+    <TDLMESSAGE>
+     <COLLECTION NAME="BH List of Companies" ISMODIFY="No">
+      <TYPE>Company</TYPE>
+      <NATIVEMETHOD>NAME</NATIVEMETHOD>
+     </COLLECTION>
+    </TDLMESSAGE>
+   </TDL>
+  </DESC>
+ </BODY>
+</ENVELOPE>`;
+}
+
 /** Export request for the full ledger list, fetching name/parent/GSTIN. */
 export function buildLedgerListRequest(companyName: string): string {
   return `<ENVELOPE>
