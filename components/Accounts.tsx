@@ -95,7 +95,7 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
         ))}
       </div>
 
-      {tab === 'connector' && <ConnectorTab userId={userId} config={config} ledgers={ledgers} online={online} />}
+      {tab === 'connector' && <ConnectorTab userId={userId} config={config} ledgers={ledgers} jobs={jobs} online={online} />}
       {tab === 'ledgers' && (
         <LedgersTab userId={userId} config={config} ledgers={ledgers} online={online} />
       )}
@@ -222,8 +222,9 @@ const ConnectorTab: React.FC<{
   userId: string;
   config: TallyConfig | null;
   ledgers: TallyLedger[];
+  jobs: SyncJob[];
   online: boolean;
-}> = ({ userId, config, ledgers, online }) => {
+}> = ({ userId, config, ledgers, jobs, online }) => {
   const [form, setForm] = useState({
     companyName: '', tallyPort: 9000, salesLedgerName: '',
     cgstLedgerName: '', sgstLedgerName: '', igstLedgerName: '',
@@ -233,6 +234,16 @@ const ConnectorTab: React.FC<{
 
   // Companies the connector found open in Tally (drives the company dropdown).
   const companies = config?.discoveredCompanies || [];
+
+  // Surface the most recent detection job so a failure isn't silent.
+  const lastDetectJob = useMemo(() => {
+    let latest: SyncJob | undefined;
+    for (const j of jobs) {
+      if (j.type !== 'FETCH_LEDGERS') continue;
+      if (!latest || millis(j.createdAt) >= millis(latest.createdAt)) latest = j;
+    }
+    return latest;
+  }, [jobs]);
 
   // Ledger options grouped by their Tally group, with a fallback to "all" when
   // a group can't be identified, so the user can always pick something.
@@ -355,6 +366,29 @@ const ConnectorTab: React.FC<{
             Multiple companies are open — pick the one to sync below, then Save &amp; Detect again.
           </p>
         ) : null}
+
+        {/* Live result of the last Detect, so a failure is never silent. */}
+        {lastDetectJob && (
+          <div className="mt-3">
+            {lastDetectJob.status === 'failed' ? (
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-rose-50 border border-rose-100 text-xs text-rose-600 font-poppins">
+                <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                <span>
+                  <b>Detect failed.</b> {lastDetectJob.error || 'The connector could not reach Tally.'}
+                  <br />Check that Tally is open and its gateway is on (F1 → Settings → Connectivity → Both, port 9000).
+                </span>
+              </div>
+            ) : lastDetectJob.status === 'success' ? (
+              <p className="text-xs text-emerald-600 font-poppins flex items-center gap-1.5">
+                <CheckCircle2 size={13} /> Detected {companies.length || 0} company(ies) and {ledgers.length} ledger(s).
+              </p>
+            ) : (
+              <p className="text-xs text-sky-600 font-poppins flex items-center gap-1.5">
+                <Loader2 size={13} className="animate-spin" /> Talking to the connector…
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-4 mt-5">
           <Field label="Tally company" hint={companies.length ? 'Detected from Tally' : 'Detect first, or type it exactly'}>
