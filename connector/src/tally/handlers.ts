@@ -137,6 +137,9 @@ async function syncLedgersToFirestore(uid: string, ledgers: TallyLedger[]): Prom
         name: l.name,
         parent: l.parent || "",
         ...(l.gstin ? { gstin: l.gstin } : {}),
+        ...(l.address ? { address: l.address } : {}),
+        ...(l.state ? { state: l.state } : {}),
+        ...(l.pincode ? { pincode: l.pincode } : {}),
         syncedAt: serverTimestamp(),
       },
     });

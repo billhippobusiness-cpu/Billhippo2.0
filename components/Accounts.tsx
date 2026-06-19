@@ -504,6 +504,12 @@ const LedgersTab: React.FC<{
     (l.gstin && customerKeys.has(`g:${l.gstin.toLowerCase()}`)) ||
     customerKeys.has(`n:${l.name.trim().toLowerCase()}`);
 
+  // A BillHippo customer matching this ledger (by GSTIN or name) — used to
+  // prefill the Edit/Import forms with details BillHippo already holds.
+  const matchCustomer = (l: TallyLedger): Customer | undefined =>
+    (l.gstin ? customers.find((c) => c.gstin && c.gstin.toLowerCase() === l.gstin!.toLowerCase()) : undefined) ||
+    customers.find((c) => c.name.trim().toLowerCase() === l.name.trim().toLowerCase());
+
   const handleImport = async (values: ImportCustomerValues) => {
     const id = await addCustomer(userId, {
       name: values.name.trim(),
@@ -689,6 +695,7 @@ const LedgersTab: React.FC<{
           ledger={form.ledger}
           groupOptions={TALLY_GROUPS}
           canImport={form.mode === 'edit' && !!form.ledger && isParty(form.ledger) && !inBillHippo(form.ledger)}
+          customerMatch={form.ledger ? matchCustomer(form.ledger) : undefined}
           onImport={() => { const l = form.ledger || null; setForm(null); setImportLedger(l); }}
           onClose={() => setForm(null)}
           onSubmit={(values) => submitLedger(values, form.mode)}
@@ -698,6 +705,7 @@ const LedgersTab: React.FC<{
       {importLedger && (
         <ImportCustomerForm
           ledger={importLedger}
+          customerMatch={matchCustomer(importLedger)}
           onClose={() => setImportLedger(null)}
           onSubmit={handleImport}
         />
@@ -713,15 +721,18 @@ const LedgerForm: React.FC<{
   ledger?: TallyLedger;
   groupOptions: string[];
   canImport?: boolean;
+  customerMatch?: Customer;
   onImport?: () => void;
   onClose: () => void;
   onSubmit: (values: LedgerFormValues) => Promise<void>;
-}> = ({ mode, ledger, groupOptions, canImport, onImport, onClose, onSubmit }) => {
+}> = ({ mode, ledger, groupOptions, canImport, customerMatch, onImport, onClose, onSubmit }) => {
   const [values, setValues] = useState<LedgerFormValues>({
     name: ledger?.name || '',
     parent: ledger?.parent && ledger.parent !== '[object Object]' ? ledger.parent : 'Sundry Debtors',
-    gstin: ledger?.gstin || '',
-    address: '', state: '', pincode: '',
+    gstin: ledger?.gstin || customerMatch?.gstin || '',
+    address: ledger?.address || customerMatch?.address || '',
+    state: ledger?.state || customerMatch?.state || '',
+    pincode: ledger?.pincode || customerMatch?.pincode || '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -823,13 +834,19 @@ interface ImportCustomerValues {
 
 const ImportCustomerForm: React.FC<{
   ledger: TallyLedger;
+  customerMatch?: Customer;
   onClose: () => void;
   onSubmit: (values: ImportCustomerValues) => Promise<void>;
-}> = ({ ledger, onClose, onSubmit }) => {
+}> = ({ ledger, customerMatch, onClose, onSubmit }) => {
   const [values, setValues] = useState<ImportCustomerValues>({
     name: ledger.name || '',
-    gstin: ledger.gstin || '',
-    phone: '', email: '', address: '', city: '', state: '', pincode: '',
+    gstin: ledger.gstin || customerMatch?.gstin || '',
+    phone: customerMatch?.phone || '',
+    email: customerMatch?.email || '',
+    address: ledger.address || customerMatch?.address || '',
+    city: customerMatch?.city || '',
+    state: ledger.state || customerMatch?.state || '',
+    pincode: ledger.pincode || customerMatch?.pincode || '',
   });
   const [saving, setSaving] = useState(false);
   const set = (k: keyof ImportCustomerValues, v: string) => setValues((p) => ({ ...p, [k]: v }));
@@ -921,6 +938,29 @@ const PushTab: React.FC<{
     return (s.length ? s : ledgers).map((l) => l.name);
   }, [ledgers]);
 
+  // Warn when the global sales/tax ledgers in settings don't exist in Tally —
+  // the usual cause of "nothing created or altered" push failures.
+  const missingConfigLedgers = useMemo(() => {
+    if (!ledgers.length) return [] as string[];
+    const names = new Set(ledgers.map((l) => l.name.toLowerCase()));
+    const effective = [
+      config?.salesLedgerName,
+      config?.cgstLedgerName || 'CGST',
+      config?.sgstLedgerName || 'SGST',
+      config?.igstLedgerName || 'IGST',
+    ];
+    const seen = new Set<string>();
+    const missing: string[] = [];
+    for (const n of effective) {
+      if (!n) continue;
+      const key = n.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!names.has(key)) missing.push(n);
+    }
+    return missing;
+  }, [ledgers, config]);
+
   const latestJobByInvoice = useMemo(() => {
     const map = new Map<string, SyncJob>();
     for (const j of jobs) {
@@ -952,6 +992,7 @@ const PushTab: React.FC<{
     const edit = edits[inv.id];
     const party = edit?.party ?? saved?.partyLedgerName ?? customer?.tallyLedgerName ?? resolved.tallyLedgerName ?? '';
     const sales = edit?.sales ?? saved?.salesLedgerName ?? config?.salesLedgerName ?? '';
+    const mappable = !!party && !!sales;
     return {
       inv, customer, resolved, job, createJob, saved, party, sales,
       gstin: customer?.gstin || '',
@@ -959,7 +1000,10 @@ const PushTab: React.FC<{
       synced: job?.status === 'success',
       isSaved: !!saved,
       dirty: !!edit,
-      selectable: !!party && !!sales,
+      mappable,
+      // Only a saved-and-unchanged row may be pushed (user's explicit rule).
+      pushable: mappable && !!saved && !edit,
+      selectable: mappable,
     };
   }), [invoices, customerById, ledgers, latestJobByInvoice, latestCreateJobByCustomer, invoiceMap, edits, config]);
 
@@ -1019,17 +1063,23 @@ const PushTab: React.FC<{
     });
   };
 
-  const selectedRows = () => visibleRows.filter((r) => selected.has(r.inv.id) && r.selectable);
   const saveSelected = async () => {
     setBusy('saving');
-    try { for (const r of selectedRows()) await saveRow(r); setSelected(new Set()); }
-    finally { setBusy('idle'); }
+    try {
+      for (const r of visibleRows.filter((r) => selected.has(r.inv.id) && r.mappable)) await saveRow(r);
+      setSelected(new Set());
+    } finally { setBusy('idle'); }
   };
   const pushSelected = async () => {
     setBusy('pushing');
-    try { for (const r of selectedRows()) await pushRow(r); setSelected(new Set()); }
-    finally { setBusy('idle'); }
+    try {
+      // Only saved rows are pushed — unsaved selections are left for review.
+      for (const r of visibleRows.filter((r) => selected.has(r.inv.id) && r.pushable)) await pushRow(r);
+      setSelected(new Set());
+    } finally { setBusy('idle'); }
   };
+  const selectedSavable = visibleRows.filter((r) => selected.has(r.inv.id) && r.mappable && (r.dirty || !r.isSaved)).length;
+  const selectedPushable = visibleRows.filter((r) => selected.has(r.inv.id) && r.pushable).length;
 
   // Create the missing party ledger in Tally from the customer's master data.
   const handleCreateLedger = async (inv: Invoice) => {
@@ -1048,6 +1098,14 @@ const PushTab: React.FC<{
 
   return (
     <div>
+      {missingConfigLedgers.length > 0 && (
+        <Banner tone="amber">
+          These ledgers from your settings don't exist in Tally: <b>{missingConfigLedgers.join(', ')}</b>.
+          Pick the correct sales &amp; GST tax ledgers in <b>Connector → Tally settings</b> from the dropdowns and Save —
+          otherwise pushes fail with "nothing created or altered".
+        </Banner>
+      )}
+
       {/* Toolbar: search · filters · bulk save/send */}
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-4 mb-4 flex flex-col lg:flex-row lg:items-center gap-3">
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -1067,24 +1125,25 @@ const PushTab: React.FC<{
         <div className="flex items-center gap-2">
           <button
             onClick={saveSelected}
-            disabled={selected.size === 0 || busy !== 'idle'}
+            disabled={selectedSavable === 0 || busy !== 'idle'}
             title="Save the chosen ledgers for the selected rows (push later)"
             className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl font-bold font-poppins text-sm transition-all ${
-              selected.size > 0 && busy === 'idle' ? 'bg-slate-800 text-white hover:opacity-90 active:scale-95' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              selectedSavable > 0 && busy === 'idle' ? 'bg-slate-800 text-white hover:opacity-90 active:scale-95' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
             }`}
           >
             {busy === 'saving' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-            Save{selected.size ? ` (${selected.size})` : ''}
+            Save{selectedSavable ? ` (${selectedSavable})` : ''}
           </button>
           <button
             onClick={pushSelected}
-            disabled={selected.size === 0 || busy !== 'idle'}
+            disabled={selectedPushable === 0 || busy !== 'idle'}
+            title="Only saved rows are sent to Tally"
             className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl font-bold font-poppins text-sm transition-all ${
-              selected.size > 0 && busy === 'idle' ? 'bg-profee-blue text-white hover:opacity-90 active:scale-95' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              selectedPushable > 0 && busy === 'idle' ? 'bg-profee-blue text-white hover:opacity-90 active:scale-95' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
             }`}
           >
             {busy === 'pushing' ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-            Send to Tally{selected.size ? ` (${selected.size})` : ''}
+            Send to Tally{selectedPushable ? ` (${selectedPushable})` : ''}
           </button>
         </div>
       </div>
@@ -1113,7 +1172,7 @@ const PushTab: React.FC<{
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {visibleRows.map((r, i) => {
-                  const { inv, job, createJob, party, sales, selectable } = r;
+                  const { inv, job, createJob, party, sales, selectable, mappable, pushable } = r;
                   const creating = createJob && createJob.status !== 'failed' && createJob.status !== 'success';
                   return (
                     <tr key={inv.id} className={`hover:bg-slate-50/60 ${selected.has(inv.id) ? 'bg-profee-blue/5' : ''}`}>
@@ -1149,13 +1208,13 @@ const PushTab: React.FC<{
                       </td>
                       <td className="px-3 py-3 align-top text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5">
-                          {(r.dirty || !r.isSaved) && selectable && (
+                          {mappable && (r.dirty || !r.isSaved) && (
                             <button onClick={() => saveRow(r)} title="Save mapping (push later)" className="px-2.5 py-2 rounded-xl text-xs font-bold font-poppins border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">Save</button>
                           )}
                           <button
                             onClick={() => pushRow(r)}
-                            disabled={!selectable}
-                            title={selectable ? 'Save & push to Tally' : 'Choose a Party ledger first'}
+                            disabled={!pushable}
+                            title={pushable ? 'Push to Tally' : 'Save this row first — only saved rows can be pushed'}
                             className="px-4 py-2 rounded-xl text-xs font-bold font-poppins bg-profee-blue text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             {job?.status === 'failed' ? 'Retry' : 'Push'}
