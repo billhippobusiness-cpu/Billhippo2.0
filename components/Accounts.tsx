@@ -8,6 +8,7 @@ import type { TallyConfig, TallyLedger, SyncJob, Customer, Invoice } from '../ty
 import {
   subscribeTallyConfig, saveTallyConfig, subscribeTallyLedgers,
   subscribeSyncJobs, enqueueSyncJob, isConnectorOnline,
+  subscribeTallyInvoiceMap, saveTallyInvoiceMap, type TallyInvoiceMapping,
 } from '../lib/tally';
 import { getCustomers, getInvoices, updateCustomer, addCustomer } from '../lib/firestore';
 import { functions } from '../lib/firebase';
@@ -30,6 +31,7 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
   const [jobs, setJobs] = useState<SyncJob[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoiceMap, setInvoiceMap] = useState<Record<string, TallyInvoiceMapping>>({});
   const [loading, setLoading] = useState(true);
 
   // Live subscriptions for connector-driven data.
@@ -37,7 +39,8 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
     const unsubConfig = subscribeTallyConfig(userId, setConfig);
     const unsubLedgers = subscribeTallyLedgers(userId, setLedgers);
     const unsubJobs = subscribeSyncJobs(userId, setJobs);
-    return () => { unsubConfig(); unsubLedgers(); unsubJobs(); };
+    const unsubMap = subscribeTallyInvoiceMap(userId, setInvoiceMap);
+    return () => { unsubConfig(); unsubLedgers(); unsubJobs(); unsubMap(); };
   }, [userId]);
 
   // One-shot loads for invoices + customers.
@@ -115,6 +118,7 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
           invoices={invoices}
           customers={customers}
           jobs={jobs}
+          invoiceMap={invoiceMap}
           loading={loading}
           online={online}
           onCustomerMapped={(c) => setCustomers((prev) => prev.map((x) => (x.id === c.id ? c : x)))}
@@ -889,33 +893,44 @@ const PushTab: React.FC<{
   invoices: Invoice[];
   customers: Customer[];
   jobs: SyncJob[];
+  invoiceMap: Record<string, TallyInvoiceMapping>;
   loading: boolean;
   online: boolean;
   onCustomerMapped: (c: Customer) => void;
-}> = ({ userId, config, ledgers, invoices, customers, jobs, loading, onCustomerMapped }) => {
-  const customerById = useMemo(
-    () => new Map(customers.map((c) => [c.id, c])),
-    [customers],
-  );
+}> = ({ userId, config, ledgers, invoices, customers, jobs, invoiceMap, loading, onCustomerMapped }) => {
+  const customerById = useMemo(() => new Map(customers.map((c) => [c.id, c])), [customers]);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [hideSynced, setHideSynced] = useState(false);
-  const [pushingBulk, setPushingBulk] = useState(false);
+  const [savedOnly, setSavedOnly] = useState(false);
+  const [failedOnly, setFailedOnly] = useState(false);
+  const [busy, setBusy] = useState<'idle' | 'saving' | 'pushing'>('idle');
+  // In-progress, unsaved per-row ledger choices: invoiceId → { party?, sales? }.
+  const [edits, setEdits] = useState<Record<string, { party?: string; sales?: string }>>({});
 
-  // Latest job per invoice (by createdAt millis), to show a sync status column.
+  // Ledger options for the editable dropdowns, sourced from real Tally ledgers
+  // so the user can never mistype a name (this is what prevents the CGST/SGST
+  // style mismatch errors).
+  const partyOptions = useMemo(
+    () => ledgers.filter((l) => /debtor|creditor/i.test(l.parent || '')).map((l) => l.name),
+    [ledgers],
+  );
+  const salesOptions = useMemo(() => {
+    const s = ledgers.filter((l) => /sales/i.test(l.parent || ''));
+    return (s.length ? s : ledgers).map((l) => l.name);
+  }, [ledgers]);
+
   const latestJobByInvoice = useMemo(() => {
     const map = new Map<string, SyncJob>();
     for (const j of jobs) {
       if (j.type !== 'PUSH_INVOICE' || !j.invoiceId) continue;
       const prev = map.get(j.invoiceId);
-      const jt = millis(j.createdAt);
-      if (!prev || jt >= millis(prev.createdAt)) map.set(j.invoiceId, j);
+      if (!prev || millis(j.createdAt) >= millis(prev.createdAt)) map.set(j.invoiceId, j);
     }
     return map;
   }, [jobs]);
 
-  // Latest CREATE_LEDGER job per customer, so a "Creating…" state can show.
   const latestCreateJobByCustomer = useMemo(() => {
     const map = new Map<string, SyncJob>();
     for (const j of jobs) {
@@ -926,93 +941,94 @@ const PushTab: React.FC<{
     return map;
   }, [jobs]);
 
-  const salesLedgerOk = ledgerExistsByName(config?.salesLedgerName, ledgers);
-
-  // Derive everything each row needs once, so the table render and the bulk
-  // push share the exact same resolution logic.
+  // Resolve each row's effective Party + Sales ledger from: live edit → saved
+  // mapping → customer mapping / auto-match → default sales ledger.
   const rows = useMemo(() => invoices.map((inv) => {
     const customer = customerById.get(inv.customerId);
-    const party = resolvePartyLedger(customer ?? { name: inv.customerName, gstin: undefined }, ledgers);
+    const resolved = resolvePartyLedger(customer ?? { name: inv.customerName, gstin: undefined }, ledgers);
     const job = latestJobByInvoice.get(inv.id);
     const createJob = inv.customerId ? latestCreateJobByCustomer.get(inv.customerId) : undefined;
-    const mappedName = customer?.tallyLedgerName;
-    const resolvedName = mappedName || party.tallyLedgerName;
-    const matchType: 'gstin' | 'name' =
-      customer?.tallyMatchType || (party.status === 'gstin' ? 'gstin' : 'name');
-    const canPush = !!mappedName || party.status === 'gstin' || party.status === 'name';
+    const saved = invoiceMap[inv.id];
+    const edit = edits[inv.id];
+    const party = edit?.party ?? saved?.partyLedgerName ?? customer?.tallyLedgerName ?? resolved.tallyLedgerName ?? '';
+    const sales = edit?.sales ?? saved?.salesLedgerName ?? config?.salesLedgerName ?? '';
     return {
-      inv, customer, party, job, createJob, mappedName, resolvedName, matchType, canPush,
+      inv, customer, resolved, job, createJob, saved, party, sales,
       gstin: customer?.gstin || '',
+      placeOfSupply: customer?.state || '',
       synced: job?.status === 'success',
-      selectable: canPush && !!resolvedName,
+      isSaved: !!saved,
+      dirty: !!edit,
+      selectable: !!party && !!sales,
     };
-  }), [invoices, customerById, ledgers, latestJobByInvoice, latestCreateJobByCustomer]);
+  }), [invoices, customerById, ledgers, latestJobByInvoice, latestCreateJobByCustomer, invoiceMap, edits, config]);
 
   const visibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (hideSynced && r.synced) return false;
+      if (savedOnly && !r.isSaved) return false;
+      if (failedOnly && r.job?.status !== 'failed') return false;
       if (!q) return true;
       return r.inv.invoiceNumber.toLowerCase().includes(q)
         || r.inv.customerName.toLowerCase().includes(q)
         || (r.gstin || '').toLowerCase().includes(q);
     });
-  }, [rows, search, hideSynced]);
+  }, [rows, search, hideSynced, savedOnly, failedOnly]);
 
+  type Row = typeof rows[number];
   const selectableVisible = visibleRows.filter((r) => r.selectable);
   const allSelected = selectableVisible.length > 0 && selectableVisible.every((r) => selected.has(r.inv.id));
 
-  const toggleAll = () => {
-    setSelected(() => (allSelected ? new Set() : new Set(selectableVisible.map((r) => r.inv.id))));
-  };
-  const toggleOne = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  const toggleAll = () => setSelected(() => (allSelected ? new Set() : new Set(selectableVisible.map((r) => r.inv.id))));
+  const toggleOne = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const setEdit = (id: string, key: 'party' | 'sales', value: string) =>
+    setEdits((prev) => ({ ...prev, [id]: { ...prev[id], [key]: value } }));
+  const clearEdit = (id: string) => setEdits((prev) => { const n = { ...prev }; delete n[id]; return n; });
+
+  // Persist a row's mapping (customer ↔ Tally ledger + per-invoice sales ledger).
+  const saveRow = async (r: Row) => {
+    if (!r.party) return;
+    if (r.customer && r.customer.tallyLedgerName !== r.party) {
+      const matchType: 'gstin' | 'name' = r.customer.gstin ? 'gstin' : 'name';
+      await updateCustomer(userId, r.customer.id, { tallyLedgerName: r.party, tallyMatchType: matchType });
+      onCustomerMapped({ ...r.customer, tallyLedgerName: r.party, tallyMatchType: matchType });
+    }
+    await saveTallyInvoiceMap(userId, r.inv.id, { partyLedgerName: r.party, salesLedgerName: r.sales });
+    clearEdit(r.inv.id);
   };
 
-  const persistMapping = async (customer: Customer, tallyLedgerName: string, matchType: 'gstin' | 'name') => {
-    if (customer.tallyLedgerName === tallyLedgerName && customer.tallyMatchType === matchType) return;
-    await updateCustomer(userId, customer.id, { tallyLedgerName, tallyMatchType: matchType });
-    onCustomerMapped({ ...customer, tallyLedgerName, tallyMatchType: matchType });
-  };
-
-  const handlePush = async (inv: Invoice, resolvedName: string, matchType: 'gstin' | 'name') => {
-    const customer = customerById.get(inv.customerId);
-    // Persist the resolved mapping so future pushes reuse the Tally-side name.
-    if (customer) await persistMapping(customer, resolvedName, matchType);
+  const pushRow = async (r: Row) => {
+    if (!r.party) return;
+    await saveRow(r);
     await enqueueSyncJob(userId, {
       type: 'PUSH_INVOICE',
-      invoiceId: inv.id,
+      invoiceId: r.inv.id,
       createdBy: userId,
       payloadSnapshot: {
-        invoiceNumber: inv.invoiceNumber,
-        date: inv.date,
-        partyLedgerName: resolvedName,
-        salesLedgerName: config?.salesLedgerName || '',
-        totalAmount: inv.totalAmount,
+        invoiceNumber: r.inv.invoiceNumber,
+        date: r.inv.date,
+        partyLedgerName: r.party,
+        salesLedgerName: r.sales,
+        totalAmount: r.inv.totalAmount,
       },
     });
   };
 
-  // Push every selected, pushable row in one go.
-  const handlePushSelected = async () => {
-    setPushingBulk(true);
-    try {
-      const toPush = visibleRows.filter((r) => selected.has(r.inv.id) && r.selectable);
-      for (const r of toPush) await handlePush(r.inv, r.resolvedName!, r.matchType);
-      setSelected(new Set());
-    } finally {
-      setPushingBulk(false);
-    }
+  const selectedRows = () => visibleRows.filter((r) => selected.has(r.inv.id) && r.selectable);
+  const saveSelected = async () => {
+    setBusy('saving');
+    try { for (const r of selectedRows()) await saveRow(r); setSelected(new Set()); }
+    finally { setBusy('idle'); }
   };
-
-  // Confirm a suggested ledger: save the mapping (then the row becomes pushable).
-  const handleConfirmMap = async (inv: Invoice, suggestedName: string) => {
-    const customer = customerById.get(inv.customerId);
-    if (customer) await persistMapping(customer, suggestedName, 'name');
+  const pushSelected = async () => {
+    setBusy('pushing');
+    try { for (const r of selectedRows()) await pushRow(r); setSelected(new Set()); }
+    finally { setBusy('idle'); }
   };
 
   // Create the missing party ledger in Tally from the customer's master data.
@@ -1032,44 +1048,48 @@ const PushTab: React.FC<{
 
   return (
     <div>
-      {!salesLedgerOk && (
-        <Banner tone="amber">
-          {config?.salesLedgerName
-            ? <>Sales ledger <b>“{config.salesLedgerName}”</b> isn't in the synced ledger list. Verify ledgers, or check the name in Connector settings.</>
-            : <>No default sales ledger set. Add one under <b>Connector → Tally settings</b> before pushing.</>}
-        </Banner>
-      )}
-
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-        {/* Toolbar: search · hide-synced · bulk send */}
-        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Search size={16} className="text-slate-400 flex-shrink-0" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search invoice, party or GSTIN…"
-              className="flex-1 min-w-0 text-sm font-poppins focus:outline-none"
-            />
-          </div>
-          <label className="flex items-center gap-2 text-xs font-poppins text-slate-500 cursor-pointer whitespace-nowrap">
-            <input type="checkbox" checked={hideSynced} onChange={(e) => setHideSynced(e.target.checked)} className="accent-profee-blue" />
-            Hide synced
-          </label>
+      {/* Toolbar: search · filters · bulk save/send */}
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-4 mb-4 flex flex-col lg:flex-row lg:items-center gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Search size={16} className="text-slate-400 flex-shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search invoice, party or GSTIN…"
+            className="flex-1 min-w-0 text-sm font-poppins focus:outline-none"
+          />
+        </div>
+        <div className="flex items-center gap-3 flex-wrap text-xs font-poppins text-slate-500">
+          <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={hideSynced} onChange={(e) => setHideSynced(e.target.checked)} className="accent-profee-blue" /> Hide synced</label>
+          <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={savedOnly} onChange={(e) => setSavedOnly(e.target.checked)} className="accent-profee-blue" /> Saved only</label>
+          <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)} className="accent-profee-blue" /> Failed only</label>
+        </div>
+        <div className="flex items-center gap-2">
           <button
-            onClick={handlePushSelected}
-            disabled={selected.size === 0 || pushingBulk}
+            onClick={saveSelected}
+            disabled={selected.size === 0 || busy !== 'idle'}
+            title="Save the chosen ledgers for the selected rows (push later)"
             className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl font-bold font-poppins text-sm transition-all ${
-              selected.size > 0 && !pushingBulk
-                ? 'bg-profee-blue text-white hover:opacity-90 active:scale-95'
-                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              selected.size > 0 && busy === 'idle' ? 'bg-slate-800 text-white hover:opacity-90 active:scale-95' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
             }`}
           >
-            {pushingBulk ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {busy === 'saving' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+            Save{selected.size ? ` (${selected.size})` : ''}
+          </button>
+          <button
+            onClick={pushSelected}
+            disabled={selected.size === 0 || busy !== 'idle'}
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl font-bold font-poppins text-sm transition-all ${
+              selected.size > 0 && busy === 'idle' ? 'bg-profee-blue text-white hover:opacity-90 active:scale-95' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            }`}
+          >
+            {busy === 'pushing' ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
             Send to Tally{selected.size ? ` (${selected.size})` : ''}
           </button>
         </div>
+      </div>
 
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         {invoices.length === 0 ? (
           <EmptyState icon={Send} title="No invoices yet" subtitle="Create invoices to push them to Tally." />
         ) : (
@@ -1077,78 +1097,70 @@ const PushTab: React.FC<{
             <table className="w-full text-sm font-poppins">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
-                  <th className="px-4 py-3 w-10">
-                    <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-profee-blue" title="Select all pushable" />
-                  </th>
+                  <th className="px-3 py-3 w-10"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-profee-blue" title="Select all ready rows" /></th>
+                  <th className="px-2 py-3">#</th>
                   <th className="px-3 py-3 whitespace-nowrap">Date</th>
-                  <th className="px-3 py-3 whitespace-nowrap">Invoice #</th>
-                  <th className="px-3 py-3">Party A/C</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Ref No</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Voucher</th>
+                  <th className="px-3 py-3 min-w-[200px]">Party A/C (Tally ledger)</th>
                   <th className="px-3 py-3 whitespace-nowrap">GSTIN</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Place of Supply</th>
                   <th className="px-3 py-3 text-right whitespace-nowrap">Amount</th>
+                  <th className="px-3 py-3 min-w-[180px]">Particulars (Sales ledger)</th>
                   <th className="px-3 py-3 whitespace-nowrap">Status</th>
                   <th className="px-3 py-3 text-right whitespace-nowrap">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {visibleRows.map((r) => {
-                  const { inv, party, job, createJob, mappedName, resolvedName, matchType, canPush, selectable } = r;
+                {visibleRows.map((r, i) => {
+                  const { inv, job, createJob, party, sales, selectable } = r;
+                  const creating = createJob && createJob.status !== 'failed' && createJob.status !== 'success';
                   return (
                     <tr key={inv.id} className={`hover:bg-slate-50/60 ${selected.has(inv.id) ? 'bg-profee-blue/5' : ''}`}>
-                      <td className="px-4 py-3 align-top">
-                        <input
-                          type="checkbox"
-                          disabled={!selectable}
-                          checked={selected.has(inv.id)}
-                          onChange={() => toggleOne(inv.id)}
-                          className="accent-profee-blue disabled:opacity-30"
-                          title={selectable ? 'Select to push' : 'Map this party first'}
-                        />
+                      <td className="px-3 py-3 align-top">
+                        <input type="checkbox" disabled={!selectable} checked={selected.has(inv.id)} onChange={() => toggleOne(inv.id)} className="accent-profee-blue disabled:opacity-30" title={selectable ? 'Select' : 'Choose a Party ledger first'} />
                       </td>
+                      <td className="px-2 py-3 align-top text-slate-400">{i + 1}</td>
                       <td className="px-3 py-3 align-top text-slate-500 whitespace-nowrap">{inv.date}</td>
                       <td className="px-3 py-3 align-top font-bold text-slate-700 whitespace-nowrap">{inv.invoiceNumber}</td>
+                      <td className="px-3 py-3 align-top text-slate-500">Sales</td>
                       <td className="px-3 py-3 align-top">
-                        <p className="text-slate-700 truncate max-w-[220px]">{inv.customerName}</p>
-                        {mappedName
-                          ? <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold font-poppins text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full"><CheckCircle2 size={12} /> Mapped → “{mappedName}”</span>
-                          : <PartyBadge party={party} billHippoName={inv.customerName} />}
+                        <p className="text-slate-700 truncate max-w-[200px] mb-1">{inv.customerName}</p>
+                        <LedgerSelect value={party} onChange={(v) => setEdit(inv.id, 'party', v)} options={partyOptions} placeholder="Select party ledger" emptyText="Type Tally party ledger" compact />
+                        {!party && r.customer && (
+                          <button onClick={() => handleCreateLedger(inv)} disabled={!!creating} className="mt-1 text-[11px] font-bold font-poppins text-slate-600 hover:underline inline-flex items-center gap-1 disabled:opacity-50">
+                            {creating ? <><Loader2 size={11} className="animate-spin" /> Creating…</> : <><Plus size={11} /> Create in Tally</>}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-3 align-top text-xs font-mono text-slate-500 whitespace-nowrap">{r.gstin || '—'}</td>
+                      <td className="px-3 py-3 align-top text-slate-500 whitespace-nowrap">{r.placeOfSupply || '—'}</td>
                       <td className="px-3 py-3 align-top text-right font-bold text-slate-700 whitespace-nowrap">₹{inv.totalAmount.toLocaleString('en-IN')}</td>
                       <td className="px-3 py-3 align-top">
+                        <LedgerSelect value={sales} onChange={(v) => setEdit(inv.id, 'sales', v)} options={salesOptions} placeholder="Select sales ledger" emptyText="Type Tally sales ledger" compact />
+                      </td>
+                      <td className="px-3 py-3 align-top">
                         <JobStatus job={job} />
+                        {r.isSaved && !r.dirty && !job && <span className="block text-[10px] text-slate-400 font-poppins">Saved</span>}
+                        {r.dirty && <span className="block text-[10px] text-amber-500 font-poppins">Unsaved</span>}
                         {job?.status === 'failed' && job.error && (
-                          <p className="mt-1 text-[10px] text-rose-500 font-poppins max-w-[200px] leading-tight">{job.error}</p>
+                          <p className="mt-1 text-[10px] text-rose-500 font-poppins max-w-[180px] leading-tight">{job.error}</p>
                         )}
                       </td>
                       <td className="px-3 py-3 align-top text-right whitespace-nowrap">
-                        {canPush && resolvedName ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          {(r.dirty || !r.isSaved) && selectable && (
+                            <button onClick={() => saveRow(r)} title="Save mapping (push later)" className="px-2.5 py-2 rounded-xl text-xs font-bold font-poppins border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">Save</button>
+                          )}
                           <button
-                            onClick={() => handlePush(inv, resolvedName, matchType)}
-                            title="Queue push to Tally"
-                            className="px-4 py-2 rounded-xl text-xs font-bold font-poppins bg-profee-blue text-white hover:opacity-90 active:scale-95 transition-all"
+                            onClick={() => pushRow(r)}
+                            disabled={!selectable}
+                            title={selectable ? 'Save & push to Tally' : 'Choose a Party ledger first'}
+                            className="px-4 py-2 rounded-xl text-xs font-bold font-poppins bg-profee-blue text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             {job?.status === 'failed' ? 'Retry' : 'Push'}
                           </button>
-                        ) : party.status === 'suggest' && party.tallyLedgerName ? (
-                          <button
-                            onClick={() => handleConfirmMap(inv, party.tallyLedgerName!)}
-                            title={`Map this customer to the Tally ledger "${party.tallyLedgerName}"`}
-                            className="px-3 py-2 rounded-xl text-xs font-bold font-poppins bg-amber-500 text-white hover:opacity-90 active:scale-95 transition-all"
-                          >
-                            Use this ledger
-                          </button>
-                        ) : createJob && createJob.status !== 'failed' && createJob.status !== 'success' ? (
-                          <span className="text-[11px] font-bold font-poppins text-sky-600 inline-flex items-center gap-1"><Loader2 size={13} className="animate-spin" /> Creating…</span>
-                        ) : (
-                          <button
-                            onClick={() => handleCreateLedger(inv)}
-                            disabled={!inv.customerId}
-                            title="Create this party ledger in Tally"
-                            className="px-3 py-2 rounded-xl text-xs font-bold font-poppins bg-slate-800 text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-40"
-                          >
-                            {createJob?.status === 'failed' ? 'Retry create' : 'Create ledger'}
-                          </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );
