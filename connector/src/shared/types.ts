@@ -4,7 +4,7 @@
  * no dependency on the web project).
  */
 
-export type SyncJobType = "PUSH_INVOICE" | "FETCH_LEDGERS" | "CREATE_LEDGER";
+export type SyncJobType = "PUSH_INVOICE" | "FETCH_LEDGERS" | "CREATE_LEDGER" | "ALTER_LEDGER";
 export type SyncJobStatus = "pending" | "processing" | "success" | "failed";
 
 export interface SyncJob {

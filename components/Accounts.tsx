@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Landmark, Download, RefreshCw, CheckCircle2, AlertTriangle, Clock,
-  Wifi, WifiOff, BookOpen, Send, Info, Search, Loader2, KeyRound, Copy,
+  Wifi, WifiOff, BookOpen, Send, Info, Search, Loader2, KeyRound, Copy, Plus, Pencil,
 } from 'lucide-react';
 import { httpsCallable } from 'firebase/functions';
 import type { TallyConfig, TallyLedger, SyncJob, Customer, Invoice } from '../types';
@@ -97,7 +97,7 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
 
       {tab === 'connector' && <ConnectorTab userId={userId} config={config} ledgers={ledgers} jobs={jobs} online={online} />}
       {tab === 'ledgers' && (
-        <LedgersTab userId={userId} config={config} ledgers={ledgers} online={online} />
+        <LedgersTab userId={userId} config={config} ledgers={ledgers} jobs={jobs} online={online} />
       )}
       {tab === 'push' && (
         <PushTab
@@ -447,14 +447,29 @@ const ConnectorTab: React.FC<{
 
 // ── Ledger sync tab ───────────────────────────────────────────────────────────
 
+// Common Tally groups offered in the New/Edit ledger form (free text still allowed).
+const TALLY_GROUPS = [
+  'Sundry Debtors', 'Sundry Creditors', 'Sales Accounts', 'Purchase Accounts',
+  'Duties & Taxes', 'Direct Expenses', 'Indirect Expenses', 'Direct Incomes',
+  'Indirect Incomes', 'Bank Accounts', 'Cash-in-Hand', 'Current Assets',
+  'Current Liabilities', 'Fixed Assets', 'Loans (Liability)', 'Capital Account',
+];
+
+interface LedgerFormValues {
+  name: string; parent: string; gstin: string; address: string; state: string; pincode: string;
+}
+
 const LedgersTab: React.FC<{
   userId: string;
   config: TallyConfig | null;
   ledgers: TallyLedger[];
+  jobs: SyncJob[];
   online: boolean;
-}> = ({ userId, ledgers, online }) => {
+}> = ({ userId, ledgers, jobs, online }) => {
   const [enqueuing, setEnqueuing] = useState(false);
   const [search, setSearch] = useState('');
+  // null = closed; { mode:'create' } or { mode:'edit', ledger } when open.
+  const [form, setForm] = useState<{ mode: 'create' | 'edit'; ledger?: TallyLedger } | null>(null);
 
   const handleVerify = async () => {
     setEnqueuing(true);
@@ -463,6 +478,32 @@ const LedgersTab: React.FC<{
     } finally {
       setEnqueuing(false);
     }
+  };
+
+  // Latest create/alter job, so we can show a small success/failure note.
+  const lastLedgerJob = useMemo(() => {
+    let latest: SyncJob | undefined;
+    for (const j of jobs) {
+      if (j.type !== 'CREATE_LEDGER' && j.type !== 'ALTER_LEDGER') continue;
+      if (!latest || millis(j.createdAt) >= millis(latest.createdAt)) latest = j;
+    }
+    return latest;
+  }, [jobs]);
+
+  const submitLedger = async (values: LedgerFormValues, mode: 'create' | 'edit') => {
+    await enqueueSyncJob(userId, {
+      type: mode === 'edit' ? 'ALTER_LEDGER' : 'CREATE_LEDGER',
+      createdBy: userId,
+      payloadSnapshot: {
+        name: values.name.trim(),
+        parent: values.parent.trim(),
+        gstin: values.gstin.trim().toUpperCase(),
+        address: values.address.trim(),
+        state: values.state.trim(),
+        pincode: values.pincode.trim(),
+      },
+    });
+    setForm(null);
   };
 
   const filtered = useMemo(() => {
@@ -477,26 +518,40 @@ const LedgersTab: React.FC<{
     <div>
       <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm mb-6 flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="flex-1">
-          <h2 className="text-lg font-bold text-slate-800 font-poppins">Verify Tally ledgers</h2>
+          <h2 className="text-lg font-bold text-slate-800 font-poppins">Tally ledgers</h2>
           <p className="text-sm text-slate-500 font-poppins mt-1">
-            Pull the list of ledgers (with GSTINs) from Tally so BillHippo can match customers
-            before pushing invoices.
+            Pull ledgers (with GSTINs) from Tally to match customers, and create or edit ledgers
+            in Tally right from here.
           </p>
         </div>
-        <button
-          onClick={handleVerify}
-          disabled={enqueuing}
-          className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-profee-blue text-white font-bold font-poppins text-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
-        >
-          {enqueuing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
-          Verify ledgers
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setForm({ mode: 'create' })}
+            className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 text-white font-bold font-poppins text-sm hover:opacity-90 active:scale-95 transition-all"
+          >
+            <Plus size={18} /> New ledger
+          </button>
+          <button
+            onClick={handleVerify}
+            disabled={enqueuing}
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-profee-blue text-white font-bold font-poppins text-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
+          >
+            {enqueuing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
+            Verify ledgers
+          </button>
+        </div>
       </div>
 
       {!online && (
         <Banner tone="amber">
           The connector is offline, so this request will queue and run as soon as the connector
           comes online with Tally open.
+        </Banner>
+      )}
+
+      {lastLedgerJob && lastLedgerJob.status === 'failed' && (
+        <Banner tone="amber">
+          Last ledger {lastLedgerJob.type === 'ALTER_LEDGER' ? 'edit' : 'creation'} failed: {lastLedgerJob.error || 'unknown error'}.
         </Banner>
       )}
 
@@ -516,12 +571,12 @@ const LedgersTab: React.FC<{
           <EmptyState
             icon={BookOpen}
             title="No ledgers synced yet"
-            subtitle="Click 'Verify ledgers' to pull them from Tally."
+            subtitle="Click 'Verify ledgers' to pull them from Tally, or 'New ledger' to create one."
           />
         ) : (
           <div className="divide-y divide-slate-50 max-h-[480px] overflow-y-auto">
             {filtered.map((l) => (
-              <div key={l.id} className="px-5 py-3 flex items-center gap-3">
+              <div key={l.id} className="px-5 py-3 flex items-center gap-3 group">
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-700 font-poppins text-sm truncate">{l.name}</p>
                   <p className="text-xs text-slate-400 font-poppins">{l.parent && l.parent !== '[object Object]' ? l.parent : '—'}</p>
@@ -531,10 +586,123 @@ const LedgersTab: React.FC<{
                     {l.gstin}
                   </span>
                 )}
+                <button
+                  onClick={() => setForm({ mode: 'edit', ledger: l })}
+                  className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-profee-blue hover:underline flex-shrink-0"
+                >
+                  <Pencil size={13} /> Edit
+                </button>
               </div>
             ))}
           </div>
         )}
+      </div>
+
+      {form && (
+        <LedgerForm
+          mode={form.mode}
+          ledger={form.ledger}
+          groupOptions={TALLY_GROUPS}
+          onClose={() => setForm(null)}
+          onSubmit={(values) => submitLedger(values, form.mode)}
+        />
+      )}
+    </div>
+  );
+};
+
+// ── New / Edit ledger modal ───────────────────────────────────────────────────
+
+const LedgerForm: React.FC<{
+  mode: 'create' | 'edit';
+  ledger?: TallyLedger;
+  groupOptions: string[];
+  onClose: () => void;
+  onSubmit: (values: LedgerFormValues) => Promise<void>;
+}> = ({ mode, ledger, groupOptions, onClose, onSubmit }) => {
+  const [values, setValues] = useState<LedgerFormValues>({
+    name: ledger?.name || '',
+    parent: ledger?.parent && ledger.parent !== '[object Object]' ? ledger.parent : 'Sundry Debtors',
+    gstin: ledger?.gstin || '',
+    address: '', state: '', pincode: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const set = (k: keyof LedgerFormValues, v: string) => setValues((p) => ({ ...p, [k]: v }));
+  const canSave = values.name.trim() && values.parent.trim();
+
+  const submit = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try { await onSubmit(values); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-slate-800 font-poppins mb-1">
+          {mode === 'edit' ? 'Edit ledger in Tally' : 'New ledger in Tally'}
+        </h3>
+        <p className="text-xs text-slate-500 font-poppins mb-5">
+          {mode === 'edit'
+            ? 'Update this ledger in Tally. Leave address fields blank to keep what Tally already has.'
+            : 'Creates the ledger in your open Tally company via the connector.'}
+        </p>
+
+        <div className="space-y-3">
+          <Field label="Ledger name">
+            <input
+              value={values.name}
+              onChange={(e) => set('name', e.target.value)}
+              disabled={mode === 'edit'}
+              placeholder="e.g. Acme Traders Pvt Ltd"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30 disabled:bg-slate-50 disabled:text-slate-400"
+            />
+          </Field>
+          {mode === 'edit' && <p className="-mt-2 text-[11px] text-slate-400 font-poppins">Renaming isn't supported here — create a new ledger if you need a different name.</p>}
+
+          <Field label="Group" hint="Pick a Tally group or type your own">
+            <input
+              list="tally-groups"
+              value={values.parent}
+              onChange={(e) => set('parent', e.target.value)}
+              placeholder="e.g. Sundry Debtors"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30"
+            />
+            <datalist id="tally-groups">
+              {groupOptions.map((g) => <option key={g} value={g} />)}
+            </datalist>
+          </Field>
+
+          <Field label="GSTIN" hint="Optional — for party ledgers">
+            <input
+              value={values.gstin}
+              onChange={(e) => set('gstin', e.target.value.toUpperCase())}
+              placeholder="e.g. 24ABCDE1234F1Z5"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm font-mono focus:outline-none focus:ring-2 focus:ring-profee-blue/30"
+            />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="State"><input value={values.state} onChange={(e) => set('state', e.target.value)} placeholder="Gujarat" className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" /></Field>
+            <Field label="Pincode"><input value={values.pincode} onChange={(e) => set('pincode', e.target.value)} placeholder="380001" className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" /></Field>
+          </div>
+          <Field label="Address" hint="Optional">
+            <input value={values.address} onChange={(e) => set('address', e.target.value)} placeholder="Street, City" className="w-full px-4 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" />
+          </Field>
+        </div>
+
+        <div className="flex items-center gap-2 mt-6">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-2xl border border-slate-200 text-slate-600 font-bold font-poppins text-sm hover:bg-slate-50 transition-colors">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={!canSave || saving}
+            className="flex-1 py-2.5 rounded-2xl bg-profee-blue text-white font-bold font-poppins text-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 inline-flex items-center justify-center gap-2"
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : null}
+            {mode === 'edit' ? 'Save to Tally' : 'Create in Tally'}
+          </button>
+        </div>
       </div>
     </div>
   );

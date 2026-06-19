@@ -381,7 +381,7 @@ export interface DeliveryChallan {
 //   users/{uid}/tallyLedgers/{id}  → mirror of ledgers that exist in Tally
 //   users/{uid}/syncJobs/{id}      → the work queue (push invoice / fetch / create)
 
-export type SyncJobType = 'PUSH_INVOICE' | 'FETCH_LEDGERS' | 'CREATE_LEDGER';
+export type SyncJobType = 'PUSH_INVOICE' | 'FETCH_LEDGERS' | 'CREATE_LEDGER' | 'ALTER_LEDGER';
 export type SyncJobStatus = 'pending' | 'processing' | 'success' | 'failed';
 
 export interface TallyConfig {

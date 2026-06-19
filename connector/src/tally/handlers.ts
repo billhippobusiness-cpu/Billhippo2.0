@@ -205,29 +205,72 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
   return { tallyVoucherId: result.lastVoucherId };
 }
 
-// ── CREATE_LEDGER ─────────────────────────────────────────────────────────────
+// ── CREATE_LEDGER / ALTER_LEDGER ──────────────────────────────────────────────
 
-async function handleCreateLedger(uid: string, job: SyncJob): Promise<{ tallyVoucherId?: string }> {
-  if (!job.customerId) throw new Error("Job is missing customerId.");
+/**
+ * Create or alter a ledger in Tally. The ledger details come from either:
+ *   - a customer (job.customerId)         → used by the "Create ledger" button
+ *     on unmatched invoices, OR
+ *   - a direct payload (job.payloadSnapshot) → used by the Ledger Sync tab's
+ *     New ledger / Edit ledger forms.
+ * On success we upsert the ledger into Firestore so the web UI reflects it
+ * immediately without waiting for a full re-sync.
+ */
+async function handleUpsertLedger(uid: string, job: SyncJob): Promise<{ tallyVoucherId?: string }> {
   const cfg = await readConfig(uid);
+  const action = job.type === "ALTER_LEDGER" ? "Alter" : "Create";
 
-  const custSnap = await getDoc(doc(getDb(), "users", uid, "customers", job.customerId));
-  if (!custSnap.exists()) throw new Error(`Customer ${job.customerId} no longer exists.`);
-  const c = custSnap.data() as any;
+  let master: {
+    companyName: string; name: string; parent: string;
+    gstin?: string; address?: string; state?: string; pincode?: string;
+  };
 
-  const xml = buildLedgerMaster({
-    companyName: cfg.companyName,
-    name: c.name,
-    parent: DEBTOR_GROUP,
-    gstin: c.gstin,
-    address: [c.address, c.city].filter(Boolean).join(", "),
-    state: c.state,
-    pincode: c.pincode,
-  });
+  if (job.customerId) {
+    const custSnap = await getDoc(doc(getDb(), "users", uid, "customers", job.customerId));
+    if (!custSnap.exists()) throw new Error(`Customer ${job.customerId} no longer exists.`);
+    const c = custSnap.data() as any;
+    master = {
+      companyName: cfg.companyName,
+      name: c.name,
+      parent: DEBTOR_GROUP,
+      gstin: c.gstin,
+      address: [c.address, c.city].filter(Boolean).join(", "),
+      state: c.state,
+      pincode: c.pincode,
+    };
+  } else {
+    const p = (job.payloadSnapshot || {}) as Record<string, unknown>;
+    const name = String(p.name || "").trim();
+    const parent = String(p.parent || "").trim();
+    if (!name) throw new Error("Ledger name is required.");
+    if (!parent) throw new Error("Ledger group is required.");
+    const str = (v: unknown) => (v == null || v === "" ? undefined : String(v));
+    master = {
+      companyName: cfg.companyName,
+      name,
+      parent,
+      gstin: str(p.gstin),
+      address: str(p.address),
+      state: str(p.state),
+      pincode: str(p.pincode),
+    };
+  }
 
   const { host, port } = tallyTarget();
-  const responseXml = await postXml(host, port, xml);
+  const responseXml = await postXml(host, port, buildLedgerMaster(master, action));
   parseImportResult(responseXml);
+
+  // Reflect the change in Firestore so the Ledger Sync list updates at once.
+  await setDoc(
+    doc(getDb(), "users", uid, "tallyLedgers", ledgerDocId(master.name)),
+    {
+      name: master.name,
+      parent: master.parent,
+      ...(master.gstin ? { gstin: master.gstin } : {}),
+      syncedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
   return {};
 }
 
@@ -235,5 +278,6 @@ async function handleCreateLedger(uid: string, job: SyncJob): Promise<{ tallyVou
 export function registerTallyHandlers(): void {
   registerHandler("FETCH_LEDGERS", handleFetchLedgers);
   registerHandler("PUSH_INVOICE", handlePushInvoice);
-  registerHandler("CREATE_LEDGER", handleCreateLedger);
+  registerHandler("CREATE_LEDGER", handleUpsertLedger);
+  registerHandler("ALTER_LEDGER", handleUpsertLedger);
 }
