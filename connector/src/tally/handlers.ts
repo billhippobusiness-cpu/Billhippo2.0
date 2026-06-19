@@ -110,11 +110,18 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
   }
 
   // 4. Pull the ledgers for the resolved company.
-  const ledgers = parseLedgers(await postXml(host, port, buildLedgerListRequest(companyName)));
+  const rawXml = await postXml(host, port, buildLedgerListRequest(companyName));
+  const ledgers = parseLedgers(rawXml);
   await syncLedgersToFirestore(uid, ledgers);
 
-  // Stamp the config so the web UI can show "last synced".
-  await setDoc(configRef, { lastLedgerSyncAt: serverTimestamp() }, { merge: true });
+  // Stamp the config so the web UI can show "last synced". Also keep a
+  // truncated copy of the raw Tally response for troubleshooting (e.g. when a
+  // ledger's GSTIN/address isn't coming through, so we can see the structure).
+  await setDoc(
+    configRef,
+    { lastLedgerSyncAt: serverTimestamp(), lastLedgerRawXml: rawXml.slice(0, 45000) },
+    { merge: true },
+  );
   return {};
 }
 

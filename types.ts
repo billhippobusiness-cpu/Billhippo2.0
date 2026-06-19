@@ -400,6 +400,7 @@ export interface TallyConfig {
   lastLedgerSyncAt?: unknown;   // Firestore Timestamp — last successful FETCH_LEDGERS
   discoveredCompanies?: string[]; // companies open in Tally (connector-reported)
   discoveredAt?: unknown;       // Firestore Timestamp — last company/ledger discovery
+  lastLedgerRawXml?: string;    // truncated raw Tally ledger response (diagnostics)
   pairingCode?: string;         // one-time code to link a connector (Phase 2)
   pairingCodeExpiresAt?: number;
 }
