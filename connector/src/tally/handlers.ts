@@ -110,12 +110,12 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
     );
   }
 
-  // 4. Pull the ledgers. Prefer the full masters export (returns GSTIN +
-  //    address); if it yields nothing, fall back to the lightweight collection.
-  let rawXml = await postXml(host, port, buildLedgerMastersRequest(companyName));
+  // 4. Pull the ledgers. The FETCH collection returns GSTIN + address; if it
+  //    somehow yields nothing, fall back to the masters export.
+  let rawXml = await postXml(host, port, buildLedgerListRequest(companyName));
   let ledgers = parseLedgers(rawXml);
   if (ledgers.length === 0) {
-    rawXml = await postXml(host, port, buildLedgerListRequest(companyName));
+    rawXml = await postXml(host, port, buildLedgerMastersRequest(companyName));
     ledgers = parseLedgers(rawXml);
   }
   await syncLedgersToFirestore(uid, ledgers);
