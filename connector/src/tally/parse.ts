@@ -52,13 +52,15 @@ function findGstin(node: unknown): string | undefined {
   return undefined;
 }
 
-/** Recursively find the first value whose key matches one of `keys`. */
+/** Recursively find the first value whose key matches one of `keys`. Uses
+ *  textOf so it reads values that Tally returns as attributed elements
+ *  (e.g. <PINCODE TYPE="String">380060</PINCODE> → "380060"). */
 function findByKeys(node: unknown, keys: string[]): string | undefined {
   if (node == null) return undefined;
   if (typeof node === "object") {
     for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
-      if (keys.includes(k.toUpperCase()) && (typeof v === "string" || typeof v === "number")) {
-        const s = cleanText(v);
+      if (keys.includes(k.toUpperCase())) {
+        const s = textOf(v);
         if (s) return s;
       }
     }

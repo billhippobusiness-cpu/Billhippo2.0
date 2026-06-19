@@ -110,22 +110,47 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
     );
   }
 
-  // 4. Pull the ledgers. The FETCH collection returns GSTIN + address; if it
-  //    somehow yields nothing, fall back to the masters export.
-  let rawXml = await postXml(host, port, buildLedgerListRequest(companyName));
-  let ledgers = parseLedgers(rawXml);
-  if (ledgers.length === 0) {
-    rawXml = await postXml(host, port, buildLedgerMastersRequest(companyName));
-    ledgers = parseLedgers(rawXml);
+  // 4. Pull the ledgers. The FETCH collection reliably returns name/parent and
+  //    the mailing address/state/pincode. GST registration details aren't
+  //    exposed there, so we also run the masters export and MERGE its GSTIN
+  //    (and any missing address fields) in by ledger name.
+  const collXml = await postXml(host, port, buildLedgerListRequest(companyName));
+  let ledgers = parseLedgers(collXml);
+
+  let mastersXml = "";
+  try {
+    mastersXml = await postXml(host, port, buildLedgerMastersRequest(companyName));
+    const masters = parseLedgers(mastersXml);
+    if (masters.length) {
+      const byName = new Map(masters.map((m) => [m.name.toLowerCase(), m]));
+      if (ledgers.length === 0) {
+        ledgers = masters; // collection empty → use masters wholesale
+      } else {
+        ledgers = ledgers.map((l) => {
+          const m = byName.get(l.name.toLowerCase());
+          if (!m) return l;
+          return {
+            ...l,
+            gstin: l.gstin || m.gstin,
+            address: l.address || m.address,
+            state: l.state || m.state,
+            pincode: l.pincode || m.pincode,
+          };
+        });
+      }
+    }
+  } catch {
+    // Masters export unavailable — keep the collection result.
   }
   await syncLedgersToFirestore(uid, ledgers);
 
   // Stamp the config so the web UI can show "last synced". Also keep a
   // truncated copy of the raw Tally response for troubleshooting (e.g. when a
   // ledger's GSTIN/address isn't coming through, so we can see the structure).
+  const debugXml = `===COLLECTION===\n${collXml}\n\n===MASTERS===\n${mastersXml}`;
   await setDoc(
     configRef,
-    { lastLedgerSyncAt: serverTimestamp(), lastLedgerRawXml: rawXml.slice(0, 45000) },
+    { lastLedgerSyncAt: serverTimestamp(), lastLedgerRawXml: debugXml.slice(0, 45000) },
     { merge: true },
   );
   return {};

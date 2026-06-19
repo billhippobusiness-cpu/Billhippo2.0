@@ -92,7 +92,6 @@ export function buildLedgerMastersRequest(companyName: string): string {
     <STATICVARIABLES>
      <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
      <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
-     <ACCOUNTTYPE>All Ledgers</ACCOUNTTYPE>
     </STATICVARIABLES>
    </REQUESTDESC>
   </EXPORTDATA>
