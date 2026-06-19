@@ -524,7 +524,7 @@ const LedgersTab: React.FC<{
               <div key={l.id} className="px-5 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-700 font-poppins text-sm truncate">{l.name}</p>
-                  <p className="text-xs text-slate-400 font-poppins">{l.parent || '—'}</p>
+                  <p className="text-xs text-slate-400 font-poppins">{l.parent && l.parent !== '[object Object]' ? l.parent : '—'}</p>
                 </div>
                 {l.gstin && (
                   <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded-md">
@@ -558,6 +558,11 @@ const PushTab: React.FC<{
     [customers],
   );
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+  const [hideSynced, setHideSynced] = useState(false);
+  const [pushingBulk, setPushingBulk] = useState(false);
+
   // Latest job per invoice (by createdAt millis), to show a sync status column.
   const latestJobByInvoice = useMemo(() => {
     const map = new Map<string, SyncJob>();
@@ -583,6 +588,51 @@ const PushTab: React.FC<{
 
   const salesLedgerOk = ledgerExistsByName(config?.salesLedgerName, ledgers);
 
+  // Derive everything each row needs once, so the table render and the bulk
+  // push share the exact same resolution logic.
+  const rows = useMemo(() => invoices.map((inv) => {
+    const customer = customerById.get(inv.customerId);
+    const party = resolvePartyLedger(customer ?? { name: inv.customerName, gstin: undefined }, ledgers);
+    const job = latestJobByInvoice.get(inv.id);
+    const createJob = inv.customerId ? latestCreateJobByCustomer.get(inv.customerId) : undefined;
+    const mappedName = customer?.tallyLedgerName;
+    const resolvedName = mappedName || party.tallyLedgerName;
+    const matchType: 'gstin' | 'name' =
+      customer?.tallyMatchType || (party.status === 'gstin' ? 'gstin' : 'name');
+    const canPush = !!mappedName || party.status === 'gstin' || party.status === 'name';
+    return {
+      inv, customer, party, job, createJob, mappedName, resolvedName, matchType, canPush,
+      gstin: customer?.gstin || '',
+      synced: job?.status === 'success',
+      selectable: canPush && !!resolvedName,
+    };
+  }), [invoices, customerById, ledgers, latestJobByInvoice, latestCreateJobByCustomer]);
+
+  const visibleRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (hideSynced && r.synced) return false;
+      if (!q) return true;
+      return r.inv.invoiceNumber.toLowerCase().includes(q)
+        || r.inv.customerName.toLowerCase().includes(q)
+        || (r.gstin || '').toLowerCase().includes(q);
+    });
+  }, [rows, search, hideSynced]);
+
+  const selectableVisible = visibleRows.filter((r) => r.selectable);
+  const allSelected = selectableVisible.length > 0 && selectableVisible.every((r) => selected.has(r.inv.id));
+
+  const toggleAll = () => {
+    setSelected(() => (allSelected ? new Set() : new Set(selectableVisible.map((r) => r.inv.id))));
+  };
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   const persistMapping = async (customer: Customer, tallyLedgerName: string, matchType: 'gstin' | 'name') => {
     if (customer.tallyLedgerName === tallyLedgerName && customer.tallyMatchType === matchType) return;
     await updateCustomer(userId, customer.id, { tallyLedgerName, tallyMatchType: matchType });
@@ -605,6 +655,18 @@ const PushTab: React.FC<{
         totalAmount: inv.totalAmount,
       },
     });
+  };
+
+  // Push every selected, pushable row in one go.
+  const handlePushSelected = async () => {
+    setPushingBulk(true);
+    try {
+      const toPush = visibleRows.filter((r) => selected.has(r.inv.id) && r.selectable);
+      for (const r of toPush) await handlePush(r.inv, r.resolvedName!, r.matchType);
+      setSelected(new Set());
+    } finally {
+      setPushingBulk(false);
+    }
   };
 
   // Confirm a suggested ledger: save the mapping (then the row becomes pushable).
@@ -639,76 +701,118 @@ const PushTab: React.FC<{
       )}
 
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+        {/* Toolbar: search · hide-synced · bulk send */}
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Search size={16} className="text-slate-400 flex-shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search invoice, party or GSTIN…"
+              className="flex-1 min-w-0 text-sm font-poppins focus:outline-none"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs font-poppins text-slate-500 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" checked={hideSynced} onChange={(e) => setHideSynced(e.target.checked)} className="accent-profee-blue" />
+            Hide synced
+          </label>
+          <button
+            onClick={handlePushSelected}
+            disabled={selected.size === 0 || pushingBulk}
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl font-bold font-poppins text-sm transition-all ${
+              selected.size > 0 && !pushingBulk
+                ? 'bg-profee-blue text-white hover:opacity-90 active:scale-95'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            }`}
+          >
+            {pushingBulk ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            Send to Tally{selected.size ? ` (${selected.size})` : ''}
+          </button>
+        </div>
+
         {invoices.length === 0 ? (
           <EmptyState icon={Send} title="No invoices yet" subtitle="Create invoices to push them to Tally." />
         ) : (
-          <div className="divide-y divide-slate-50">
-            {invoices.map((inv) => {
-              const customer = customerById.get(inv.customerId);
-              const party = resolvePartyLedger(
-                customer ?? { name: inv.customerName, gstin: undefined },
-                ledgers,
-              );
-              const job = latestJobByInvoice.get(inv.id);
-              const createJob = inv.customerId ? latestCreateJobByCustomer.get(inv.customerId) : undefined;
-              // A previously-saved mapping makes the row pushable regardless of
-              // the live matcher result (e.g. confirmed suggestion).
-              const mappedName = customer?.tallyLedgerName;
-              const resolvedName = mappedName || party.tallyLedgerName;
-              const matchType: 'gstin' | 'name' =
-                customer?.tallyMatchType || (party.status === 'gstin' ? 'gstin' : 'name');
-              const canPush = !!mappedName || party.status === 'gstin' || party.status === 'name';
-              return (
-                <div key={inv.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-slate-700 font-poppins text-sm">{inv.invoiceNumber}</p>
-                      <span className="text-xs text-slate-400 font-poppins">{inv.date}</span>
-                    </div>
-                    <p className="text-sm text-slate-500 font-poppins truncate">{inv.customerName}</p>
-                    {mappedName
-                      ? <span className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold font-poppins text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full"><CheckCircle2 size={12} /> Mapped → “{mappedName}”</span>
-                      : <PartyBadge party={party} billHippoName={inv.customerName} />}
-                  </div>
-
-                  <div className="text-right font-poppins flex-shrink-0">
-                    <p className="font-bold text-slate-700 text-sm">₹{inv.totalAmount.toLocaleString('en-IN')}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0 sm:w-56 sm:justify-end">
-                    <JobStatus job={job} />
-                    {canPush && resolvedName ? (
-                      <button
-                        onClick={() => handlePush(inv, resolvedName, matchType)}
-                        title="Queue push to Tally"
-                        className="px-4 py-2 rounded-xl text-xs font-bold font-poppins bg-profee-blue text-white hover:opacity-90 active:scale-95 transition-all"
-                      >
-                        {job?.status === 'failed' ? 'Retry' : 'Push'}
-                      </button>
-                    ) : party.status === 'suggest' && party.tallyLedgerName ? (
-                      <button
-                        onClick={() => handleConfirmMap(inv, party.tallyLedgerName!)}
-                        title={`Map this customer to the Tally ledger "${party.tallyLedgerName}"`}
-                        className="px-3 py-2 rounded-xl text-xs font-bold font-poppins bg-amber-500 text-white hover:opacity-90 active:scale-95 transition-all"
-                      >
-                        Use this ledger
-                      </button>
-                    ) : createJob && createJob.status !== 'failed' && createJob.status !== 'success' ? (
-                      <span className="text-[11px] font-bold font-poppins text-sky-600 inline-flex items-center gap-1"><Loader2 size={13} className="animate-spin" /> Creating…</span>
-                    ) : (
-                      <button
-                        onClick={() => handleCreateLedger(inv)}
-                        disabled={!inv.customerId}
-                        title="Create this party ledger in Tally"
-                        className="px-3 py-2 rounded-xl text-xs font-bold font-poppins bg-slate-800 text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-40"
-                      >
-                        {createJob?.status === 'failed' ? 'Retry create' : 'Create ledger'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm font-poppins">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
+                  <th className="px-4 py-3 w-10">
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-profee-blue" title="Select all pushable" />
+                  </th>
+                  <th className="px-3 py-3 whitespace-nowrap">Date</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Invoice #</th>
+                  <th className="px-3 py-3">Party A/C</th>
+                  <th className="px-3 py-3 whitespace-nowrap">GSTIN</th>
+                  <th className="px-3 py-3 text-right whitespace-nowrap">Amount</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Status</th>
+                  <th className="px-3 py-3 text-right whitespace-nowrap">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {visibleRows.map((r) => {
+                  const { inv, party, job, createJob, mappedName, resolvedName, matchType, canPush, selectable } = r;
+                  return (
+                    <tr key={inv.id} className={`hover:bg-slate-50/60 ${selected.has(inv.id) ? 'bg-profee-blue/5' : ''}`}>
+                      <td className="px-4 py-3 align-top">
+                        <input
+                          type="checkbox"
+                          disabled={!selectable}
+                          checked={selected.has(inv.id)}
+                          onChange={() => toggleOne(inv.id)}
+                          className="accent-profee-blue disabled:opacity-30"
+                          title={selectable ? 'Select to push' : 'Map this party first'}
+                        />
+                      </td>
+                      <td className="px-3 py-3 align-top text-slate-500 whitespace-nowrap">{inv.date}</td>
+                      <td className="px-3 py-3 align-top font-bold text-slate-700 whitespace-nowrap">{inv.invoiceNumber}</td>
+                      <td className="px-3 py-3 align-top">
+                        <p className="text-slate-700 truncate max-w-[220px]">{inv.customerName}</p>
+                        {mappedName
+                          ? <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold font-poppins text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full"><CheckCircle2 size={12} /> Mapped → “{mappedName}”</span>
+                          : <PartyBadge party={party} billHippoName={inv.customerName} />}
+                      </td>
+                      <td className="px-3 py-3 align-top text-xs font-mono text-slate-500 whitespace-nowrap">{r.gstin || '—'}</td>
+                      <td className="px-3 py-3 align-top text-right font-bold text-slate-700 whitespace-nowrap">₹{inv.totalAmount.toLocaleString('en-IN')}</td>
+                      <td className="px-3 py-3 align-top"><JobStatus job={job} /></td>
+                      <td className="px-3 py-3 align-top text-right whitespace-nowrap">
+                        {canPush && resolvedName ? (
+                          <button
+                            onClick={() => handlePush(inv, resolvedName, matchType)}
+                            title="Queue push to Tally"
+                            className="px-4 py-2 rounded-xl text-xs font-bold font-poppins bg-profee-blue text-white hover:opacity-90 active:scale-95 transition-all"
+                          >
+                            {job?.status === 'failed' ? 'Retry' : 'Push'}
+                          </button>
+                        ) : party.status === 'suggest' && party.tallyLedgerName ? (
+                          <button
+                            onClick={() => handleConfirmMap(inv, party.tallyLedgerName!)}
+                            title={`Map this customer to the Tally ledger "${party.tallyLedgerName}"`}
+                            className="px-3 py-2 rounded-xl text-xs font-bold font-poppins bg-amber-500 text-white hover:opacity-90 active:scale-95 transition-all"
+                          >
+                            Use this ledger
+                          </button>
+                        ) : createJob && createJob.status !== 'failed' && createJob.status !== 'success' ? (
+                          <span className="text-[11px] font-bold font-poppins text-sky-600 inline-flex items-center gap-1"><Loader2 size={13} className="animate-spin" /> Creating…</span>
+                        ) : (
+                          <button
+                            onClick={() => handleCreateLedger(inv)}
+                            disabled={!inv.customerId}
+                            title="Create this party ledger in Tally"
+                            className="px-3 py-2 rounded-xl text-xs font-bold font-poppins bg-slate-800 text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-40"
+                          >
+                            {createJob?.status === 'failed' ? 'Retry create' : 'Create ledger'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {visibleRows.length === 0 && (
+              <p className="text-center text-sm text-slate-400 font-poppins py-10">No invoices match your filters.</p>
+            )}
           </div>
         )}
       </div>

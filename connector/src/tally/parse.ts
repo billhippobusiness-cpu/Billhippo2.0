@@ -21,6 +21,20 @@ function asArray<T>(v: T | T[] | undefined): T[] {
   return Array.isArray(v) ? v : [v];
 }
 
+/**
+ * Extract text from a value that fast-xml-parser may return as a string OR as an
+ * object (when the element carries attributes, the text lands under "#text").
+ * Without this, an object stringifies to "[object Object]".
+ */
+function textOf(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return cleanText((o["#text"] ?? o["_"] ?? "") as string | number);
+  }
+  return cleanText(v);
+}
+
 /** Recursively search a parsed object for the first GSTIN-looking value. */
 function findGstin(node: unknown): string | undefined {
   if (node == null) return undefined;
@@ -64,11 +78,11 @@ export function parseLedgers(xml: string): TallyLedger[] {
 
   const out: TallyLedger[] = [];
   for (const l of ledgers) {
-    const name = cleanText(l?.["@_NAME"] ?? l?.NAME);
+    const name = textOf(l?.["@_NAME"] ?? l?.NAME);
     if (!name) continue;
     out.push({
       name,
-      parent: cleanText(l?.PARENT),
+      parent: textOf(l?.PARENT),
       gstin: findGstin(l),
     });
   }
