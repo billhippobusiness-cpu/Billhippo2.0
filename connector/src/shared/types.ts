@@ -23,4 +23,7 @@ export interface TallyLedger {
   name: string;
   parent: string;
   gstin?: string;
+  address?: string;
+  state?: string;
+  pincode?: string;
 }

@@ -409,6 +409,9 @@ export interface TallyLedger {
   name: string;                 // ledger name exactly as stored in Tally
   parent: string;               // group, e.g. "Sundry Debtors", "Sales Accounts"
   gstin?: string;               // party GSTIN — the authoritative match key
+  address?: string;             // mailing address pulled from Tally
+  state?: string;
+  pincode?: string;
   syncedAt?: unknown;           // Firestore Timestamp
 }
 

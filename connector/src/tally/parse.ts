@@ -80,10 +80,27 @@ export function parseLedgers(xml: string): TallyLedger[] {
   for (const l of ledgers) {
     const name = textOf(l?.["@_NAME"] ?? l?.NAME);
     if (!name) continue;
+    const mailing = l?.["LEDGERMAILINGDETAILS.LIST"];
+    const m = Array.isArray(mailing) ? mailing[0] : mailing;
+    let address: string | undefined;
+    let state: string | undefined;
+    let pincode: string | undefined;
+    if (m && typeof m === "object") {
+      state = textOf(m.STATE) || undefined;
+      pincode = textOf(m.PINCODE) || undefined;
+      const al = m["ADDRESS.LIST"];
+      const a = Array.isArray(al) ? al[0] : al;
+      const addr = a && typeof a === "object" ? (a as any).ADDRESS : a;
+      const joined = Array.isArray(addr) ? addr.map(textOf).filter(Boolean).join(", ") : textOf(addr);
+      address = joined || undefined;
+    }
     out.push({
       name,
       parent: textOf(l?.PARENT),
       gstin: findGstin(l),
+      ...(address ? { address } : {}),
+      ...(state ? { state } : {}),
+      ...(pincode ? { pincode } : {}),
     });
   }
   return out;
