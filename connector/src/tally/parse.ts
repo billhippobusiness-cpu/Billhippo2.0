@@ -41,9 +41,9 @@ function findGstin(node: unknown): string | undefined {
   if (typeof node === "object") {
     for (const [key, val] of Object.entries(node as Record<string, unknown>)) {
       const k = key.toUpperCase();
-      if ((k.includes("GSTIN") || k === "PARTYGSTIN") && (typeof val === "string" || typeof val === "number")) {
-        const s = cleanText(val).toUpperCase();
-        if (/^[0-9A-Z]{15}$/.test(s)) return s;
+      if (k.includes("GST") && (typeof val === "string" || typeof val === "number")) {
+        const s = cleanText(val).toUpperCase().replace(/[^0-9A-Z]/g, "");
+        if (/^[0-9]{2}[0-9A-Z]{13}$/.test(s)) return s;
       }
       const nested = findGstin(val);
       if (nested) return nested;

@@ -479,7 +479,7 @@ const LedgersTab: React.FC<{
   customers: Customer[];
   online: boolean;
   onCustomerAdded: (c: Customer) => void;
-}> = ({ userId, ledgers, jobs, customers, online, onCustomerAdded }) => {
+}> = ({ userId, config, ledgers, jobs, customers, online, onCustomerAdded }) => {
   const [enqueuing, setEnqueuing] = useState(false);
   const [search, setSearch] = useState('');
   // null = closed; { mode:'create' } or { mode:'edit', ledger } when open.
@@ -680,6 +680,25 @@ const LedgersTab: React.FC<{
           </div>
         )}
       </div>
+
+      {config?.lastLedgerRawXml && (
+        <details className="mt-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
+          <summary className="px-4 py-3 text-xs font-bold font-poppins text-slate-500 cursor-pointer select-none">
+            Troubleshooting · raw Tally response (share with support if GSTIN/address won't sync)
+          </summary>
+          <div className="px-4 pb-4">
+            <button
+              onClick={() => { navigator.clipboard?.writeText(config.lastLedgerRawXml || ''); }}
+              className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold font-poppins text-profee-blue hover:underline"
+            >
+              <Copy size={13} /> Copy
+            </button>
+            <pre className="text-[10px] leading-tight text-slate-500 font-mono whitespace-pre-wrap break-all max-h-64 overflow-y-auto bg-slate-50 rounded-xl p-3">
+              {config.lastLedgerRawXml}
+            </pre>
+          </div>
+        </details>
+      )}
 
       {form && (
         <LedgerForm
