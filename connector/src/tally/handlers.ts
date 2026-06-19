@@ -167,18 +167,22 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
   if (!invSnap.exists()) throw new Error(`Invoice ${job.invoiceId} no longer exists.`);
   const inv = invSnap.data() as any;
 
-  // Resolve the party ledger name: prefer the customer's saved Tally mapping,
-  // then the job snapshot, then the raw invoice name.
-  let partyLedgerName: string | undefined;
+  // Resolve the party ledger name: prefer the explicit per-row mapping in the
+  // job snapshot, then the customer's saved Tally mapping, then the raw name.
+  let customerMapped: string | undefined;
   if (inv.customerId) {
     const custSnap = await getDoc(doc(getDb(), "users", uid, "customers", inv.customerId));
-    if (custSnap.exists()) partyLedgerName = (custSnap.data() as any).tallyLedgerName;
+    if (custSnap.exists()) customerMapped = (custSnap.data() as any).tallyLedgerName;
   }
-  partyLedgerName =
-    partyLedgerName ||
+  const partyLedgerName =
     (job.payloadSnapshot?.partyLedgerName as string | undefined) ||
+    customerMapped ||
     inv.customerName;
   if (!partyLedgerName) throw new Error("Could not determine the party ledger name.");
+
+  // Sales ledger (Particulars): prefer the per-row choice, else the default.
+  const salesLedgerName =
+    (job.payloadSnapshot?.salesLedgerName as string | undefined)?.trim() || cfg.salesLedgerName;
 
   const xml = buildSalesVoucher({
     companyName: cfg.companyName,
@@ -186,7 +190,7 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
     voucherNumber: inv.invoiceNumber,
     invoiceId: job.invoiceId,
     partyLedgerName,
-    salesLedgerName: cfg.salesLedgerName,
+    salesLedgerName,
     gstType: inv.gstType === "IGST" ? "IGST" : "CGST_SGST",
     taxable: Number(inv.totalBeforeTax) || 0,
     cgst: Number(inv.cgst) || 0,

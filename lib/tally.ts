@@ -128,8 +128,44 @@ export function subscribeSyncJobs(
   });
 }
 
-// ── Connector liveness ───────────────────────────────────────────────────────
+// ── Per-invoice ledger mapping (saved before push, editable, reusable) ────────
 
+export interface TallyInvoiceMapping {
+  partyLedgerName?: string;   // Tally party ledger this invoice posts to
+  salesLedgerName?: string;   // Tally sales ledger (Particulars) for this invoice
+  savedAt?: unknown;
+}
+
+function invoiceMapCol(userId: string) {
+  return collection(db, 'users', userId, 'tallyInvoiceMap');
+}
+
+/** Live map of invoiceId → saved ledger mapping, so the Push table can show
+ *  what each entry will post to and let the user save now / push later. */
+export function subscribeTallyInvoiceMap(
+  userId: string,
+  callback: (map: Record<string, TallyInvoiceMapping>) => void,
+): () => void {
+  return onSnapshot(invoiceMapCol(userId), (snap) => {
+    const map: Record<string, TallyInvoiceMapping> = {};
+    snap.docs.forEach((d) => { map[d.id] = d.data() as TallyInvoiceMapping; });
+    callback(map);
+  });
+}
+
+export async function saveTallyInvoiceMap(
+  userId: string,
+  invoiceId: string,
+  data: TallyInvoiceMapping,
+): Promise<void> {
+  await setDoc(
+    doc(invoiceMapCol(userId), invoiceId),
+    { ...data, savedAt: serverTimestamp() },
+    { merge: true },
+  );
+}
+
+// ── Connector liveness ───────────────────────────────────────────────────────
 /** Coerce a Firestore Timestamp (or epoch ms / ISO string) to epoch millis. */
 function toMillis(ts: unknown): number {
   if (!ts) return 0;
