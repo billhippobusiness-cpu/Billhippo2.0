@@ -20,6 +20,7 @@ import { postXml } from "./client";
 import {
   buildCompanyListRequest,
   buildLedgerListRequest,
+  buildLedgerMastersRequest,
   buildSalesVoucher,
   buildLedgerMaster,
 } from "./builders";
@@ -109,9 +110,14 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
     );
   }
 
-  // 4. Pull the ledgers for the resolved company.
-  const rawXml = await postXml(host, port, buildLedgerListRequest(companyName));
-  const ledgers = parseLedgers(rawXml);
+  // 4. Pull the ledgers. Prefer the full masters export (returns GSTIN +
+  //    address); if it yields nothing, fall back to the lightweight collection.
+  let rawXml = await postXml(host, port, buildLedgerMastersRequest(companyName));
+  let ledgers = parseLedgers(rawXml);
+  if (ledgers.length === 0) {
+    rawXml = await postXml(host, port, buildLedgerListRequest(companyName));
+    ledgers = parseLedgers(rawXml);
+  }
   await syncLedgersToFirestore(uid, ledgers);
 
   // Stamp the config so the web UI can show "last synced". Also keep a
