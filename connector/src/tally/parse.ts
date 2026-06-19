@@ -52,6 +52,42 @@ function findGstin(node: unknown): string | undefined {
   return undefined;
 }
 
+/** Recursively find the first value whose key matches one of `keys`. */
+function findByKeys(node: unknown, keys: string[]): string | undefined {
+  if (node == null) return undefined;
+  if (typeof node === "object") {
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      if (keys.includes(k.toUpperCase()) && (typeof v === "string" || typeof v === "number")) {
+        const s = cleanText(v);
+        if (s) return s;
+      }
+    }
+    for (const v of Object.values(node as Record<string, unknown>)) {
+      const r = findByKeys(v, keys);
+      if (r) return r;
+    }
+  }
+  return undefined;
+}
+
+/** Recursively collect the first ADDRESS (string or multi-line list). */
+function findAddress(node: unknown): string | undefined {
+  if (node == null) return undefined;
+  if (typeof node === "object") {
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      if (k.toUpperCase() === "ADDRESS") {
+        const joined = Array.isArray(v) ? v.map(textOf).filter(Boolean).join(", ") : textOf(v);
+        if (joined) return joined;
+      }
+    }
+    for (const v of Object.values(node as Record<string, unknown>)) {
+      const r = findAddress(v);
+      if (r) return r;
+    }
+  }
+  return undefined;
+}
+
 /** Parse a "List of Companies" export into the open company names. */
 export function parseCompanies(xml: string): string[] {
   const obj = parser.parse(xml) as Record<string, any>;
@@ -80,20 +116,9 @@ export function parseLedgers(xml: string): TallyLedger[] {
   for (const l of ledgers) {
     const name = textOf(l?.["@_NAME"] ?? l?.NAME);
     if (!name) continue;
-    const mailing = l?.["LEDGERMAILINGDETAILS.LIST"];
-    const m = Array.isArray(mailing) ? mailing[0] : mailing;
-    let address: string | undefined;
-    let state: string | undefined;
-    let pincode: string | undefined;
-    if (m && typeof m === "object") {
-      state = textOf(m.STATE) || undefined;
-      pincode = textOf(m.PINCODE) || undefined;
-      const al = m["ADDRESS.LIST"];
-      const a = Array.isArray(al) ? al[0] : al;
-      const addr = a && typeof a === "object" ? (a as any).ADDRESS : a;
-      const joined = Array.isArray(addr) ? addr.map(textOf).filter(Boolean).join(", ") : textOf(addr);
-      address = joined || undefined;
-    }
+    const address = findAddress(l);
+    const state = findByKeys(l, ["LEDSTATENAME", "STATENAME", "STATE", "PRIORSTATENAME"]);
+    const pincode = findByKeys(l, ["PINCODE"]);
     out.push({
       name,
       parent: textOf(l?.PARENT),

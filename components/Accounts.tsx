@@ -487,28 +487,17 @@ const LedgersTab: React.FC<{
   // Tally ledger currently being imported into BillHippo as a customer.
   const [importLedger, setImportLedger] = useState<TallyLedger | null>(null);
 
-  // Keys (gstin + name + mapped Tally name) of customers already in BillHippo,
-  // so we can tell which Tally party ledgers still need importing.
-  const customerKeys = useMemo(() => {
-    const s = new Set<string>();
-    for (const c of customers) {
-      if (c.gstin) s.add(`g:${c.gstin.toLowerCase()}`);
-      if (c.name) s.add(`n:${c.name.trim().toLowerCase()}`);
-      if (c.tallyLedgerName) s.add(`n:${c.tallyLedgerName.trim().toLowerCase()}`);
-    }
-    return s;
-  }, [customers]);
-
   const isParty = (l: TallyLedger) => /debtor|creditor/i.test(l.parent || '');
-  const inBillHippo = (l: TallyLedger) =>
-    (l.gstin && customerKeys.has(`g:${l.gstin.toLowerCase()}`)) ||
-    customerKeys.has(`n:${l.name.trim().toLowerCase()}`);
 
-  // A BillHippo customer matching this ledger (by GSTIN or name) — used to
-  // prefill the Edit/Import forms with details BillHippo already holds.
+  // The BillHippo customer that genuinely represents this ledger — matched by
+  // GSTIN (authoritative) or exact customer name only. We deliberately do NOT
+  // match on a customer's saved tallyLedgerName, since that's a mapping pointer
+  // (it caused ledgers to be wrongly flagged "In BillHippo").
   const matchCustomer = (l: TallyLedger): Customer | undefined =>
     (l.gstin ? customers.find((c) => c.gstin && c.gstin.toLowerCase() === l.gstin!.toLowerCase()) : undefined) ||
     customers.find((c) => c.name.trim().toLowerCase() === l.name.trim().toLowerCase());
+
+  const inBillHippo = (l: TallyLedger) => !!matchCustomer(l);
 
   const handleImport = async (values: ImportCustomerValues) => {
     const id = await addCustomer(userId, {
@@ -663,7 +652,10 @@ const LedgersTab: React.FC<{
                   )}
                   {party && (
                     imported ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold font-poppins text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                      <span
+                        title={`Customer in BillHippo: ${matchCustomer(l)?.name || ''}`}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold font-poppins text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex-shrink-0"
+                      >
                         <CheckCircle2 size={12} /> In BillHippo
                       </span>
                     ) : (
