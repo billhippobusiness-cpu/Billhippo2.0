@@ -258,7 +258,9 @@ async function handleUpsertLedger(uid: string, job: SyncJob): Promise<{ tallyVou
 
   const { host, port } = tallyTarget();
   const responseXml = await postXml(host, port, buildLedgerMaster(master, action));
-  parseImportResult(responseXml);
+  // Tolerate 0/0 — Tally returns that when a ledger already exists (create) or
+  // an alter changed nothing, neither of which is a real failure here.
+  parseImportResult(responseXml, true);
 
   // Reflect the change in Firestore so the Ledger Sync list updates at once.
   await setDoc(

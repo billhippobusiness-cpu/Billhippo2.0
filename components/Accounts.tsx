@@ -9,7 +9,7 @@ import {
   subscribeTallyConfig, saveTallyConfig, subscribeTallyLedgers,
   subscribeSyncJobs, enqueueSyncJob, isConnectorOnline,
 } from '../lib/tally';
-import { getCustomers, getInvoices, updateCustomer } from '../lib/firestore';
+import { getCustomers, getInvoices, updateCustomer, addCustomer } from '../lib/firestore';
 import { functions } from '../lib/firebase';
 import { resolvePartyLedger, ledgerExistsByName, matchStatusLabel, type PartyMatchResult } from '../lib/tallyMatch';
 import { haptic } from '../lib/haptic';
@@ -97,7 +97,15 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
 
       {tab === 'connector' && <ConnectorTab userId={userId} config={config} ledgers={ledgers} jobs={jobs} online={online} />}
       {tab === 'ledgers' && (
-        <LedgersTab userId={userId} config={config} ledgers={ledgers} jobs={jobs} online={online} />
+        <LedgersTab
+          userId={userId}
+          config={config}
+          ledgers={ledgers}
+          jobs={jobs}
+          customers={customers}
+          online={online}
+          onCustomerAdded={(c) => setCustomers((prev) => [...prev, c])}
+        />
       )}
       {tab === 'push' && (
         <PushTab
@@ -464,12 +472,66 @@ const LedgersTab: React.FC<{
   config: TallyConfig | null;
   ledgers: TallyLedger[];
   jobs: SyncJob[];
+  customers: Customer[];
   online: boolean;
-}> = ({ userId, ledgers, jobs, online }) => {
+  onCustomerAdded: (c: Customer) => void;
+}> = ({ userId, ledgers, jobs, customers, online, onCustomerAdded }) => {
   const [enqueuing, setEnqueuing] = useState(false);
   const [search, setSearch] = useState('');
   // null = closed; { mode:'create' } or { mode:'edit', ledger } when open.
   const [form, setForm] = useState<{ mode: 'create' | 'edit'; ledger?: TallyLedger } | null>(null);
+  // Tally ledger currently being imported into BillHippo as a customer.
+  const [importLedger, setImportLedger] = useState<TallyLedger | null>(null);
+
+  // Keys (gstin + name + mapped Tally name) of customers already in BillHippo,
+  // so we can tell which Tally party ledgers still need importing.
+  const customerKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of customers) {
+      if (c.gstin) s.add(`g:${c.gstin.toLowerCase()}`);
+      if (c.name) s.add(`n:${c.name.trim().toLowerCase()}`);
+      if (c.tallyLedgerName) s.add(`n:${c.tallyLedgerName.trim().toLowerCase()}`);
+    }
+    return s;
+  }, [customers]);
+
+  const isParty = (l: TallyLedger) => /debtor|creditor/i.test(l.parent || '');
+  const inBillHippo = (l: TallyLedger) =>
+    (l.gstin && customerKeys.has(`g:${l.gstin.toLowerCase()}`)) ||
+    customerKeys.has(`n:${l.name.trim().toLowerCase()}`);
+
+  const handleImport = async (values: ImportCustomerValues) => {
+    const id = await addCustomer(userId, {
+      name: values.name.trim(),
+      gstin: values.gstin.trim().toUpperCase() || undefined,
+      phone: values.phone.trim(),
+      email: values.email.trim(),
+      address: values.address.trim(),
+      city: values.city.trim(),
+      state: values.state.trim(),
+      pincode: values.pincode.trim(),
+      balance: 0,
+      // Pre-map to the Tally ledger so invoices for this customer push without
+      // any re-matching, using GSTIN as authoritative when present.
+      tallyLedgerName: values.name.trim(),
+      tallyMatchType: values.gstin.trim() ? 'gstin' : 'name',
+    });
+    onCustomerAdded({
+      id,
+      name: values.name.trim(),
+      gstin: values.gstin.trim().toUpperCase() || undefined,
+      phone: values.phone.trim(),
+      email: values.email.trim(),
+      address: values.address.trim(),
+      city: values.city.trim(),
+      state: values.state.trim(),
+      pincode: values.pincode.trim(),
+      balance: 0,
+      tallyLedgerName: values.name.trim(),
+      tallyMatchType: values.gstin.trim() ? 'gstin' : 'name',
+    });
+    setImportLedger(null);
+  };
 
   const handleVerify = async () => {
     setEnqueuing(true);
@@ -575,25 +637,44 @@ const LedgersTab: React.FC<{
           />
         ) : (
           <div className="divide-y divide-slate-50 max-h-[480px] overflow-y-auto">
-            {filtered.map((l) => (
-              <div key={l.id} className="px-5 py-3 flex items-center gap-3 group">
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-700 font-poppins text-sm truncate">{l.name}</p>
-                  <p className="text-xs text-slate-400 font-poppins">{l.parent && l.parent !== '[object Object]' ? l.parent : '—'}</p>
+            {filtered.map((l) => {
+              const party = isParty(l);
+              const imported = inBillHippo(l);
+              return (
+                <div key={l.id} className="px-5 py-3 flex items-center gap-3 group">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-700 font-poppins text-sm truncate">{l.name}</p>
+                    <p className="text-xs text-slate-400 font-poppins">{l.parent && l.parent !== '[object Object]' ? l.parent : '—'}</p>
+                  </div>
+                  {l.gstin && (
+                    <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded-md hidden sm:inline">
+                      {l.gstin}
+                    </span>
+                  )}
+                  {party && (
+                    imported ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold font-poppins text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                        <CheckCircle2 size={12} /> In BillHippo
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setImportLedger(l)}
+                        title="Add this Tally party as a BillHippo customer"
+                        className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-emerald-600 hover:underline flex-shrink-0"
+                      >
+                        <Plus size={13} /> Import
+                      </button>
+                    )
+                  )}
+                  <button
+                    onClick={() => setForm({ mode: 'edit', ledger: l })}
+                    className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-profee-blue hover:underline flex-shrink-0"
+                  >
+                    <Pencil size={13} /> Edit
+                  </button>
                 </div>
-                {l.gstin && (
-                  <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded-md">
-                    {l.gstin}
-                  </span>
-                )}
-                <button
-                  onClick={() => setForm({ mode: 'edit', ledger: l })}
-                  className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-profee-blue hover:underline flex-shrink-0"
-                >
-                  <Pencil size={13} /> Edit
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -603,8 +684,18 @@ const LedgersTab: React.FC<{
           mode={form.mode}
           ledger={form.ledger}
           groupOptions={TALLY_GROUPS}
+          canImport={form.mode === 'edit' && !!form.ledger && isParty(form.ledger) && !inBillHippo(form.ledger)}
+          onImport={() => { const l = form.ledger || null; setForm(null); setImportLedger(l); }}
           onClose={() => setForm(null)}
           onSubmit={(values) => submitLedger(values, form.mode)}
+        />
+      )}
+
+      {importLedger && (
+        <ImportCustomerForm
+          ledger={importLedger}
+          onClose={() => setImportLedger(null)}
+          onSubmit={handleImport}
         />
       )}
     </div>
@@ -617,9 +708,11 @@ const LedgerForm: React.FC<{
   mode: 'create' | 'edit';
   ledger?: TallyLedger;
   groupOptions: string[];
+  canImport?: boolean;
+  onImport?: () => void;
   onClose: () => void;
   onSubmit: (values: LedgerFormValues) => Promise<void>;
-}> = ({ mode, ledger, groupOptions, onClose, onSubmit }) => {
+}> = ({ mode, ledger, groupOptions, canImport, onImport, onClose, onSubmit }) => {
   const [values, setValues] = useState<LedgerFormValues>({
     name: ledger?.name || '',
     parent: ledger?.parent && ledger.parent !== '[object Object]' ? ledger.parent : 'Sundry Debtors',
@@ -643,11 +736,20 @@ const LedgerForm: React.FC<{
         <h3 className="text-lg font-bold text-slate-800 font-poppins mb-1">
           {mode === 'edit' ? 'Edit ledger in Tally' : 'New ledger in Tally'}
         </h3>
-        <p className="text-xs text-slate-500 font-poppins mb-5">
+        <p className="text-xs text-slate-500 font-poppins mb-4">
           {mode === 'edit'
-            ? 'Update this ledger in Tally. Leave address fields blank to keep what Tally already has.'
+            ? 'Change a value and Save to update it in Tally. Leave address fields blank to keep what Tally already has.'
             : 'Creates the ledger in your open Tally company via the connector.'}
         </p>
+
+        {canImport && onImport && (
+          <button
+            onClick={onImport}
+            className="w-full mb-4 py-2.5 rounded-2xl bg-emerald-50 text-emerald-700 font-bold font-poppins text-sm hover:bg-emerald-100 transition-colors inline-flex items-center justify-center gap-2"
+          >
+            <Plus size={16} /> Import this party into BillHippo as a customer
+          </button>
+        )}
 
         <div className="space-y-3">
           <Field label="Ledger name">
@@ -701,6 +803,76 @@ const LedgerForm: React.FC<{
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : null}
             {mode === 'edit' ? 'Save to Tally' : 'Create in Tally'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Import Tally ledger → BillHippo customer ───────────────────────────────────
+
+interface ImportCustomerValues {
+  name: string; gstin: string; phone: string; email: string;
+  address: string; city: string; state: string; pincode: string;
+}
+
+const ImportCustomerForm: React.FC<{
+  ledger: TallyLedger;
+  onClose: () => void;
+  onSubmit: (values: ImportCustomerValues) => Promise<void>;
+}> = ({ ledger, onClose, onSubmit }) => {
+  const [values, setValues] = useState<ImportCustomerValues>({
+    name: ledger.name || '',
+    gstin: ledger.gstin || '',
+    phone: '', email: '', address: '', city: '', state: '', pincode: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k: keyof ImportCustomerValues, v: string) => setValues((p) => ({ ...p, [k]: v }));
+
+  const submit = async () => {
+    if (!values.name.trim()) return;
+    setSaving(true);
+    try { await onSubmit(values); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-slate-800 font-poppins mb-1">Add customer to BillHippo</h3>
+        <p className="text-xs text-slate-500 font-poppins mb-5">
+          Imported from Tally ledger <b>“{ledger.name}”</b>. It will be linked to this ledger, so
+          invoices you raise for it push straight to Tally.
+        </p>
+
+        <div className="space-y-3">
+          <Field label="Customer name">
+            <input value={values.name} onChange={(e) => set('name', e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" />
+          </Field>
+          <Field label="GSTIN" hint="Authoritative match key when present">
+            <input value={values.gstin} onChange={(e) => set('gstin', e.target.value.toUpperCase())} placeholder="24ABCDE1234F1Z5" className="w-full px-4 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm font-mono focus:outline-none focus:ring-2 focus:ring-profee-blue/30" />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Phone"><input value={values.phone} onChange={(e) => set('phone', e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" /></Field>
+            <Field label="Email"><input value={values.email} onChange={(e) => set('email', e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" /></Field>
+          </div>
+          <Field label="Address"><input value={values.address} onChange={(e) => set('address', e.target.value)} placeholder="Street" className="w-full px-4 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" /></Field>
+          <div className="grid grid-cols-3 gap-2">
+            <Field label="City"><input value={values.city} onChange={(e) => set('city', e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" /></Field>
+            <Field label="State"><input value={values.state} onChange={(e) => set('state', e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" /></Field>
+            <Field label="Pincode"><input value={values.pincode} onChange={(e) => set('pincode', e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 font-poppins text-sm focus:outline-none focus:ring-2 focus:ring-profee-blue/30" /></Field>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 mt-6">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-2xl border border-slate-200 text-slate-600 font-bold font-poppins text-sm hover:bg-slate-50 transition-colors">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={!values.name.trim() || saving}
+            className="flex-1 py-2.5 rounded-2xl bg-emerald-600 text-white font-bold font-poppins text-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 inline-flex items-center justify-center gap-2"
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            Add customer
           </button>
         </div>
       </div>
@@ -942,7 +1114,12 @@ const PushTab: React.FC<{
                       </td>
                       <td className="px-3 py-3 align-top text-xs font-mono text-slate-500 whitespace-nowrap">{r.gstin || '—'}</td>
                       <td className="px-3 py-3 align-top text-right font-bold text-slate-700 whitespace-nowrap">₹{inv.totalAmount.toLocaleString('en-IN')}</td>
-                      <td className="px-3 py-3 align-top"><JobStatus job={job} /></td>
+                      <td className="px-3 py-3 align-top">
+                        <JobStatus job={job} />
+                        {job?.status === 'failed' && job.error && (
+                          <p className="mt-1 text-[10px] text-rose-500 font-poppins max-w-[200px] leading-tight">{job.error}</p>
+                        )}
+                      </td>
                       <td className="px-3 py-3 align-top text-right whitespace-nowrap">
                         {canPush && resolvedName ? (
                           <button
