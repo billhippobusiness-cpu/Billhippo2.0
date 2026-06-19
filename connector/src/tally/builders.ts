@@ -100,7 +100,9 @@ export function buildLedgerMastersRequest(companyName: string): string {
 </ENVELOPE>`;
 }
 
-/** Export request for the full ledger list, fetching name/parent/GSTIN. */
+/** Export request for the full ledger list with GSTIN + mailing address.
+ *  Uses <FETCH> (not <NATIVEMETHOD>) so Tally actually includes these member
+ *  values — and their child lists — in the exported XML. */
 export function buildLedgerListRequest(companyName: string): string {
   return `<ENVELOPE>
  <HEADER>
@@ -119,12 +121,14 @@ export function buildLedgerListRequest(companyName: string): string {
     <TDLMESSAGE>
      <COLLECTION NAME="BH List of Ledgers" ISMODIFY="No">
       <TYPE>Ledger</TYPE>
-      <NATIVEMETHOD>NAME</NATIVEMETHOD>
-      <NATIVEMETHOD>PARENT</NATIVEMETHOD>
-      <NATIVEMETHOD>PARTYGSTIN</NATIVEMETHOD>
-      <NATIVEMETHOD>GSTIN</NATIVEMETHOD>
-      <NATIVEMETHOD>LEDGERMAILINGDETAILS.LIST</NATIVEMETHOD>
-      <NATIVEMETHOD>LEDGERGSTREGDETAILS.LIST</NATIVEMETHOD>
+      <FETCH>NAME</FETCH>
+      <FETCH>PARENT</FETCH>
+      <FETCH>PARTYGSTIN</FETCH>
+      <FETCH>GSTREGISTRATIONTYPE</FETCH>
+      <FETCH>LEDSTATENAME</FETCH>
+      <FETCH>LEDGERMAILINGDETAILS.LIST</FETCH>
+      <FETCH>LEDGERGSTREGDETAILS.LIST</FETCH>
+      <FETCH>LEDGERMAILINGDETAILS.LIST.ADDRESS.LIST</FETCH>
      </COLLECTION>
     </TDLMESSAGE>
    </TDL>
