@@ -26,7 +26,7 @@ export const FUNCTIONS_REGION = "asia-south1";
 // How often the connector writes its heartbeat to Firestore.
 export const HEARTBEAT_INTERVAL_MS = 30_000;
 
-export const CONNECTOR_VERSION = "0.4.4";
+export const CONNECTOR_VERSION = "0.4.5";
 
 export interface LocalSettings {
   tallyHost: string;
