@@ -100,8 +100,13 @@ export interface ImportResult {
 /**
  * Parse an import response. Throws an Error (with Tally's message) when the
  * import reported errors/exceptions or a LINEERROR.
+ *
+ * `allowNoop` (used for ledger create/alter) tolerates a 0-created/0-altered
+ * result, which Tally legitimately returns when a ledger already exists or an
+ * "Alter" didn't change any value. For vouchers we keep the strict check so an
+ * empty body is treated as a soft failure and retried.
  */
-export function parseImportResult(xml: string): ImportResult {
+export function parseImportResult(xml: string, allowNoop = false): ImportResult {
   const obj = parser.parse(xml) as Record<string, any>;
   const env = obj?.ENVELOPE ?? {};
   const body = env?.BODY ?? {};
@@ -129,7 +134,7 @@ export function parseImportResult(xml: string): ImportResult {
         `Check that all ledgers exist and Debit=Credit.`,
     );
   }
-  if (res.created === 0 && res.altered === 0) {
+  if (!allowNoop && res.created === 0 && res.altered === 0) {
     // Some Tally builds return an empty/again-structured body; treat a totally
     // empty result as a soft failure so the job retries rather than silently
     // reporting success.
