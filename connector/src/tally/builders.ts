@@ -173,8 +173,8 @@ ${entries.join("\n")}
 </ENVELOPE>`;
 }
 
-/** Create a party ledger (Sundry Debtor) master with GSTIN + address. */
-export function buildLedgerMaster(l: LedgerMasterInput): string {
+/** Create or alter a ledger master with optional GSTIN + address. */
+export function buildLedgerMaster(l: LedgerMasterInput, action: "Create" | "Alter" = "Create"): string {
   const gstin = (l.gstin || "").trim().toUpperCase();
   const regType = gstin ? "Regular" : "Unregistered/Consumer";
   const mailing = `      <LEDGERMAILINGDETAILS.LIST>
@@ -197,7 +197,7 @@ export function buildLedgerMaster(l: LedgerMasterInput): string {
    </REQUESTDESC>
    <REQUESTDATA>
     <TALLYMESSAGE xmlns:UDF="TallyUDF">
-     <LEDGER NAME="${escapeXml(l.name)}" ACTION="Create">
+     <LEDGER NAME="${escapeXml(l.name)}" ACTION="${action}">
       <NAME>${escapeXml(l.name)}</NAME>
       <PARENT>${escapeXml(l.parent)}</PARENT>
       <ISBILLWISEON>Yes</ISBILLWISEON>
