@@ -107,10 +107,26 @@ export function parseCompanies(xml: string): string[] {
   return out;
 }
 
+/** Recursively collect every <LEDGER> object anywhere in the parsed tree, so we
+ *  handle both the custom-collection and the masters-export envelope shapes. */
+function collectLedgers(node: unknown, acc: Record<string, any>[]): void {
+  if (node == null) return;
+  if (Array.isArray(node)) { for (const n of node) collectLedgers(n, acc); return; }
+  if (typeof node === "object") {
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      if (k.toUpperCase() === "LEDGER") {
+        for (const x of asArray(v as any)) if (x && typeof x === "object") acc.push(x);
+      } else {
+        collectLedgers(v, acc);
+      }
+    }
+  }
+}
+
 export function parseLedgers(xml: string): TallyLedger[] {
   const obj = parser.parse(xml) as Record<string, any>;
-  const collection = obj?.ENVELOPE?.BODY?.DATA?.COLLECTION ?? obj?.ENVELOPE?.BODY?.DATA ?? {};
-  const ledgers = asArray<Record<string, any>>(collection?.LEDGER);
+  const ledgers: Record<string, any>[] = [];
+  collectLedgers(obj, ledgers);
 
   const out: TallyLedger[] = [];
   for (const l of ledgers) {

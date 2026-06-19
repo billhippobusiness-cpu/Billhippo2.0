@@ -486,6 +486,7 @@ const LedgersTab: React.FC<{
   const [form, setForm] = useState<{ mode: 'create' | 'edit'; ledger?: TallyLedger } | null>(null);
   // Tally ledger currently being imported into BillHippo as a customer.
   const [importLedger, setImportLedger] = useState<TallyLedger | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const isParty = (l: TallyLedger) => /debtor|creditor/i.test(l.parent || '');
 
@@ -529,7 +530,10 @@ const LedgersTab: React.FC<{
       tallyLedgerName: values.name.trim(),
       tallyMatchType: values.gstin.trim() ? 'gstin' : 'name',
     });
+    const name = values.name.trim();
     setImportLedger(null);
+    setNotice(`Added “${name}” to BillHippo customers.`);
+    setTimeout(() => setNotice(null), 4000);
   };
 
   const handleVerify = async () => {
@@ -610,10 +614,27 @@ const LedgersTab: React.FC<{
         </Banner>
       )}
 
-      {lastLedgerJob && lastLedgerJob.status === 'failed' && (
-        <Banner tone="amber">
-          Last ledger {lastLedgerJob.type === 'ALTER_LEDGER' ? 'edit' : 'creation'} failed: {lastLedgerJob.error || 'unknown error'}.
-        </Banner>
+      {notice && (
+        <div className="mb-6 flex items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-100 text-sm text-emerald-700 font-poppins">
+          <CheckCircle2 size={18} /> {notice}
+        </div>
+      )}
+
+      {lastLedgerJob && (
+        lastLedgerJob.status === 'failed' ? (
+          <Banner tone="amber">
+            Last ledger {lastLedgerJob.type === 'ALTER_LEDGER' ? 'edit' : 'creation'} failed: {lastLedgerJob.error || 'unknown error'}.
+            {/9000|ECONNREFUSED/i.test(lastLedgerJob.error || '') && <> Tally isn't reachable — open Tally with the company loaded and the gateway on (port 9000), then retry.</>}
+          </Banner>
+        ) : lastLedgerJob.status === 'success' ? (
+          <div className="mb-6 flex items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-100 text-sm text-emerald-700 font-poppins">
+            <CheckCircle2 size={18} /> Ledger {lastLedgerJob.type === 'ALTER_LEDGER' ? 'updated in' : 'created in'} Tally.
+          </div>
+        ) : (
+          <div className="mb-6 flex items-center gap-2 px-4 py-3 rounded-2xl bg-sky-50 border border-sky-100 text-sm text-sky-700 font-poppins">
+            <Loader2 size={18} className="animate-spin" /> Sending ledger to Tally…
+          </div>
+        )
       )}
 
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">

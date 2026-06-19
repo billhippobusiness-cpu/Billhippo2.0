@@ -74,6 +74,32 @@ export function buildCompanyListRequest(): string {
 </ENVELOPE>`;
 }
 
+/**
+ * Full ledger MASTERS export ("List of Accounts" → All Ledgers). Unlike a
+ * restricted collection, this returns each ledger's complete master — including
+ * GST registration details and the mailing address — which is what we need to
+ * mirror GSTIN/address into BillHippo.
+ */
+export function buildLedgerMastersRequest(companyName: string): string {
+  return `<ENVELOPE>
+ <HEADER>
+  <TALLYREQUEST>Export Data</TALLYREQUEST>
+ </HEADER>
+ <BODY>
+  <EXPORTDATA>
+   <REQUESTDESC>
+    <REPORTNAME>List of Accounts</REPORTNAME>
+    <STATICVARIABLES>
+     <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+     <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
+     <ACCOUNTTYPE>All Ledgers</ACCOUNTTYPE>
+    </STATICVARIABLES>
+   </REQUESTDESC>
+  </EXPORTDATA>
+ </BODY>
+</ENVELOPE>`;
+}
+
 /** Export request for the full ledger list, fetching name/parent/GSTIN. */
 export function buildLedgerListRequest(companyName: string): string {
   return `<ENVELOPE>
