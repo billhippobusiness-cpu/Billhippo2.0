@@ -116,9 +116,12 @@ async function processJob(uid: string, job: SyncJob): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const attempts = (job.attempts ?? 0) + 1;
-    // Exhausted retries -> failed; otherwise hand back to pending for another go.
+    // Never auto-retry an invoice push: a push that errored after Tally already
+    // recorded the voucher would create a DUPLICATE on retry. Mark it failed so
+    // the user can review and retry manually. Other job types retry up to the cap.
+    const giveUp = job.type === "PUSH_INVOICE" || attempts >= MAX_ATTEMPTS;
     await updateJob(uid, job.id, {
-      status: attempts >= MAX_ATTEMPTS ? "failed" : "pending",
+      status: giveUp ? "failed" : "pending",
       error: message,
     });
     console.error(`[jobWatcher] job ${job.id} (${job.type}) errored:`, message);

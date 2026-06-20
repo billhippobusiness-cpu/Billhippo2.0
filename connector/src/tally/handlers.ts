@@ -246,7 +246,11 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
 
   const { host, port } = tallyTarget();
   const responseXml = await postXml(host, port, xml);
-  const result = parseImportResult(responseXml);
+  // Lenient: some Tally builds post the voucher but report 0 created/0 altered.
+  // Treat that as success (real errors still throw via LINEERROR/exceptions),
+  // so the job isn't falsely failed — which previously triggered retries that
+  // created duplicate vouchers.
+  const result = parseImportResult(responseXml, true);
   return { tallyVoucherId: result.lastVoucherId };
 }
 
