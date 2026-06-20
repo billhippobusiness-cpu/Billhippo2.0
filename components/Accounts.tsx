@@ -1111,6 +1111,56 @@ const PushTab: React.FC<{
     if (!rates.length) return 0;
     return rates.length === 1 ? rates[0] : -1;
   };
+  // Sales ledger whose name encodes a rate (e.g. "Sales 18", "Sales @5%").
+  const pickSales = (rate: number, fallback: string) => {
+    if (rate > 0) {
+      const hit = ledgers.find((l) => /sales/i.test(l.parent || '') && l.name.includes(numStr(rate)));
+      if (hit) return hit.name;
+    }
+    return fallback;
+  };
+  const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+  // Build the voucher lines for an invoice: one per GST rate. Single-rate uses
+  // the row's chosen ledgers + invoice totals; mixed-rate splits per rate with
+  // ledgers auto-resolved from the rate.
+  const buildLines = (r: { inv: Invoice; isIgst: boolean; sales: string; cgst: string; sgst: string; igst: string }) => {
+    const inv = r.inv;
+    const groups = new Map<number, number>(); // rate → taxable
+    for (const it of inv.items || []) {
+      const rt = Number(it.gstRate) || 0;
+      groups.set(rt, (groups.get(rt) || 0) + (Number(it.quantity) || 0) * (Number(it.rate) || 0));
+    }
+    if (groups.size <= 1) {
+      return [{
+        taxable: Number(inv.totalBeforeTax) || 0,
+        cgst: Number(inv.cgst) || 0,
+        sgst: Number(inv.sgst) || 0,
+        igst: Number(inv.igst) || 0,
+        salesLedgerName: r.sales,
+        cgstLedgerName: r.cgst,
+        sgstLedgerName: r.sgst,
+        igstLedgerName: r.igst,
+      }];
+    }
+    const lines: Record<string, unknown>[] = [];
+    for (const [rate, taxable] of groups) {
+      const half = rate / 2;
+      const cgstAmt = round2((taxable * half) / 100);
+      const igstAmt = round2((taxable * rate) / 100);
+      lines.push({
+        taxable: round2(taxable),
+        cgst: r.isIgst ? 0 : cgstAmt,
+        sgst: r.isIgst ? 0 : cgstAmt,
+        igst: r.isIgst ? igstAmt : 0,
+        salesLedgerName: pickSales(rate, r.sales),
+        cgstLedgerName: pickTax(/cgst/i, half, config?.cgstLedgerName || 'CGST'),
+        sgstLedgerName: pickTax(/sgst|utgst/i, half, config?.sgstLedgerName || 'SGST'),
+        igstLedgerName: pickTax(/igst/i, rate, config?.igstLedgerName || 'IGST'),
+      });
+    }
+    return lines;
+  };
 
   // Warn when the global sales/tax ledgers in settings don't exist in Tally —
   // the usual cause of "nothing created or altered" push failures.
@@ -1249,6 +1299,7 @@ const PushTab: React.FC<{
         cgstLedgerName: r.cgst,
         sgstLedgerName: r.sgst,
         igstLedgerName: r.igst,
+        lines: buildLines(r),
         totalAmount: r.inv.totalAmount,
       },
     });
