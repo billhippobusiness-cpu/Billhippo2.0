@@ -487,6 +487,10 @@ const LedgersTab: React.FC<{
   // Tally ledger currently being imported into BillHippo as a customer.
   const [importLedger, setImportLedger] = useState<TallyLedger | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Segmented view + bulk-create selection (BillHippo customers → Tally ledgers).
+  const [view, setView] = useState<'tally' | 'toCreate' | 'toImport'>('tally');
+  const [selectedCust, setSelectedCust] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const isParty = (l: TallyLedger) => /debtor|creditor/i.test(l.parent || '');
 
@@ -499,6 +503,65 @@ const LedgersTab: React.FC<{
     customers.find((c) => c.name.trim().toLowerCase() === l.name.trim().toLowerCase());
 
   const inBillHippo = (l: TallyLedger) => !!matchCustomer(l);
+
+  // Does a BillHippo customer already exist as a Tally ledger (by GSTIN or name)?
+  const customerInTally = (c: Customer) =>
+    ledgers.some((l) =>
+      (c.gstin && l.gstin && c.gstin.toLowerCase() === l.gstin.toLowerCase()) ||
+      l.name.trim().toLowerCase() === c.name.trim().toLowerCase(),
+    );
+
+  const latestCreateJobByCustomer = useMemo(() => {
+    const m = new Map<string, SyncJob>();
+    for (const j of jobs) {
+      if (j.type !== 'CREATE_LEDGER' || !j.customerId) continue;
+      const p = m.get(j.customerId);
+      if (!p || millis(j.createdAt) >= millis(p.createdAt)) m.set(j.customerId, j);
+    }
+    return m;
+  }, [jobs]);
+
+  // The three segmented lists (search-filtered).
+  const q = search.trim().toLowerCase();
+  const matchQ = (name: string, gstin?: string) =>
+    !q || name.toLowerCase().includes(q) || (gstin || '').toLowerCase().includes(q);
+  const tallyList = useMemo(() => ledgers.filter((l) => matchQ(l.name, l.gstin)), [ledgers, q]);
+  const toCreateList = useMemo(
+    () => customers.filter((c) => !customerInTally(c) && matchQ(c.name, c.gstin)),
+    [customers, ledgers, q],
+  );
+  const toImportList = useMemo(
+    () => ledgers.filter((l) => isParty(l) && !inBillHippo(l) && matchQ(l.name, l.gstin)),
+    [ledgers, customers, q],
+  );
+
+  const toggleCust = (id: string) => setSelectedCust((prev) => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+  const allCreateSelected = toCreateList.length > 0 && toCreateList.every((c) => selectedCust.has(c.id));
+  const toggleAllCreate = () =>
+    setSelectedCust(() => (allCreateSelected ? new Set() : new Set(toCreateList.map((c) => c.id))));
+
+  const createLedgerForCustomer = (id: string) =>
+    enqueueSyncJob(userId, {
+      type: 'CREATE_LEDGER',
+      customerId: id,
+      createdBy: userId,
+      payloadSnapshot: { customerName: customers.find((c) => c.id === id)?.name || '' },
+    });
+
+  const handleBulkCreate = async () => {
+    setBulkBusy(true);
+    try {
+      const ids = [...selectedCust].filter((id) => toCreateList.some((c) => c.id === id));
+      for (const id of ids) await createLedgerForCustomer(id);
+      setSelectedCust(new Set());
+      setNotice(`Queued ${ids.length} ledger(s) to create in Tally.`);
+      setTimeout(() => setNotice(null), 4000);
+    } finally { setBulkBusy(false); }
+  };
 
   const handleImport = async (values: ImportCustomerValues) => {
     const id = await addCustomer(userId, {
@@ -571,22 +634,14 @@ const LedgersTab: React.FC<{
     setForm(null);
   };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return ledgers;
-    return ledgers.filter(
-      (l) => l.name.toLowerCase().includes(q) || (l.gstin || '').toLowerCase().includes(q),
-    );
-  }, [ledgers, search]);
-
   return (
     <div>
       <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm mb-6 flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="flex-1">
-          <h2 className="text-lg font-bold text-slate-800 font-poppins">Tally ledgers</h2>
+          <h2 className="text-lg font-bold text-slate-800 font-poppins">Ledgers (two-way)</h2>
           <p className="text-sm text-slate-500 font-poppins mt-1">
-            Pull ledgers (with GSTINs) from Tally to match customers, and create or edit ledgers
-            in Tally right from here.
+            Match Tally ↔ BillHippo: import Tally parties into BillHippo, or create BillHippo
+            customers as Tally ledgers — individually or in bulk.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -637,68 +692,132 @@ const LedgersTab: React.FC<{
         )
       )}
 
+      {/* Segmented view: in Tally · only in BillHippo · only in Tally */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {([
+          ['tally', `In Tally (${ledgers.length})`],
+          ['toCreate', `Only in BillHippo → create in Tally (${toCreateList.length})`],
+          ['toImport', `Only in Tally → import (${toImportList.length})`],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => { setView(key); setSelectedCust(new Set()); }}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold font-poppins transition-colors ${
+              view === key ? 'bg-profee-blue text-white' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center gap-2">
           <Search size={16} className="text-slate-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search ledgers by name or GSTIN…"
+            placeholder="Search by name or GSTIN…"
             className="flex-1 text-sm font-poppins focus:outline-none"
           />
-          <span className="text-xs text-slate-400 font-poppins">{ledgers.length} synced</span>
+          {view === 'toCreate' && (
+            <button
+              onClick={handleBulkCreate}
+              disabled={selectedCust.size === 0 || bulkBusy}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold font-poppins transition-all ${
+                selectedCust.size > 0 && !bulkBusy ? 'bg-slate-800 text-white hover:opacity-90 active:scale-95' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              {bulkBusy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+              Create in Tally{selectedCust.size ? ` (${selectedCust.size})` : ''}
+            </button>
+          )}
         </div>
 
-        {ledgers.length === 0 ? (
-          <EmptyState
-            icon={BookOpen}
-            title="No ledgers synced yet"
-            subtitle="Click 'Verify ledgers' to pull them from Tally, or 'New ledger' to create one."
-          />
-        ) : (
-          <div className="divide-y divide-slate-50 max-h-[480px] overflow-y-auto">
-            {filtered.map((l) => {
-              const party = isParty(l);
-              const imported = inBillHippo(l);
-              return (
-                <div key={l.id} className="px-5 py-3 flex items-center gap-3 group">
+        {/* IN TALLY */}
+        {view === 'tally' && (
+          tallyList.length === 0 ? (
+            <EmptyState icon={BookOpen} title="No ledgers" subtitle="Click 'Verify ledgers' to pull them from Tally, or 'New ledger' to create one." />
+          ) : (
+            <div className="divide-y divide-slate-50 max-h-[480px] overflow-y-auto">
+              {tallyList.map((l) => {
+                const party = isParty(l);
+                const imported = inBillHippo(l);
+                return (
+                  <div key={l.id} className="px-5 py-3 flex items-center gap-3 group">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-700 font-poppins text-sm truncate">{l.name}</p>
+                      <p className="text-xs text-slate-400 font-poppins">{l.parent && l.parent !== '[object Object]' ? l.parent : '—'}</p>
+                    </div>
+                    {l.gstin && <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded-md hidden sm:inline">{l.gstin}</span>}
+                    {party && (imported ? (
+                      <span title={`Customer in BillHippo: ${matchCustomer(l)?.name || ''}`} className="inline-flex items-center gap-1 text-[11px] font-bold font-poppins text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex-shrink-0"><CheckCircle2 size={12} /> In BillHippo</span>
+                    ) : (
+                      <button onClick={() => setImportLedger(l)} title="Add this Tally party as a BillHippo customer" className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-emerald-600 hover:underline flex-shrink-0"><Plus size={13} /> Import</button>
+                    ))}
+                    <button onClick={() => setForm({ mode: 'edit', ledger: l })} className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-profee-blue hover:underline flex-shrink-0"><Pencil size={13} /> Edit</button>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {/* ONLY IN BILLHIPPO → CREATE IN TALLY (bulk) */}
+        {view === 'toCreate' && (
+          toCreateList.length === 0 ? (
+            <EmptyState icon={CheckCircle2} title="All customers are in Tally" subtitle="Every BillHippo customer already has a matching Tally ledger." />
+          ) : (
+            <>
+              <div className="px-5 py-2 border-b border-slate-50 flex items-center gap-3 bg-slate-50/50">
+                <input type="checkbox" checked={allCreateSelected} onChange={toggleAllCreate} className="accent-profee-blue" title="Select all" />
+                <span className="text-[11px] uppercase tracking-wide text-slate-400 font-poppins font-bold">Tick customers to create them as Tally ledgers</span>
+              </div>
+              <div className="divide-y divide-slate-50 max-h-[460px] overflow-y-auto">
+                {toCreateList.map((c) => {
+                  const job = latestCreateJobByCustomer.get(c.id);
+                  const creating = job && job.status !== 'failed' && job.status !== 'success';
+                  return (
+                    <div key={c.id} className="px-5 py-3 flex items-center gap-3">
+                      <input type="checkbox" checked={selectedCust.has(c.id)} onChange={() => toggleCust(c.id)} className="accent-profee-blue" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-slate-700 font-poppins text-sm truncate">{c.name}</p>
+                        <p className="text-xs text-slate-400 font-poppins">{[c.city, c.state].filter(Boolean).join(', ') || 'Will be created under Sundry Debtors'}</p>
+                      </div>
+                      {c.gstin && <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded-md hidden sm:inline">{c.gstin}</span>}
+                      {job?.status === 'success' ? (
+                        <span className="text-[11px] font-bold font-poppins text-emerald-600 inline-flex items-center gap-1"><CheckCircle2 size={12} /> Created</span>
+                      ) : creating ? (
+                        <span className="text-[11px] font-bold font-poppins text-sky-600 inline-flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Creating…</span>
+                      ) : (
+                        <button onClick={() => createLedgerForCustomer(c.id)} className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-slate-700 hover:underline flex-shrink-0"><Plus size={13} /> {job?.status === 'failed' ? 'Retry' : 'Create in Tally'}</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )
+        )}
+
+        {/* ONLY IN TALLY → IMPORT TO BILLHIPPO */}
+        {view === 'toImport' && (
+          toImportList.length === 0 ? (
+            <EmptyState icon={CheckCircle2} title="No unmatched Tally parties" subtitle="Every Tally party ledger already exists in BillHippo." />
+          ) : (
+            <div className="divide-y divide-slate-50 max-h-[480px] overflow-y-auto">
+              {toImportList.map((l) => (
+                <div key={l.id} className="px-5 py-3 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-slate-700 font-poppins text-sm truncate">{l.name}</p>
                     <p className="text-xs text-slate-400 font-poppins">{l.parent && l.parent !== '[object Object]' ? l.parent : '—'}</p>
                   </div>
-                  {l.gstin && (
-                    <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded-md hidden sm:inline">
-                      {l.gstin}
-                    </span>
-                  )}
-                  {party && (
-                    imported ? (
-                      <span
-                        title={`Customer in BillHippo: ${matchCustomer(l)?.name || ''}`}
-                        className="inline-flex items-center gap-1 text-[11px] font-bold font-poppins text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex-shrink-0"
-                      >
-                        <CheckCircle2 size={12} /> In BillHippo
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => setImportLedger(l)}
-                        title="Add this Tally party as a BillHippo customer"
-                        className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-emerald-600 hover:underline flex-shrink-0"
-                      >
-                        <Plus size={13} /> Import
-                      </button>
-                    )
-                  )}
-                  <button
-                    onClick={() => setForm({ mode: 'edit', ledger: l })}
-                    className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-profee-blue hover:underline flex-shrink-0"
-                  >
-                    <Pencil size={13} /> Edit
-                  </button>
+                  {l.gstin && <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2 py-1 rounded-md hidden sm:inline">{l.gstin}</span>}
+                  <button onClick={() => setImportLedger(l)} className="inline-flex items-center gap-1 text-xs font-bold font-poppins text-emerald-600 hover:underline flex-shrink-0"><Plus size={13} /> Import to BillHippo</button>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )
         )}
       </div>
 
