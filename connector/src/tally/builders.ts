@@ -205,6 +205,85 @@ ${entries.join("\n")}
 </ENVELOPE>`;
 }
 
+/** A single rate-group line of a sales voucher. */
+export interface VoucherLine {
+  taxable: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  salesLedgerName: string;
+  cgstLedgerName: string;
+  sgstLedgerName: string;
+  igstLedgerName: string;
+}
+
+export interface MultiVoucherInput {
+  companyName: string;
+  date: string;
+  voucherNumber: string;
+  invoiceId: string;
+  partyLedgerName: string;
+  gstType: "CGST_SGST" | "IGST";
+  lines: VoucherLine[];
+  narration?: string;
+}
+
+/**
+ * Sales voucher with one set of sales + tax lines PER GST RATE, so a mixed-rate
+ * invoice posts each rate to its own sales/CGST/SGST(IGST) ledger. The party is
+ * debited with the sum of all lines so the voucher always balances.
+ */
+export function buildSalesVoucherMulti(v: MultiVoucherInput): string {
+  const date = formatTallyDate(v.date);
+  let total = 0;
+  for (const ln of v.lines) {
+    total += ln.taxable + (v.gstType === "IGST" ? ln.igst : ln.cgst + ln.sgst);
+  }
+  const entries: string[] = [
+    ledgerEntryXml({ name: v.partyLedgerName, isDebit: true, amount: total }),
+  ];
+  for (const ln of v.lines) {
+    if (ln.taxable) entries.push(ledgerEntryXml({ name: ln.salesLedgerName, isDebit: false, amount: ln.taxable }));
+    if (v.gstType === "IGST") {
+      if (ln.igst) entries.push(ledgerEntryXml({ name: ln.igstLedgerName, isDebit: false, amount: ln.igst }));
+    } else {
+      if (ln.cgst) entries.push(ledgerEntryXml({ name: ln.cgstLedgerName, isDebit: false, amount: ln.cgst }));
+      if (ln.sgst) entries.push(ledgerEntryXml({ name: ln.sgstLedgerName, isDebit: false, amount: ln.sgst }));
+    }
+  }
+
+  return `<ENVELOPE>
+ <HEADER>
+  <TALLYREQUEST>Import Data</TALLYREQUEST>
+ </HEADER>
+ <BODY>
+  <IMPORTDATA>
+   <REQUESTDESC>
+    <REPORTNAME>Vouchers</REPORTNAME>
+    ${staticVars(v.companyName)}
+   </REQUESTDESC>
+   <REQUESTDATA>
+    <TALLYMESSAGE xmlns:UDF="TallyUDF">
+     <VOUCHER VCHTYPE="Sales" ACTION="Create" OBJVIEW="Accounting Voucher View">
+      <REMOTEID>BillHippo-${escapeXml(v.invoiceId)}</REMOTEID>
+      <DATE>${date}</DATE>
+      <EFFECTIVEDATE>${date}</EFFECTIVEDATE>
+      <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+      <VOUCHERNUMBER>${escapeXml(v.voucherNumber)}</VOUCHERNUMBER>
+      <REFERENCE>${escapeXml(v.voucherNumber)}</REFERENCE>
+      <PARTYLEDGERNAME>${escapeXml(v.partyLedgerName)}</PARTYLEDGERNAME>
+      <PARTYNAME>${escapeXml(v.partyLedgerName)}</PARTYNAME>
+      <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+      <NARRATION>${escapeXml(v.narration || `BillHippo ${v.voucherNumber}`)}</NARRATION>
+${entries.join("\n")}
+     </VOUCHER>
+    </TALLYMESSAGE>
+   </REQUESTDATA>
+  </IMPORTDATA>
+ </BODY>
+</ENVELOPE>`;
+}
+
 /** Create or alter a ledger master with optional GSTIN + address. */
 export function buildLedgerMaster(l: LedgerMasterInput, action: "Create" | "Alter" = "Create"): string {
   const gstin = (l.gstin || "").trim().toUpperCase();

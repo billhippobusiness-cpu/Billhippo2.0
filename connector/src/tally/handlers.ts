@@ -22,6 +22,7 @@ import {
   buildLedgerListRequest,
   buildLedgerMastersRequest,
   buildSalesVoucher,
+  buildSalesVoucherMulti,
   buildLedgerMaster,
 } from "./builders";
 import { parseCompanies, parseLedgers, parseImportResult } from "./parse";
@@ -229,25 +230,49 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
   const cgstLedgerName = (p.cgstLedgerName as string | undefined)?.trim() || cfg.cgstLedgerName!;
   const sgstLedgerName = (p.sgstLedgerName as string | undefined)?.trim() || cfg.sgstLedgerName!;
   const igstLedgerName = (p.igstLedgerName as string | undefined)?.trim() || cfg.igstLedgerName!;
+  const gstType = inv.gstType === "IGST" ? "IGST" : "CGST_SGST";
 
-  const xml = buildSalesVoucher({
-    companyName: cfg.companyName,
-    date: inv.date,
-    voucherNumber: inv.invoiceNumber,
-    invoiceId: job.invoiceId,
-    partyLedgerName,
-    salesLedgerName,
-    gstType: inv.gstType === "IGST" ? "IGST" : "CGST_SGST",
-    taxable: Number(inv.totalBeforeTax) || 0,
-    cgst: Number(inv.cgst) || 0,
-    sgst: Number(inv.sgst) || 0,
-    igst: Number(inv.igst) || 0,
-    total: Number(inv.totalAmount) || 0,
-    cgstLedgerName,
-    sgstLedgerName,
-    igstLedgerName,
-    narration: `BillHippo ${inv.invoiceNumber}`,
-  });
+  // Multi-line (mixed-rate) voucher when the web sends per-rate lines; else the
+  // single-rate voucher from the invoice totals.
+  const lines = Array.isArray(p.lines) ? (p.lines as any[]) : [];
+  const xml = lines.length > 1
+    ? buildSalesVoucherMulti({
+        companyName: cfg.companyName,
+        date: inv.date,
+        voucherNumber: inv.invoiceNumber,
+        invoiceId: job.invoiceId,
+        partyLedgerName,
+        gstType,
+        narration: `BillHippo ${inv.invoiceNumber}`,
+        lines: lines.map((l) => ({
+          taxable: Number(l.taxable) || 0,
+          cgst: Number(l.cgst) || 0,
+          sgst: Number(l.sgst) || 0,
+          igst: Number(l.igst) || 0,
+          salesLedgerName: String(l.salesLedgerName || salesLedgerName),
+          cgstLedgerName: String(l.cgstLedgerName || cgstLedgerName),
+          sgstLedgerName: String(l.sgstLedgerName || sgstLedgerName),
+          igstLedgerName: String(l.igstLedgerName || igstLedgerName),
+        })),
+      })
+    : buildSalesVoucher({
+        companyName: cfg.companyName,
+        date: inv.date,
+        voucherNumber: inv.invoiceNumber,
+        invoiceId: job.invoiceId,
+        partyLedgerName,
+        salesLedgerName,
+        gstType,
+        taxable: Number(inv.totalBeforeTax) || 0,
+        cgst: Number(inv.cgst) || 0,
+        sgst: Number(inv.sgst) || 0,
+        igst: Number(inv.igst) || 0,
+        total: Number(inv.totalAmount) || 0,
+        cgstLedgerName,
+        sgstLedgerName,
+        igstLedgerName,
+        narration: `BillHippo ${inv.invoiceNumber}`,
+      });
 
   const { host, port } = tallyTarget();
   const responseXml = await postXml(host, port, xml);
