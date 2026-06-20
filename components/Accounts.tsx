@@ -618,6 +618,16 @@ const LedgersTab: React.FC<{
     return latest;
   }, [jobs]);
 
+  // Latest "Verify ledgers" (FETCH_LEDGERS) job, for live verify feedback.
+  const lastFetchJob = useMemo(() => {
+    let latest: SyncJob | undefined;
+    for (const j of jobs) {
+      if (j.type !== 'FETCH_LEDGERS') continue;
+      if (!latest || millis(j.createdAt) >= millis(latest.createdAt)) latest = j;
+    }
+    return latest;
+  }, [jobs]);
+
   const submitLedger = async (values: LedgerFormValues, mode: 'create' | 'edit') => {
     await enqueueSyncJob(userId, {
       type: mode === 'edit' ? 'ALTER_LEDGER' : 'CREATE_LEDGER',
@@ -675,6 +685,23 @@ const LedgersTab: React.FC<{
         </div>
       )}
 
+      {lastFetchJob && (
+        lastFetchJob.status === 'processing' || lastFetchJob.status === 'pending' ? (
+          <div className="mb-6 flex items-center gap-2 px-4 py-3 rounded-2xl bg-sky-50 border border-sky-100 text-sm text-sky-700 font-poppins">
+            <Loader2 size={18} className="animate-spin" /> Verifying ledgers with Tally…
+          </div>
+        ) : lastFetchJob.status === 'failed' ? (
+          <Banner tone="amber">
+            Verify ledgers failed: {lastFetchJob.error || 'unknown error'}.
+            {/9000|ECONNREFUSED/i.test(lastFetchJob.error || '') && <> Open Tally with your company loaded and the gateway on (port 9000), then Verify again.</>}
+          </Banner>
+        ) : lastFetchJob.status === 'success' ? (
+          <div className="mb-6 flex items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-100 text-sm text-emerald-700 font-poppins">
+            <CheckCircle2 size={18} /> Synced {ledgers.length} ledger(s){config?.companyName ? ` from “${config.companyName}”` : ''}.
+          </div>
+        ) : null
+      )}
+
       {lastLedgerJob && (
         lastLedgerJob.status === 'failed' ? (
           <Banner tone="amber">
@@ -695,7 +722,7 @@ const LedgersTab: React.FC<{
       {/* Segmented view: in Tally · only in BillHippo · only in Tally */}
       <div className="flex gap-2 mb-4 flex-wrap">
         {([
-          ['tally', `In Tally (${ledgers.length})`],
+          ['tally', `All ledgers (${ledgers.length})`],
           ['toCreate', `Only in BillHippo → create in Tally (${toCreateList.length})`],
           ['toImport', `Only in Tally → import (${toImportList.length})`],
         ] as const).map(([key, label]) => (
