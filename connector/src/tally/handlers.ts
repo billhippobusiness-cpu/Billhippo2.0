@@ -82,10 +82,13 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
   const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
   let companyName = "";
-  if (configured && openCompanies.some((c) => eq(c, configured))) {
-    companyName = configured; // user's choice is open — use it
-  } else if (openCompanies.length === 1) {
-    companyName = openCompanies[0]; // exactly one open → auto-select
+  if (openCompanies.length === 1) {
+    // Exactly one company open → always use it, even if config still names a
+    // different one. This makes switching the open company in Tally + Verify
+    // re-sync the new company instead of the stale configured one.
+    companyName = openCompanies[0];
+  } else if (configured && openCompanies.some((c) => eq(c, configured))) {
+    companyName = configured; // multiple open & the configured one is among them
   } else if (configured && openCompanies.length === 0) {
     companyName = configured; // company list unavailable — trust the config
   }
