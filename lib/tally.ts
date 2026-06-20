@@ -133,6 +133,9 @@ export function subscribeSyncJobs(
 export interface TallyInvoiceMapping {
   partyLedgerName?: string;   // Tally party ledger this invoice posts to
   salesLedgerName?: string;   // Tally sales ledger (Particulars) for this invoice
+  cgstLedgerName?: string;    // rate-matched CGST ledger
+  sgstLedgerName?: string;    // rate-matched SGST ledger
+  igstLedgerName?: string;    // rate-matched IGST ledger
   savedAt?: unknown;
 }
 

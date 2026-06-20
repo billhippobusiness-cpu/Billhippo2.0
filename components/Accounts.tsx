@@ -1074,8 +1074,8 @@ const PushTab: React.FC<{
   const [savedOnly, setSavedOnly] = useState(false);
   const [failedOnly, setFailedOnly] = useState(false);
   const [busy, setBusy] = useState<'idle' | 'saving' | 'pushing'>('idle');
-  // In-progress, unsaved per-row ledger choices: invoiceId → { party?, sales? }.
-  const [edits, setEdits] = useState<Record<string, { party?: string; sales?: string }>>({});
+  // In-progress, unsaved per-row ledger choices.
+  const [edits, setEdits] = useState<Record<string, { party?: string; sales?: string; cgst?: string; sgst?: string; igst?: string }>>({});
 
   // Ledger options for the editable dropdowns, sourced from real Tally ledgers
   // so the user can never mistype a name (this is what prevents the CGST/SGST
@@ -1088,6 +1088,29 @@ const PushTab: React.FC<{
     const s = ledgers.filter((l) => /sales/i.test(l.parent || ''));
     return (s.length ? s : ledgers).map((l) => l.name);
   }, [ledgers]);
+  const taxOptions = useMemo(
+    () => ledgers.filter((l) => /(dut|tax|gst)/i.test(l.parent || '')).map((l) => l.name),
+    [ledgers],
+  );
+
+  // Pick the Tally tax ledger that matches a GST rate (e.g. 9 → "CGST 9",
+  // 2.5 → "CGST 2.5%"), so different-rate invoices post to the right ledger.
+  const numStr = (n: number) => (Number.isInteger(n) ? String(n) : String(n));
+  const pickTax = (re: RegExp, num: number, fallback: string) => {
+    if (num > 0) {
+      const hit = ledgers.find(
+        (l) => /(dut|tax|gst)/i.test(l.parent || '') && re.test(l.name) && l.name.includes(numStr(num)),
+      );
+      if (hit) return hit.name;
+    }
+    return fallback;
+  };
+  // Uniform GST rate across the invoice's items; -1 means mixed rates.
+  const invoiceRate = (inv: Invoice): number => {
+    const rates = Array.from(new Set((inv.items || []).map((i) => Number(i.gstRate) || 0).filter((r) => r > 0)));
+    if (!rates.length) return 0;
+    return rates.length === 1 ? rates[0] : -1;
+  };
 
   // Warn when the global sales/tax ledgers in settings don't exist in Tally —
   // the usual cause of "nothing created or altered" push failures.
@@ -1143,9 +1166,17 @@ const PushTab: React.FC<{
     const edit = edits[inv.id];
     const party = edit?.party ?? saved?.partyLedgerName ?? customer?.tallyLedgerName ?? resolved.tallyLedgerName ?? '';
     const sales = edit?.sales ?? saved?.salesLedgerName ?? config?.salesLedgerName ?? '';
+    // GST rate → rate-matched tax ledgers (editable, saved per invoice).
+    const rate = invoiceRate(inv);
+    const isIgst = Number(inv.igst) > 0;
+    const half = rate > 0 ? rate / 2 : 0;
+    const cgst = edit?.cgst ?? saved?.cgstLedgerName ?? pickTax(/cgst/i, half, config?.cgstLedgerName || 'CGST');
+    const sgst = edit?.sgst ?? saved?.sgstLedgerName ?? pickTax(/sgst|utgst/i, half, config?.sgstLedgerName || 'SGST');
+    const igst = edit?.igst ?? saved?.igstLedgerName ?? pickTax(/igst/i, rate > 0 ? rate : 0, config?.igstLedgerName || 'IGST');
     const mappable = !!party && !!sales;
     return {
       inv, customer, resolved, job, createJob, saved, party, sales,
+      rate, isIgst, cgst, sgst, igst,
       gstin: customer?.gstin || '',
       placeOfSupply: customer?.state || '',
       synced: job?.status === 'success',
@@ -1181,11 +1212,11 @@ const PushTab: React.FC<{
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-  const setEdit = (id: string, key: 'party' | 'sales', value: string) =>
+  const setEdit = (id: string, key: 'party' | 'sales' | 'cgst' | 'sgst' | 'igst', value: string) =>
     setEdits((prev) => ({ ...prev, [id]: { ...prev[id], [key]: value } }));
   const clearEdit = (id: string) => setEdits((prev) => { const n = { ...prev }; delete n[id]; return n; });
 
-  // Persist a row's mapping (customer ↔ Tally ledger + per-invoice sales ledger).
+  // Persist a row's mapping (party + sales + rate-matched tax ledgers).
   const saveRow = async (r: Row) => {
     if (!r.party) return;
     if (r.customer && r.customer.tallyLedgerName !== r.party) {
@@ -1193,7 +1224,13 @@ const PushTab: React.FC<{
       await updateCustomer(userId, r.customer.id, { tallyLedgerName: r.party, tallyMatchType: matchType });
       onCustomerMapped({ ...r.customer, tallyLedgerName: r.party, tallyMatchType: matchType });
     }
-    await saveTallyInvoiceMap(userId, r.inv.id, { partyLedgerName: r.party, salesLedgerName: r.sales });
+    await saveTallyInvoiceMap(userId, r.inv.id, {
+      partyLedgerName: r.party,
+      salesLedgerName: r.sales,
+      cgstLedgerName: r.cgst,
+      sgstLedgerName: r.sgst,
+      igstLedgerName: r.igst,
+    });
     clearEdit(r.inv.id);
   };
 
@@ -1209,6 +1246,9 @@ const PushTab: React.FC<{
         date: r.inv.date,
         partyLedgerName: r.party,
         salesLedgerName: r.sales,
+        cgstLedgerName: r.cgst,
+        sgstLedgerName: r.sgst,
+        igstLedgerName: r.igst,
         totalAmount: r.inv.totalAmount,
       },
     });
@@ -1316,7 +1356,7 @@ const PushTab: React.FC<{
                   <th className="px-3 py-3 whitespace-nowrap">GSTIN</th>
                   <th className="px-3 py-3 whitespace-nowrap">Place of Supply</th>
                   <th className="px-3 py-3 text-right whitespace-nowrap">Amount</th>
-                  <th className="px-3 py-3 min-w-[180px]">Particulars (Sales ledger)</th>
+                  <th className="px-3 py-3 min-w-[200px]">Particulars (Sales + GST ledgers)</th>
                   <th className="px-3 py-3 whitespace-nowrap">Status</th>
                   <th className="px-3 py-3 text-right whitespace-nowrap">Action</th>
                 </tr>
@@ -1346,8 +1386,21 @@ const PushTab: React.FC<{
                       <td className="px-3 py-3 align-top text-xs font-mono text-slate-500 whitespace-nowrap">{r.gstin || '—'}</td>
                       <td className="px-3 py-3 align-top text-slate-500 whitespace-nowrap">{r.placeOfSupply || '—'}</td>
                       <td className="px-3 py-3 align-top text-right font-bold text-slate-700 whitespace-nowrap">₹{inv.totalAmount.toLocaleString('en-IN')}</td>
-                      <td className="px-3 py-3 align-top">
+                      <td className="px-3 py-3 align-top space-y-1 min-w-[200px]">
                         <LedgerSelect value={sales} onChange={(v) => setEdit(inv.id, 'sales', v)} options={salesOptions} placeholder="Select sales ledger" emptyText="Type Tally sales ledger" compact />
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[10px] font-bold font-poppins px-1.5 py-0.5 rounded ${r.rate === -1 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                            {r.rate === -1 ? 'Mixed GST' : r.rate > 0 ? `GST ${r.rate}%` : 'No GST'}
+                          </span>
+                        </div>
+                        {r.rate !== 0 && (r.isIgst ? (
+                          <LedgerSelect value={r.igst} onChange={(v) => setEdit(inv.id, 'igst', v)} options={taxOptions} placeholder="IGST ledger" emptyText="IGST" compact />
+                        ) : (
+                          <div className="grid grid-cols-2 gap-1">
+                            <LedgerSelect value={r.cgst} onChange={(v) => setEdit(inv.id, 'cgst', v)} options={taxOptions} placeholder="CGST" emptyText="CGST" compact />
+                            <LedgerSelect value={r.sgst} onChange={(v) => setEdit(inv.id, 'sgst', v)} options={taxOptions} placeholder="SGST" emptyText="SGST" compact />
+                          </div>
+                        ))}
                       </td>
                       <td className="px-3 py-3 align-top">
                         <JobStatus job={job} />

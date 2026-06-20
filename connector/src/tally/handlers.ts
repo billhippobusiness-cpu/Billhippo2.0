@@ -224,6 +224,11 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
   // Sales ledger (Particulars): prefer the per-row choice, else the default.
   const salesLedgerName =
     (job.payloadSnapshot?.salesLedgerName as string | undefined)?.trim() || cfg.salesLedgerName;
+  // Tax ledgers: prefer the per-row, rate-matched choices, else the defaults.
+  const p = job.payloadSnapshot || {};
+  const cgstLedgerName = (p.cgstLedgerName as string | undefined)?.trim() || cfg.cgstLedgerName!;
+  const sgstLedgerName = (p.sgstLedgerName as string | undefined)?.trim() || cfg.sgstLedgerName!;
+  const igstLedgerName = (p.igstLedgerName as string | undefined)?.trim() || cfg.igstLedgerName!;
 
   const xml = buildSalesVoucher({
     companyName: cfg.companyName,
@@ -238,9 +243,9 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
     sgst: Number(inv.sgst) || 0,
     igst: Number(inv.igst) || 0,
     total: Number(inv.totalAmount) || 0,
-    cgstLedgerName: cfg.cgstLedgerName!,
-    sgstLedgerName: cfg.sgstLedgerName!,
-    igstLedgerName: cfg.igstLedgerName!,
+    cgstLedgerName,
+    sgstLedgerName,
+    igstLedgerName,
     narration: `BillHippo ${inv.invoiceNumber}`,
   });
 
