@@ -19,13 +19,14 @@ import { getSettings } from "../config";
 import { postXml } from "./client";
 import {
   buildCompanyListRequest,
+  buildCompanyInfoRequest,
   buildLedgerListRequest,
   buildLedgerMastersRequest,
   buildSalesVoucher,
   buildSalesVoucherMulti,
   buildLedgerMaster,
 } from "./builders";
-import { parseCompanies, parseLedgers, parseImportResult } from "./parse";
+import { parseCompanies, parseCompanyBooksFrom, parseLedgers, parseImportResult } from "./parse";
 import { ledgerDocId } from "./xml";
 import { registerHandler } from "../jobWatcher";
 import type { SyncJob, TallyLedger } from "../shared/types";
@@ -339,7 +340,18 @@ async function handleUpsertLedger(uid: string, job: SyncJob): Promise<{ tallyVou
   }
 
   const { host, port } = tallyTarget();
-  const requestXml = buildLedgerMaster(master, action);
+  // GST/mailing rows are dated; APPLICABLEFROM must be on/after the company's
+  // books-begin or Tally silently drops them. Fetch the books-begin date.
+  let applicableFrom = "20170701";
+  try {
+    const booksFrom = parseCompanyBooksFrom(
+      await postXml(host, port, buildCompanyInfoRequest(cfg.companyName)),
+    );
+    if (booksFrom) applicableFrom = booksFrom > "20170701" ? booksFrom : "20170701";
+  } catch {
+    // Non-fatal — fall back to the GST rollout date.
+  }
+  const requestXml = buildLedgerMaster(master, action, applicableFrom);
   const responseXml = await postXml(host, port, requestXml);
   // Capture the exact request + Tally response for troubleshooting (e.g. when
   // GSTIN/address don't stick on the created ledger).

@@ -125,6 +125,15 @@ function collectLedgers(node: unknown, acc: Record<string, any>[]): void {
   }
 }
 
+/** Parse the company's books-begin date (YYYYMMDD) from a Company Info export. */
+export function parseCompanyBooksFrom(xml: string): string {
+  const obj = parser.parse(xml) as Record<string, any>;
+  const raw = findByKeys(obj, ["STARTINGFROM", "BOOKSFROM", "BOOKDATE"]);
+  if (!raw) return "";
+  const digits = raw.replace(/[^0-9]/g, "");
+  return /^\d{8}$/.test(digits) ? digits : "";
+}
+
 export function parseLedgers(xml: string): TallyLedger[] {
   const obj = parser.parse(xml) as Record<string, any>;
   const ledgers: Record<string, any>[] = [];
