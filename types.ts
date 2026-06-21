@@ -401,6 +401,7 @@ export interface TallyConfig {
   discoveredCompanies?: string[]; // companies open in Tally (connector-reported)
   discoveredAt?: unknown;       // Firestore Timestamp — last company/ledger discovery
   lastLedgerRawXml?: string;    // truncated raw Tally ledger response (diagnostics)
+  lastLedgerWriteXml?: string;  // last create/edit-ledger request + response (diagnostics)
   pairingCode?: string;         // one-time code to link a connector (Phase 2)
   pairingCodeExpiresAt?: number;
 }
