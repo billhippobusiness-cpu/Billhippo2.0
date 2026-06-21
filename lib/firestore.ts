@@ -89,6 +89,13 @@ export async function getCustomers(userId: string): Promise<Customer[]> {
     .map(({ _createdAt, ...c }) => c as Customer);
 }
 
+/** Live customer list — keeps the Tally Ledger Sync comparison up to date. */
+export function subscribeCustomers(userId: string, callback: (customers: Customer[]) => void): () => void {
+  return onSnapshot(userCollection(userId, 'customers'), (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Customer)));
+  });
+}
+
 export async function addCustomer(userId: string, customer: Omit<Customer, 'id'>) {
   const ref = await addDoc(userCollection(userId, 'customers'), {
     ...customer,

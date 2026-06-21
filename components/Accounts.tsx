@@ -10,7 +10,7 @@ import {
   subscribeSyncJobs, enqueueSyncJob, isConnectorOnline,
   subscribeTallyInvoiceMap, saveTallyInvoiceMap, type TallyInvoiceMapping,
 } from '../lib/tally';
-import { getCustomers, getInvoices, updateCustomer, addCustomer } from '../lib/firestore';
+import { getInvoices, updateCustomer, addCustomer, subscribeCustomers } from '../lib/firestore';
 import { functions } from '../lib/firebase';
 import { resolvePartyLedger, ledgerExistsByName, matchStatusLabel, type PartyMatchResult } from '../lib/tallyMatch';
 import { haptic } from '../lib/haptic';
@@ -34,22 +34,23 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
   const [invoiceMap, setInvoiceMap] = useState<Record<string, TallyInvoiceMapping>>({});
   const [loading, setLoading] = useState(true);
 
-  // Live subscriptions for connector-driven data.
+  // Live subscriptions for connector-driven data + customers, so the Ledger
+  // Sync comparison (Tally ledgers ↔ BillHippo customers) is always realtime.
   useEffect(() => {
     const unsubConfig = subscribeTallyConfig(userId, setConfig);
     const unsubLedgers = subscribeTallyLedgers(userId, setLedgers);
     const unsubJobs = subscribeSyncJobs(userId, setJobs);
     const unsubMap = subscribeTallyInvoiceMap(userId, setInvoiceMap);
-    return () => { unsubConfig(); unsubLedgers(); unsubJobs(); unsubMap(); };
+    const unsubCustomers = subscribeCustomers(userId, setCustomers);
+    return () => { unsubConfig(); unsubLedgers(); unsubJobs(); unsubMap(); unsubCustomers(); };
   }, [userId]);
 
-  // One-shot loads for invoices + customers.
+  // One-shot load for invoices.
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [cust, inv] = await Promise.all([getCustomers(userId), getInvoices(userId)]);
+      const inv = await getInvoices(userId);
       if (!alive) return;
-      setCustomers(cust);
       setInvoices(inv);
       setLoading(false);
     })();
