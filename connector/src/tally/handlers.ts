@@ -170,14 +170,20 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
 }
 
 /** Pull the first existing <LEDGER> master block that has a state/GSTIN/address,
- *  so we can replicate Tally's exact import-able structure. */
+ *  so we can replicate Tally's exact import-able structure. Prefers a ledger
+ *  with a real GSTIN, then one with an address, then one with a state. */
 function extractSampleLedger(xml: string): string {
   const re = /<LEDGER\b[\s\S]*?<\/LEDGER>/g;
   let m: RegExpExecArray | null;
+  let withAddr = "";
+  let withState = "";
   while ((m = re.exec(xml))) {
-    if (/LEDSTATENAME|GSTIN|ADDRESS|MAILINGDETAILS/i.test(m[0])) return m[0];
+    const b = m[0];
+    if (/<(PARTYGSTIN|GSTIN)>\s*\d{2}[0-9A-Z]{8}/i.test(b)) return b; // real GSTIN → best
+    if (!withAddr && /<ADDRESS>\s*\S/i.test(b)) withAddr = b;
+    if (!withState && /<STATENAME>\s*[A-Za-z]/i.test(b)) withState = b;
   }
-  return "";
+  return withAddr || withState || "";
 }
 
 /** Upsert the current ledgers and remove ones no longer present in Tally. */
