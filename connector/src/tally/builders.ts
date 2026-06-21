@@ -288,18 +288,30 @@ ${entries.join("\n")}
 export function buildLedgerMaster(l: LedgerMasterInput, action: "Create" | "Alter" = "Create"): string {
   const gstin = (l.gstin || "").trim().toUpperCase();
   const regType = gstin ? "Regular" : "Unregistered/Consumer";
-  // Address can be multi-line ("a, b" or "a\nb") → one <ADDRESS> per line, the
-  // shape TallyPrime itself uses.
+  const country = l.country || "India";
+  // Address can be multi-line ("a, b" or "a\nb") → one <ADDRESS> per line.
   const addrLines = (l.address || "").split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
   const addressList = addrLines.length
-    ? `      <ADDRESS.LIST TYPE="String">${addrLines.map((a) => `\n       <ADDRESS>${escapeXml(a)}</ADDRESS>`).join("")}\n      </ADDRESS.LIST>`
+    ? `       <ADDRESS.LIST TYPE="String">${addrLines.map((a) => `\n        <ADDRESS>${escapeXml(a)}</ADDRESS>`).join("")}\n       </ADDRESS.LIST>`
     : "";
-  // TallyPrime stores party GSTIN in LEDGERGSTREGDETAILS.LIST; include it (plus
-  // PARTYGSTIN) so the GSTIN actually sticks on create/alter.
+  // On IMPORT, TallyPrime reads the mailing address/state/pincode from
+  // LEDGERMAILINGDETAILS.LIST (NOT from direct LEDSTATENAME/ADDRESS tags, which
+  // it silently ignores).
+  const mailingList = (addrLines.length || l.state || l.pincode)
+    ? `      <LEDGERMAILINGDETAILS.LIST>
+       <APPLICABLEFROM>20170701</APPLICABLEFROM>
+${addressList}
+       <STATE>${escapeXml(l.state || "")}</STATE>
+       <COUNTRY>${escapeXml(country)}</COUNTRY>
+       <PINCODE>${escapeXml(l.pincode || "")}</PINCODE>
+      </LEDGERMAILINGDETAILS.LIST>`
+    : "";
+  // GSTIN must come via the dated registration list, with a place of supply.
   const gstRegList = gstin
     ? `      <LEDGERGSTREGDETAILS.LIST>
        <APPLICABLEFROM>20170701</APPLICABLEFROM>
        <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>
+       <PLACEOFSUPPLY>${escapeXml(l.state || "")}</PLACEOFSUPPLY>
        <GSTIN>${escapeXml(gstin)}</GSTIN>
       </LEDGERGSTREGDETAILS.LIST>`
     : "";
@@ -320,12 +332,11 @@ export function buildLedgerMaster(l: LedgerMasterInput, action: "Create" | "Alte
       <NAME>${escapeXml(l.name)}</NAME>
       <PARENT>${escapeXml(l.parent)}</PARENT>
       <ISBILLWISEON>Yes</ISBILLWISEON>
-      <COUNTRYNAME>${escapeXml(l.country || "India")}</COUNTRYNAME>
+      <COUNTRYNAME>${escapeXml(country)}</COUNTRYNAME>
       ${l.state ? `<LEDSTATENAME>${escapeXml(l.state)}</LEDSTATENAME>` : ""}
-      ${l.pincode ? `<PINCODE>${escapeXml(l.pincode)}</PINCODE>` : ""}
       <GSTREGISTRATIONTYPE>${escapeXml(regType)}</GSTREGISTRATIONTYPE>
       ${gstin ? `<PARTYGSTIN>${escapeXml(gstin)}</PARTYGSTIN>` : ""}
-${addressList}
+${mailingList}
 ${gstRegList}
      </LEDGER>
     </TALLYMESSAGE>
