@@ -288,13 +288,21 @@ ${entries.join("\n")}
 export function buildLedgerMaster(l: LedgerMasterInput, action: "Create" | "Alter" = "Create"): string {
   const gstin = (l.gstin || "").trim().toUpperCase();
   const regType = gstin ? "Regular" : "Unregistered/Consumer";
-  const mailing = `      <LEDGERMAILINGDETAILS.LIST>
-       <STATE>${escapeXml(l.state || "")}</STATE>
-       <COUNTRY>${escapeXml(l.country || "India")}</COUNTRY>
-       <PINCODE>${escapeXml(l.pincode || "")}</PINCODE>
-       ${gstin ? `<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>\n       <GSTIN>${escapeXml(gstin)}</GSTIN>` : ""}
-       ${l.address ? `<ADDRESS.LIST TYPE="String"><ADDRESS>${escapeXml(l.address)}</ADDRESS></ADDRESS.LIST>` : ""}
-      </LEDGERMAILINGDETAILS.LIST>`;
+  // Address can be multi-line ("a, b" or "a\nb") → one <ADDRESS> per line, the
+  // shape TallyPrime itself uses.
+  const addrLines = (l.address || "").split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
+  const addressList = addrLines.length
+    ? `      <ADDRESS.LIST TYPE="String">${addrLines.map((a) => `\n       <ADDRESS>${escapeXml(a)}</ADDRESS>`).join("")}\n      </ADDRESS.LIST>`
+    : "";
+  // TallyPrime stores party GSTIN in LEDGERGSTREGDETAILS.LIST; include it (plus
+  // PARTYGSTIN) so the GSTIN actually sticks on create/alter.
+  const gstRegList = gstin
+    ? `      <LEDGERGSTREGDETAILS.LIST>
+       <APPLICABLEFROM>20170701</APPLICABLEFROM>
+       <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>
+       <GSTIN>${escapeXml(gstin)}</GSTIN>
+      </LEDGERGSTREGDETAILS.LIST>`
+    : "";
 
   return `<ENVELOPE>
  <HEADER>
@@ -312,9 +320,13 @@ export function buildLedgerMaster(l: LedgerMasterInput, action: "Create" | "Alte
       <NAME>${escapeXml(l.name)}</NAME>
       <PARENT>${escapeXml(l.parent)}</PARENT>
       <ISBILLWISEON>Yes</ISBILLWISEON>
+      <COUNTRYNAME>${escapeXml(l.country || "India")}</COUNTRYNAME>
+      ${l.state ? `<LEDSTATENAME>${escapeXml(l.state)}</LEDSTATENAME>` : ""}
+      ${l.pincode ? `<PINCODE>${escapeXml(l.pincode)}</PINCODE>` : ""}
       <GSTREGISTRATIONTYPE>${escapeXml(regType)}</GSTREGISTRATIONTYPE>
       ${gstin ? `<PARTYGSTIN>${escapeXml(gstin)}</PARTYGSTIN>` : ""}
-${mailing}
+${addressList}
+${gstRegList}
      </LEDGER>
     </TALLYMESSAGE>
    </REQUESTDATA>
