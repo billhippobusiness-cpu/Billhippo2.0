@@ -1,6 +1,6 @@
 {
   "name": "billhippo-tally-connector",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "description": "BillHippo Desktop Connector — bridges Firestore and a local Tally Prime instance.",
   "author": "BillHippo",
   "license": "UNLICENSED",

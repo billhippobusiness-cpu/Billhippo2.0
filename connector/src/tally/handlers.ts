@@ -339,7 +339,15 @@ async function handleUpsertLedger(uid: string, job: SyncJob): Promise<{ tallyVou
   }
 
   const { host, port } = tallyTarget();
-  const responseXml = await postXml(host, port, buildLedgerMaster(master, action));
+  const requestXml = buildLedgerMaster(master, action);
+  const responseXml = await postXml(host, port, requestXml);
+  // Capture the exact request + Tally response for troubleshooting (e.g. when
+  // GSTIN/address don't stick on the created ledger).
+  await setDoc(
+    doc(getDb(), "users", uid, "tallyConfig", "main"),
+    { lastLedgerWriteXml: `REQUEST:\n${requestXml}\n\nRESPONSE:\n${responseXml}`.slice(0, 45000) },
+    { merge: true },
+  );
   // Tolerate 0/0 — Tally returns that when a ledger already exists (create) or
   // an alter changed nothing, neither of which is a real failure here.
   parseImportResult(responseXml, true);
