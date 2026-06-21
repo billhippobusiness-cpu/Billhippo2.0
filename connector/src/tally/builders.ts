@@ -43,6 +43,38 @@ function staticVars(company: string): string {
   return `<STATICVARIABLES><SVCURRENTCOMPANY>${escapeXml(company)}</SVCURRENTCOMPANY></STATICVARIABLES>`;
 }
 
+/** Fetch the current company's books-beginning date (so dated ledger lists use
+ *  an APPLICABLEFROM within the books — Tally drops dated rows that start
+ *  before the books begin). */
+export function buildCompanyInfoRequest(companyName: string): string {
+  return `<ENVELOPE>
+ <HEADER>
+  <VERSION>1</VERSION>
+  <TALLYREQUEST>Export</TALLYREQUEST>
+  <TYPE>Collection</TYPE>
+  <ID>BH Company Info</ID>
+ </HEADER>
+ <BODY>
+  <DESC>
+   <STATICVARIABLES>
+    <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+    <SVCURRENTCOMPANY>${escapeXml(companyName)}</SVCURRENTCOMPANY>
+   </STATICVARIABLES>
+   <TDL>
+    <TDLMESSAGE>
+     <COLLECTION NAME="BH Company Info" ISMODIFY="No">
+      <TYPE>Company</TYPE>
+      <FETCH>NAME</FETCH>
+      <FETCH>STARTINGFROM</FETCH>
+      <FETCH>BOOKSFROM</FETCH>
+     </COLLECTION>
+    </TDLMESSAGE>
+   </TDL>
+  </DESC>
+ </BODY>
+</ENVELOPE>`;
+}
+
 /**
  * Export request for the companies currently OPEN in Tally. A Collection of
  * TYPE "Company" (with no SVCURRENTCOMPANY) returns the loaded companies, so the
@@ -284,11 +316,18 @@ ${entries.join("\n")}
 </ENVELOPE>`;
 }
 
-/** Create or alter a ledger master with optional GSTIN + address. */
-export function buildLedgerMaster(l: LedgerMasterInput, action: "Create" | "Alter" = "Create"): string {
+/** Create or alter a ledger master with optional GSTIN + address. `applicableFrom`
+ *  (YYYYMMDD) must be on/after the company's books-begin or Tally drops the
+ *  dated mailing/GST rows. */
+export function buildLedgerMaster(
+  l: LedgerMasterInput,
+  action: "Create" | "Alter" = "Create",
+  applicableFrom = "20170701",
+): string {
   const gstin = (l.gstin || "").trim().toUpperCase();
   const regType = gstin ? "Regular" : "Unregistered/Consumer";
   const country = l.country || "India";
+  const af = /^\d{8}$/.test(applicableFrom) ? applicableFrom : "20170701";
   // Address can be multi-line ("a, b" or "a\nb") → one <ADDRESS> per line.
   const addrLines = (l.address || "").split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
   const addressList = addrLines.length
@@ -299,7 +338,7 @@ export function buildLedgerMaster(l: LedgerMasterInput, action: "Create" | "Alte
   // it silently ignores).
   const mailingList = (addrLines.length || l.state || l.pincode)
     ? `      <LEDGERMAILINGDETAILS.LIST>
-       <APPLICABLEFROM>20170701</APPLICABLEFROM>
+       <APPLICABLEFROM>${af}</APPLICABLEFROM>
 ${addressList}
        <STATE>${escapeXml(l.state || "")}</STATE>
        <COUNTRY>${escapeXml(country)}</COUNTRY>
@@ -309,7 +348,7 @@ ${addressList}
   // GSTIN must come via the dated registration list, with a place of supply.
   const gstRegList = gstin
     ? `      <LEDGERGSTREGDETAILS.LIST>
-       <APPLICABLEFROM>20170701</APPLICABLEFROM>
+       <APPLICABLEFROM>${af}</APPLICABLEFROM>
        <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>
        <PLACEOFSUPPLY>${escapeXml(l.state || "")}</PLACEOFSUPPLY>
        <GSTIN>${escapeXml(gstin)}</GSTIN>
