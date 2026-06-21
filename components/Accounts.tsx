@@ -868,6 +868,25 @@ const LedgersTab: React.FC<{
         </details>
       )}
 
+      {config?.lastLedgerSampleXml && (
+        <details className="mt-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
+          <summary className="px-4 py-3 text-xs font-bold font-poppins text-slate-500 cursor-pointer select-none">
+            Troubleshooting · sample existing ledger (Tally's import format)
+          </summary>
+          <div className="px-4 pb-4">
+            <button
+              onClick={() => { navigator.clipboard?.writeText(config.lastLedgerSampleXml || ''); }}
+              className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold font-poppins text-profee-blue hover:underline"
+            >
+              <Copy size={13} /> Copy
+            </button>
+            <pre className="text-[10px] leading-tight text-slate-500 font-mono whitespace-pre-wrap break-all max-h-64 overflow-y-auto bg-slate-50 rounded-xl p-3">
+              {config.lastLedgerSampleXml}
+            </pre>
+          </div>
+        </details>
+      )}
+
       {config?.lastLedgerWriteXml && (
         <details className="mt-4 bg-white rounded-2xl border border-slate-100 shadow-sm">
           <summary className="px-4 py-3 text-xs font-bold font-poppins text-slate-500 cursor-pointer select-none">

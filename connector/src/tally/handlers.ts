@@ -149,16 +149,35 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
   }
   await syncLedgersToFirestore(uid, ledgers);
 
+  // Capture one EXISTING ledger's full master that already has a state/GSTIN/
+  // address, so we can mirror Tally's exact import structure when creating.
+  const sample = extractSampleLedger(mastersXml);
+
   // Stamp the config so the web UI can show "last synced". Also keep a
   // truncated copy of the raw Tally response for troubleshooting (e.g. when a
   // ledger's GSTIN/address isn't coming through, so we can see the structure).
   const debugXml = `===COLLECTION===\n${collXml}\n\n===MASTERS===\n${mastersXml}`;
   await setDoc(
     configRef,
-    { lastLedgerSyncAt: serverTimestamp(), lastLedgerRawXml: debugXml.slice(0, 45000) },
+    {
+      lastLedgerSyncAt: serverTimestamp(),
+      lastLedgerRawXml: debugXml.slice(0, 45000),
+      ...(sample ? { lastLedgerSampleXml: sample.slice(0, 14000) } : {}),
+    },
     { merge: true },
   );
   return {};
+}
+
+/** Pull the first existing <LEDGER> master block that has a state/GSTIN/address,
+ *  so we can replicate Tally's exact import-able structure. */
+function extractSampleLedger(xml: string): string {
+  const re = /<LEDGER\b[\s\S]*?<\/LEDGER>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml))) {
+    if (/LEDSTATENAME|GSTIN|ADDRESS|MAILINGDETAILS/i.test(m[0])) return m[0];
+  }
+  return "";
 }
 
 /** Upsert the current ledgers and remove ones no longer present in Tally. */
