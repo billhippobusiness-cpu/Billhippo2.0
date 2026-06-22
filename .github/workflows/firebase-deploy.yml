@@ -32,9 +32,13 @@ jobs:
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
           # Tally integration — controlled via repo Actions Variables (Settings →
           # Secrets and variables → Actions → Variables), so flipping the feature
-          # on or setting the installer URL needs no code change.
+          # on needs no code change.
           VITE_TALLY_ENABLED: ${{ vars.VITE_TALLY_ENABLED }}
-          VITE_CONNECTOR_DOWNLOAD_URL: ${{ vars.VITE_CONNECTOR_DOWNLOAD_URL }}
+          # NOTE: VITE_CONNECTOR_DOWNLOAD_URL is intentionally NOT injected here.
+          # The code default (components/Accounts.tsx) already points at the
+          # permanent GitHub "latest release" installer link, which always serves
+          # the newest build. A stale Actions Variable previously overrode this
+          # and pinned the button to an old 0.1.0 installer.
 
       - name: Deploy Firestore rules & indexes
         # continue-on-error so a missing/invalid service-account secret never
