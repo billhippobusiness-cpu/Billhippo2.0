@@ -310,12 +310,14 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
     { lastVoucherWriteXml: `REQUEST:\n${xml}\n\nRESPONSE:\n${responseXml}`.slice(0, 45000) },
     { merge: true },
   );
-  // STRICT (allowNoop=false): a 0-created/0-altered result means Tally did NOT
-  // post the voucher (commonly an unbalanced voucher or a non-existent ledger).
-  // We must surface that as a failure instead of a false "Synced" — duplicate
-  // pushes are already prevented by the web UI's freeze + in-flight guards, so
-  // strictness no longer risks re-posting.
-  const result = parseImportResult(responseXml, false);
+  // Treat a clean 0-created/0-altered as success (allowNoop=true). This Tally
+  // build reports 0/0 even when it DID post the voucher, and it also returns 0/0
+  // when the voucher already exists (a re-push of the same REMOTEID), so a 0/0
+  // is not a failure. REAL failures still surface: parseImportResult throws on a
+  // LINEERROR or any EXCEPTIONS/ERRORS (e.g. a missing ledger or wrong company).
+  // The former silent-drop case (an unbalanced voucher) is now prevented at the
+  // source — buildSalesVoucher debits the party with the exact sum of credits.
+  const result = parseImportResult(responseXml, true);
   return { tallyVoucherId: result.lastVoucherId };
 }
 
