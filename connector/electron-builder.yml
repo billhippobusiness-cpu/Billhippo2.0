@@ -25,10 +25,15 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  # Fixed installer filename (no version) so the website's "Download for Windows"
+  # button can use a permanent .../releases/latest/download/<name> link.
+  artifactName: BillHippo-Connector-Setup.${ext}
 
-# Auto-update feed. electron-builder publishes update metadata (latest.yml) and
-# the installer here; electron-updater reads from the same URL at runtime.
-# Point this at wherever you host the signed installer, then `npm run dist`.
+# Auto-update feed. electron-builder publishes the installer + latest.yml to a
+# GitHub Release; electron-updater reads the same release at runtime, so an
+# installed connector updates itself to the newest version on launch.
 publish:
-  provider: generic
-  url: https://downloads.billhippo.in/connector/
+  provider: github
+  owner: billhippobusiness-cpu
+  repo: Billhippo2.0
+  releaseType: release

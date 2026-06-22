@@ -1,0 +1,45 @@
+name: Build & Publish Connector
+
+# Builds the Windows installer for the BillHippo Desktop Connector and publishes
+# it to a GitHub Release. The website's "Download for Windows" button points at
+# the release's permanent "latest" link, and installed connectors auto-update
+# from the same release — so end users always get the newest build with no
+# manual upload step.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'connector/**'
+  workflow_dispatch:         # Manual "Run workflow" button in the Actions tab
+
+permissions:
+  contents: write            # Needed to create the GitHub Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install connector dependencies
+        run: npm install
+        working-directory: connector
+
+      - name: Compile TypeScript
+        run: npm run build
+        working-directory: connector
+
+      - name: Build installer & publish GitHub Release
+        run: npx electron-builder --win --publish always
+        working-directory: connector
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
