@@ -186,24 +186,40 @@ function ledgerEntryXml(e: LedgerEntryXml): string {
       </ALLLEDGERENTRIES.LIST>`;
 }
 
+/** Round to 2 decimals (paisa) — Tally stores amounts at 2dp, so we must round
+ *  BEFORE summing or the voucher won't balance to the paisa. */
+function r2(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
 /**
  * Accounting Sales voucher (no inventory). Balances as:
- *   party (Dr, total) = sales (Cr, taxable) + tax ledgers (Cr).
- * A stable REMOTEID makes a re-push ALTER the same voucher instead of
- * duplicating it.
+ *   party (Dr) = sales (Cr, taxable) + tax ledgers (Cr).
+ * The party debit is the EXACT sum of the rounded credit lines (not the
+ * invoice's stored grand total), so a sub-paisa rounding difference in the
+ * stored total can never leave the voucher unbalanced — which Tally silently
+ * rejects (0 created). A stable REMOTEID makes a re-push ALTER the same voucher
+ * instead of duplicating it.
  */
 export function buildSalesVoucher(v: VoucherInput): string {
   const date = formatTallyDate(v.date);
-  const entries: string[] = [
-    ledgerEntryXml({ name: v.partyLedgerName, isDebit: true, amount: v.total }),
-    ledgerEntryXml({ name: v.salesLedgerName, isDebit: false, amount: v.taxable }),
+  const credits: { name: string; amount: number }[] = [
+    { name: v.salesLedgerName, amount: r2(v.taxable) },
   ];
   if (v.gstType === "IGST") {
-    if (v.igst) entries.push(ledgerEntryXml({ name: v.igstLedgerName, isDebit: false, amount: v.igst }));
+    const igst = r2(v.igst);
+    if (igst) credits.push({ name: v.igstLedgerName, amount: igst });
   } else {
-    if (v.cgst) entries.push(ledgerEntryXml({ name: v.cgstLedgerName, isDebit: false, amount: v.cgst }));
-    if (v.sgst) entries.push(ledgerEntryXml({ name: v.sgstLedgerName, isDebit: false, amount: v.sgst }));
+    const cgst = r2(v.cgst);
+    const sgst = r2(v.sgst);
+    if (cgst) credits.push({ name: v.cgstLedgerName, amount: cgst });
+    if (sgst) credits.push({ name: v.sgstLedgerName, amount: sgst });
   }
+  const total = r2(credits.reduce((s, c) => s + c.amount, 0));
+  const entries: string[] = [
+    ledgerEntryXml({ name: v.partyLedgerName, isDebit: true, amount: total }),
+    ...credits.map((c) => ledgerEntryXml({ name: c.name, isDebit: false, amount: c.amount })),
+  ];
 
   return `<ENVELOPE>
  <HEADER>
@@ -267,22 +283,27 @@ export interface MultiVoucherInput {
  */
 export function buildSalesVoucherMulti(v: MultiVoucherInput): string {
   const date = formatTallyDate(v.date);
-  let total = 0;
+  // Round every credit line first, then debit the party with their exact sum so
+  // the voucher always balances to the paisa (see buildSalesVoucher).
+  const credits: { name: string; amount: number }[] = [];
   for (const ln of v.lines) {
-    total += ln.taxable + (v.gstType === "IGST" ? ln.igst : ln.cgst + ln.sgst);
-  }
-  const entries: string[] = [
-    ledgerEntryXml({ name: v.partyLedgerName, isDebit: true, amount: total }),
-  ];
-  for (const ln of v.lines) {
-    if (ln.taxable) entries.push(ledgerEntryXml({ name: ln.salesLedgerName, isDebit: false, amount: ln.taxable }));
+    const taxable = r2(ln.taxable);
+    if (taxable) credits.push({ name: ln.salesLedgerName, amount: taxable });
     if (v.gstType === "IGST") {
-      if (ln.igst) entries.push(ledgerEntryXml({ name: ln.igstLedgerName, isDebit: false, amount: ln.igst }));
+      const igst = r2(ln.igst);
+      if (igst) credits.push({ name: ln.igstLedgerName, amount: igst });
     } else {
-      if (ln.cgst) entries.push(ledgerEntryXml({ name: ln.cgstLedgerName, isDebit: false, amount: ln.cgst }));
-      if (ln.sgst) entries.push(ledgerEntryXml({ name: ln.sgstLedgerName, isDebit: false, amount: ln.sgst }));
+      const cgst = r2(ln.cgst);
+      const sgst = r2(ln.sgst);
+      if (cgst) credits.push({ name: ln.cgstLedgerName, amount: cgst });
+      if (sgst) credits.push({ name: ln.sgstLedgerName, amount: sgst });
     }
   }
+  const total = r2(credits.reduce((s, c) => s + c.amount, 0));
+  const entries: string[] = [
+    ledgerEntryXml({ name: v.partyLedgerName, isDebit: true, amount: total }),
+    ...credits.map((c) => ledgerEntryXml({ name: c.name, isDebit: false, amount: c.amount })),
+  ];
 
   return `<ENVELOPE>
  <HEADER>
