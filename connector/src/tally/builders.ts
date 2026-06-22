@@ -328,24 +328,13 @@ export function buildLedgerMaster(
   const regType = gstin ? "Regular" : "Unregistered/Consumer";
   const country = l.country || "India";
   const af = /^\d{8}$/.test(applicableFrom) ? applicableFrom : "20170701";
-  // Address can be multi-line ("a, b" or "a\nb") → one <ADDRESS> per line.
+  // Address can be multi-line ("a, b" or "a\nb") → one <ADDRESS> per line,
+  // directly under <LEDGER> (the shape Tally's master import expects).
   const addrLines = (l.address || "").split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
   const addressList = addrLines.length
-    ? `       <ADDRESS.LIST TYPE="String">${addrLines.map((a) => `\n        <ADDRESS>${escapeXml(a)}</ADDRESS>`).join("")}\n       </ADDRESS.LIST>`
+    ? `      <ADDRESS.LIST TYPE="String">${addrLines.map((a) => `\n       <ADDRESS>${escapeXml(a)}</ADDRESS>`).join("")}\n      </ADDRESS.LIST>`
     : "";
-  // On IMPORT, TallyPrime reads the mailing address/state/pincode from
-  // LEDGERMAILINGDETAILS.LIST (NOT from direct LEDSTATENAME/ADDRESS tags, which
-  // it silently ignores).
-  const mailingList = (addrLines.length || l.state || l.pincode)
-    ? `      <LEDGERMAILINGDETAILS.LIST>
-       <APPLICABLEFROM>${af}</APPLICABLEFROM>
-${addressList}
-       <STATE>${escapeXml(l.state || "")}</STATE>
-       <COUNTRY>${escapeXml(country)}</COUNTRY>
-       <PINCODE>${escapeXml(l.pincode || "")}</PINCODE>
-      </LEDGERMAILINGDETAILS.LIST>`
-    : "";
-  // GSTIN must come via the dated registration list, with a place of supply.
+  // GSTIN via the dated registration list (APPLICABLEFROM within the books).
   const gstRegList = gstin
     ? `      <LEDGERGSTREGDETAILS.LIST>
        <APPLICABLEFROM>${af}</APPLICABLEFROM>
@@ -372,10 +361,14 @@ ${addressList}
       <PARENT>${escapeXml(l.parent)}</PARENT>
       <ISBILLWISEON>Yes</ISBILLWISEON>
       <COUNTRYNAME>${escapeXml(country)}</COUNTRYNAME>
+      <COUNTRYOFRESIDENCE>${escapeXml(country)}</COUNTRYOFRESIDENCE>
+      ${l.state ? `<STATENAME>${escapeXml(l.state)}</STATENAME>` : ""}
       ${l.state ? `<LEDSTATENAME>${escapeXml(l.state)}</LEDSTATENAME>` : ""}
+      ${l.pincode ? `<PINCODE>${escapeXml(l.pincode)}</PINCODE>` : ""}
+      ${gstin ? `<ISGSTAPPLICABLE>&#4; Applicable</ISGSTAPPLICABLE>` : ""}
       <GSTREGISTRATIONTYPE>${escapeXml(regType)}</GSTREGISTRATIONTYPE>
       ${gstin ? `<PARTYGSTIN>${escapeXml(gstin)}</PARTYGSTIN>` : ""}
-${mailingList}
+${addressList}
 ${gstRegList}
      </LEDGER>
     </TALLYMESSAGE>
