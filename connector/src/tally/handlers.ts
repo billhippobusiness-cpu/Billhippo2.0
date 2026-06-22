@@ -303,11 +303,19 @@ async function handlePushInvoice(uid: string, job: SyncJob): Promise<{ tallyVouc
 
   const { host, port } = tallyTarget();
   const responseXml = await postXml(host, port, xml);
-  // Lenient: some Tally builds post the voucher but report 0 created/0 altered.
-  // Treat that as success (real errors still throw via LINEERROR/exceptions),
-  // so the job isn't falsely failed — which previously triggered retries that
-  // created duplicate vouchers.
-  const result = parseImportResult(responseXml, true);
+  // Capture the exact request + Tally response so a silent rejection can be
+  // diagnosed (e.g. an unbalanced voucher or a missing ledger).
+  await setDoc(
+    doc(getDb(), "users", uid, "tallyConfig", "main"),
+    { lastVoucherWriteXml: `REQUEST:\n${xml}\n\nRESPONSE:\n${responseXml}`.slice(0, 45000) },
+    { merge: true },
+  );
+  // STRICT (allowNoop=false): a 0-created/0-altered result means Tally did NOT
+  // post the voucher (commonly an unbalanced voucher or a non-existent ledger).
+  // We must surface that as a failure instead of a false "Synced" — duplicate
+  // pushes are already prevented by the web UI's freeze + in-flight guards, so
+  // strictness no longer risks re-posting.
+  const result = parseImportResult(responseXml, false);
   return { tallyVoucherId: result.lastVoucherId };
 }
 
