@@ -272,6 +272,21 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate, onCreateInvoi
         </div>
       )}
 
+      {/* ═══ Business Identity Header — shows which business is logged in ═══ */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-black uppercase tracking-widest text-profee-blue font-poppins mb-1">Overview</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-900 font-poppins truncate">
+            {profile?.name || 'Your Business'}
+          </h1>
+          {(profile?.gstin || profile?.state) && (
+            <p className="text-xs font-bold text-slate-400 font-poppins mt-1 truncate">
+              {[profile?.gstin, profile?.state].filter(Boolean).join('  ·  ')}
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* ═══ Download App Banner (mobile-only) ═══ */}
       <div className="md:hidden">
         <PWAInstallButton variant="banner" />
