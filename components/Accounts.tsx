@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Landmark, Download, RefreshCw, CheckCircle2, AlertTriangle, Clock,
   Wifi, WifiOff, BookOpen, Send, Info, Search, Loader2, KeyRound, Copy, Plus, Pencil,
+  Calendar, Lock,
 } from 'lucide-react';
 import { httpsCallable } from 'firebase/functions';
 import type { TallyConfig, TallyLedger, SyncJob, Customer, Invoice } from '../types';
@@ -1139,6 +1140,10 @@ const PushTab: React.FC<{
   const [hideSynced, setHideSynced] = useState(false);
   const [savedOnly, setSavedOnly] = useState(false);
   const [failedOnly, setFailedOnly] = useState(false);
+  // Period filter: 'all' | 'custom' | 'fy:<year>' | '<YYYY-MM>'.
+  const [period, setPeriod] = useState('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [busy, setBusy] = useState<'idle' | 'saving' | 'pushing'>('idle');
   // In-progress, unsaved per-row ledger choices.
   const [edits, setEdits] = useState<Record<string, { party?: string; sales?: string; cgst?: string; sgst?: string; igst?: string }>>({});
@@ -1158,6 +1163,35 @@ const PushTab: React.FC<{
     () => ledgers.filter((l) => /(dut|tax|gst)/i.test(l.parent || '')).map((l) => l.name),
     [ledgers],
   );
+
+  // Period dropdown options derived ONLY from the months/financial years that
+  // actually have invoices — so the user never scrolls through empty periods.
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split('-');
+    return `${MONTHS[Number(m) - 1] || m} ${y}`;
+  };
+  const fyLabel = (start: number) => `FY ${start}-${String(start + 1).slice(2)}`;
+  const fyStartOf = (date: string) => {
+    const yr = Number(date.slice(0, 4));
+    const mo = Number(date.slice(5, 7));
+    return mo >= 4 ? yr : yr - 1; // Indian FY: Apr–Mar
+  };
+  const { monthOptions, fyOptions } = useMemo(() => {
+    const months = new Set<string>();
+    const fys = new Set<number>();
+    for (const inv of invoices) {
+      const d = (inv.date || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(d)) {
+        months.add(d);
+        fys.add(fyStartOf(inv.date || ''));
+      }
+    }
+    return {
+      monthOptions: Array.from(months).sort().reverse(),
+      fyOptions: Array.from(fys).sort((a, b) => b - a),
+    };
+  }, [invoices]);
 
   // Pick the Tally tax ledger that matches a GST rate (e.g. 9 → "CGST 9",
   // 2.5 → "CGST 2.5%"), so different-rate invoices post to the right ledger.
@@ -1296,6 +1330,9 @@ const PushTab: React.FC<{
       gstin: customer?.gstin || '',
       placeOfSupply: customer?.state || '',
       synced: job?.status === 'success',
+      // A push is in flight (queued or running) — the Push button must lock so a
+      // double/triple click can't enqueue the same voucher more than once.
+      inFlight: job?.status === 'pending' || job?.status === 'processing',
       isSaved: !!saved,
       dirty: !!edit,
       mappable,
@@ -1311,12 +1348,21 @@ const PushTab: React.FC<{
       if (hideSynced && r.synced) return false;
       if (savedOnly && !r.isSaved) return false;
       if (failedOnly && r.job?.status !== 'failed') return false;
+      const d = r.inv.date || '';
+      if (period === 'custom') {
+        if (customFrom && d < customFrom) return false;
+        if (customTo && d > customTo) return false;
+      } else if (period.startsWith('fy:')) {
+        if (fyStartOf(d) !== Number(period.slice(3))) return false;
+      } else if (period !== 'all') {
+        if (!d.startsWith(period)) return false;
+      }
       if (!q) return true;
       return r.inv.invoiceNumber.toLowerCase().includes(q)
         || r.inv.customerName.toLowerCase().includes(q)
         || (r.gstin || '').toLowerCase().includes(q);
     });
-  }, [rows, search, hideSynced, savedOnly, failedOnly]);
+  }, [rows, search, hideSynced, savedOnly, failedOnly, period, customFrom, customTo]);
 
   type Row = typeof rows[number];
   const selectableVisible = visibleRows.filter((r) => r.selectable);
@@ -1352,6 +1398,10 @@ const PushTab: React.FC<{
 
   const pushRow = async (r: Row) => {
     if (!r.party) return;
+    // Block re-enqueue while a push is in flight, or for an already-synced row
+    // unless the user has explicitly unfrozen it by selecting its checkbox.
+    if (r.inFlight) return;
+    if (r.synced && !selected.has(r.inv.id)) return;
     await saveRow(r);
     await enqueueSyncJob(userId, {
       type: 'PUSH_INVOICE',
@@ -1382,7 +1432,7 @@ const PushTab: React.FC<{
     setBusy('pushing');
     try {
       // Only saved rows are pushed — unsaved selections are left for review.
-      for (const r of visibleRows.filter((r) => selected.has(r.inv.id) && r.pushable)) await pushRow(r);
+      for (const r of visibleRows.filter((r) => selected.has(r.inv.id) && r.pushable && !r.inFlight)) await pushRow(r);
       setSelected(new Set());
     } finally { setBusy('idle'); }
   };
@@ -1426,6 +1476,35 @@ const PushTab: React.FC<{
           />
         </div>
         <div className="flex items-center gap-3 flex-wrap text-xs font-poppins text-slate-500">
+          <div className="flex items-center gap-1.5">
+            <Calendar size={14} className="text-slate-400" />
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              title="Show invoices for a month, financial year, or custom date range"
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-poppins text-slate-600 focus:outline-none focus:ring-2 focus:ring-profee-blue/30"
+            >
+              <option value="all">All periods</option>
+              <option value="custom">Custom range…</option>
+              {fyOptions.length > 0 && (
+                <optgroup label="Financial year">
+                  {fyOptions.map((y) => <option key={`fy:${y}`} value={`fy:${y}`}>{fyLabel(y)}</option>)}
+                </optgroup>
+              )}
+              {monthOptions.length > 0 && (
+                <optgroup label="Month">
+                  {monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                </optgroup>
+              )}
+            </select>
+          </div>
+          {period === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} title="From date" className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-poppins text-slate-600 focus:outline-none focus:ring-2 focus:ring-profee-blue/30" />
+              <span className="text-slate-300">→</span>
+              <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} title="To date" className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-poppins text-slate-600 focus:outline-none focus:ring-2 focus:ring-profee-blue/30" />
+            </div>
+          )}
           <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={hideSynced} onChange={(e) => setHideSynced(e.target.checked)} className="accent-profee-blue" /> Hide synced</label>
           <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={savedOnly} onChange={(e) => setSavedOnly(e.target.checked)} className="accent-profee-blue" /> Saved only</label>
           <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={failedOnly} onChange={(e) => setFailedOnly(e.target.checked)} className="accent-profee-blue" /> Failed only</label>
@@ -1482,44 +1561,62 @@ const PushTab: React.FC<{
                 {visibleRows.map((r, i) => {
                   const { inv, job, createJob, party, sales, selectable, mappable, pushable } = r;
                   const creating = createJob && createJob.status !== 'failed' && createJob.status !== 'success';
+                  // A synced row is FROZEN (locked, no edits, no re-push) until the
+                  // user ticks its checkbox to unfreeze it — this is what stops
+                  // accidental double/triple pushes of an already-sent voucher.
+                  const isChecked = selected.has(inv.id);
+                  const frozen = r.synced && !isChecked;
+                  const rowCls = isChecked
+                    ? 'bg-profee-blue/5'
+                    : r.synced
+                      ? 'bg-emerald-50/70'
+                      : job?.status === 'failed'
+                        ? 'bg-rose-50/40'
+                        : 'hover:bg-slate-50/60';
                   return (
-                    <tr key={inv.id} className={`hover:bg-slate-50/60 ${selected.has(inv.id) ? 'bg-profee-blue/5' : ''}`}>
-                      <td className="px-3 py-3 align-top">
-                        <input type="checkbox" disabled={!selectable} checked={selected.has(inv.id)} onChange={() => toggleOne(inv.id)} className="accent-profee-blue disabled:opacity-30" title={selectable ? 'Select' : 'Choose a Party ledger first'} />
+                    <tr key={inv.id} className={rowCls}>
+                      <td className="px-3 py-3 align-middle">
+                        <input type="checkbox" disabled={!selectable} checked={isChecked} onChange={() => toggleOne(inv.id)} className="accent-profee-blue disabled:opacity-30" title={frozen ? 'Tick to unfreeze this pushed entry' : selectable ? 'Select' : 'Choose a Party ledger first'} />
                       </td>
-                      <td className="px-2 py-3 align-top text-slate-400">{i + 1}</td>
-                      <td className="px-3 py-3 align-top text-slate-500 whitespace-nowrap">{inv.date}</td>
-                      <td className="px-3 py-3 align-top font-bold text-slate-700 whitespace-nowrap">{inv.invoiceNumber}</td>
-                      <td className="px-3 py-3 align-top text-slate-500">Sales</td>
-                      <td className="px-3 py-3 align-top">
-                        <p className="text-slate-700 truncate max-w-[200px] mb-1">{inv.customerName}</p>
-                        <LedgerSelect value={party} onChange={(v) => setEdit(inv.id, 'party', v)} options={partyOptions} placeholder="Select party ledger" emptyText="Type Tally party ledger" compact />
+                      <td className="px-2 py-3 align-middle text-slate-400">{i + 1}</td>
+                      <td className="px-3 py-3 align-middle text-slate-500 whitespace-nowrap">{inv.date}</td>
+                      <td className="px-3 py-3 align-middle font-bold text-slate-700 whitespace-nowrap">{inv.invoiceNumber}</td>
+                      <td className="px-3 py-3 align-middle text-slate-500">Sales</td>
+                      <td className="px-3 py-3 align-middle min-w-[200px]">
+                        <LedgerSelect value={party} onChange={(v) => setEdit(inv.id, 'party', v)} options={partyOptions} placeholder="Select party ledger" emptyText="Type Tally party ledger" compact disabled={frozen} />
+                        {party && party.toLowerCase() !== inv.customerName.toLowerCase() && (
+                          <p className="mt-0.5 text-[10px] text-slate-400 font-poppins truncate max-w-[200px]" title={`BillHippo: ${inv.customerName}`}>BillHippo: {inv.customerName}</p>
+                        )}
                         {!party && r.customer && (
                           <button onClick={() => handleCreateLedger(inv)} disabled={!!creating} className="mt-1 text-[11px] font-bold font-poppins text-slate-600 hover:underline inline-flex items-center gap-1 disabled:opacity-50">
                             {creating ? <><Loader2 size={11} className="animate-spin" /> Creating…</> : <><Plus size={11} /> Create in Tally</>}
                           </button>
                         )}
                       </td>
-                      <td className="px-3 py-3 align-top text-xs font-mono text-slate-500 whitespace-nowrap">{r.gstin || '—'}</td>
-                      <td className="px-3 py-3 align-top text-slate-500 whitespace-nowrap">{r.placeOfSupply || '—'}</td>
-                      <td className="px-3 py-3 align-top text-right font-bold text-slate-700 whitespace-nowrap">₹{inv.totalAmount.toLocaleString('en-IN')}</td>
-                      <td className="px-3 py-3 align-top space-y-1 min-w-[200px]">
-                        <LedgerSelect value={sales} onChange={(v) => setEdit(inv.id, 'sales', v)} options={salesOptions} placeholder="Select sales ledger" emptyText="Type Tally sales ledger" compact />
+                      <td className="px-3 py-3 align-middle text-xs font-mono text-slate-500 whitespace-nowrap">{r.gstin || '—'}</td>
+                      <td className="px-3 py-3 align-middle text-slate-500 whitespace-nowrap">{r.placeOfSupply || '—'}</td>
+                      <td className="px-3 py-3 align-middle text-right font-bold text-slate-700 whitespace-nowrap">₹{inv.totalAmount.toLocaleString('en-IN')}</td>
+                      <td className="px-3 py-3 align-middle min-w-[320px]">
                         <div className="flex items-center gap-1.5">
-                          <span className={`text-[10px] font-bold font-poppins px-1.5 py-0.5 rounded ${r.rate === -1 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                          <div className="flex-1 min-w-[130px]">
+                            <LedgerSelect value={sales} onChange={(v) => setEdit(inv.id, 'sales', v)} options={salesOptions} placeholder="Select sales ledger" emptyText="Type Tally sales ledger" compact disabled={frozen} />
+                          </div>
+                          <span className={`flex-shrink-0 text-[10px] font-bold font-poppins px-1.5 py-0.5 rounded ${r.rate === -1 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
                             {r.rate === -1 ? 'Mixed GST' : r.rate > 0 ? `GST ${r.rate}%` : 'No GST'}
                           </span>
+                          {r.rate !== 0 && (r.isIgst ? (
+                            <div className="w-[110px] flex-shrink-0">
+                              <LedgerSelect value={r.igst} onChange={(v) => setEdit(inv.id, 'igst', v)} options={taxOptions} placeholder="IGST ledger" emptyText="IGST" compact disabled={frozen} />
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <div className="w-[100px]"><LedgerSelect value={r.cgst} onChange={(v) => setEdit(inv.id, 'cgst', v)} options={taxOptions} placeholder="CGST" emptyText="CGST" compact disabled={frozen} /></div>
+                              <div className="w-[100px]"><LedgerSelect value={r.sgst} onChange={(v) => setEdit(inv.id, 'sgst', v)} options={taxOptions} placeholder="SGST" emptyText="SGST" compact disabled={frozen} /></div>
+                            </div>
+                          ))}
                         </div>
-                        {r.rate !== 0 && (r.isIgst ? (
-                          <LedgerSelect value={r.igst} onChange={(v) => setEdit(inv.id, 'igst', v)} options={taxOptions} placeholder="IGST ledger" emptyText="IGST" compact />
-                        ) : (
-                          <div className="grid grid-cols-2 gap-1">
-                            <LedgerSelect value={r.cgst} onChange={(v) => setEdit(inv.id, 'cgst', v)} options={taxOptions} placeholder="CGST" emptyText="CGST" compact />
-                            <LedgerSelect value={r.sgst} onChange={(v) => setEdit(inv.id, 'sgst', v)} options={taxOptions} placeholder="SGST" emptyText="SGST" compact />
-                          </div>
-                        ))}
                       </td>
-                      <td className="px-3 py-3 align-top">
+                      <td className="px-3 py-3 align-middle">
                         <JobStatus job={job} />
                         {r.isSaved && !r.dirty && !job && <span className="block text-[10px] text-slate-400 font-poppins">Saved</span>}
                         {r.dirty && <span className="block text-[10px] text-amber-500 font-poppins">Unsaved</span>}
@@ -1527,19 +1624,25 @@ const PushTab: React.FC<{
                           <p className="mt-1 text-[10px] text-rose-500 font-poppins max-w-[180px] leading-tight">{job.error}</p>
                         )}
                       </td>
-                      <td className="px-3 py-3 align-top text-right whitespace-nowrap">
+                      <td className="px-3 py-3 align-middle text-right whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5">
-                          {mappable && (r.dirty || !r.isSaved) && (
+                          {!frozen && mappable && (r.dirty || !r.isSaved) && (
                             <button onClick={() => saveRow(r)} title="Save mapping (push later)" className="px-2.5 py-2 rounded-xl text-xs font-bold font-poppins border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">Save</button>
                           )}
-                          <button
-                            onClick={() => pushRow(r)}
-                            disabled={!pushable}
-                            title={pushable ? 'Push to Tally' : 'Save this row first — only saved rows can be pushed'}
-                            className="px-4 py-2 rounded-xl text-xs font-bold font-poppins bg-profee-blue text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {job?.status === 'failed' ? 'Retry' : 'Push'}
-                          </button>
+                          {frozen ? (
+                            <span className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold font-poppins bg-emerald-100 text-emerald-700" title="Pushed to Tally — tick the checkbox to unfreeze and re-push">
+                              <Lock size={12} /> Pushed
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => pushRow(r)}
+                              disabled={!pushable || r.inFlight}
+                              title={r.inFlight ? 'A push is already in progress' : pushable ? 'Push to Tally' : 'Save this row first — only saved rows can be pushed'}
+                              className="px-4 py-2 rounded-xl text-xs font-bold font-poppins bg-profee-blue text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {r.inFlight ? 'Pushing…' : r.synced ? 'Re-push' : job?.status === 'failed' ? 'Retry' : 'Push'}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1629,7 +1732,8 @@ const LedgerSelect: React.FC<{
   placeholder: string;
   emptyText?: string;
   compact?: boolean;
-}> = ({ value, onChange, options, placeholder, emptyText, compact }) => {
+  disabled?: boolean;
+}> = ({ value, onChange, options, placeholder, emptyText, compact, disabled }) => {
   const opts = useMemo(() => {
     const seen = new Set<string>();
     const list: string[] = [];
@@ -1639,7 +1743,7 @@ const LedgerSelect: React.FC<{
     return list.sort((a, b) => a.localeCompare(b));
   }, [options, value]);
 
-  const cls = `w-full rounded-xl border border-slate-200 font-poppins text-sm bg-white focus:outline-none focus:ring-2 focus:ring-profee-blue/30 ${
+  const cls = `w-full rounded-xl border border-slate-200 font-poppins text-sm bg-white focus:outline-none focus:ring-2 focus:ring-profee-blue/30 disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed ${
     compact ? 'px-3 py-2.5' : 'px-4 py-3'
   }`;
 
@@ -1650,11 +1754,12 @@ const LedgerSelect: React.FC<{
         onChange={(e) => onChange(e.target.value)}
         placeholder={emptyText || placeholder}
         className={cls}
+        disabled={disabled}
       />
     );
   }
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={cls} disabled={disabled}>
       <option value="">{placeholder}</option>
       {opts.map((o) => (
         <option key={o} value={o}>{o}</option>
