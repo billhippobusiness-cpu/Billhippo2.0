@@ -328,20 +328,37 @@ export function buildLedgerMaster(
   const regType = gstin ? "Regular" : "Unregistered/Consumer";
   const country = l.country || "India";
   const af = /^\d{8}$/.test(applicableFrom) ? applicableFrom : "20170701";
-  // Address can be multi-line ("a, b" or "a\nb") → one <ADDRESS> per line,
-  // directly under <LEDGER> (the shape Tally's master import expects).
+  const state = (l.state || "").trim();
+
+  // Address can be multi-line ("a, b" or "a\nb") → one <ADDRESS> per line.
   const addrLines = (l.address || "").split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
   const addressList = addrLines.length
-    ? `      <ADDRESS.LIST TYPE="String">${addrLines.map((a) => `\n       <ADDRESS>${escapeXml(a)}</ADDRESS>`).join("")}\n      </ADDRESS.LIST>`
+    ? `       <ADDRESS.LIST TYPE="String">${addrLines.map((a) => `\n        <ADDRESS>${escapeXml(a)}</ADDRESS>`).join("")}\n       </ADDRESS.LIST>`
     : "";
-  // GSTIN via the dated registration list (APPLICABLEFROM within the books).
+
+  // CRITICAL: Tally's master IMPORT expects the dated LED*DETAILS lists, whose
+  // tag names differ from the EXPORT names (LEDGER*DETAILS). The address, state,
+  // pincode and country must live INSIDE <LEDMAILINGDETAILS.LIST>, and the GSTIN
+  // inside <LEDGSTREGDETAILS.LIST> — Tally silently drops a top-level ADDRESS or
+  // a LEDGER*-named block, which is why earlier builds created bare ledgers.
+  const hasMailing = addrLines.length || state || l.pincode;
+  const mailingList = hasMailing
+    ? `      <LEDMAILINGDETAILS.LIST>
+       <APPLICABLEFROM>${af}</APPLICABLEFROM>
+       <MAILINGNAME>${escapeXml(l.name)}</MAILINGNAME>
+${addressList}
+       <STATE>${escapeXml(state)}</STATE>
+       <COUNTRY>${escapeXml(country)}</COUNTRY>
+       <PINCODE>${escapeXml(l.pincode || "")}</PINCODE>
+      </LEDMAILINGDETAILS.LIST>`
+    : "";
   const gstRegList = gstin
-    ? `      <LEDGERGSTREGDETAILS.LIST>
+    ? `      <LEDGSTREGDETAILS.LIST>
        <APPLICABLEFROM>${af}</APPLICABLEFROM>
        <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>
-       <PLACEOFSUPPLY>${escapeXml(l.state || "")}</PLACEOFSUPPLY>
+       <STATE>${escapeXml(state)}</STATE>
        <GSTIN>${escapeXml(gstin)}</GSTIN>
-      </LEDGERGSTREGDETAILS.LIST>`
+      </LEDGSTREGDETAILS.LIST>`
     : "";
 
   return `<ENVELOPE>
@@ -362,13 +379,12 @@ export function buildLedgerMaster(
       <ISBILLWISEON>Yes</ISBILLWISEON>
       <COUNTRYNAME>${escapeXml(country)}</COUNTRYNAME>
       <COUNTRYOFRESIDENCE>${escapeXml(country)}</COUNTRYOFRESIDENCE>
-      ${l.state ? `<STATENAME>${escapeXml(l.state)}</STATENAME>` : ""}
-      ${l.state ? `<LEDSTATENAME>${escapeXml(l.state)}</LEDSTATENAME>` : ""}
+      ${state ? `<LEDSTATENAME>${escapeXml(state)}</LEDSTATENAME>` : ""}
       ${l.pincode ? `<PINCODE>${escapeXml(l.pincode)}</PINCODE>` : ""}
       ${gstin ? `<ISGSTAPPLICABLE>&#4; Applicable</ISGSTAPPLICABLE>` : ""}
       <GSTREGISTRATIONTYPE>${escapeXml(regType)}</GSTREGISTRATIONTYPE>
       ${gstin ? `<PARTYGSTIN>${escapeXml(gstin)}</PARTYGSTIN>` : ""}
-${addressList}
+${mailingList}
 ${gstRegList}
      </LEDGER>
     </TALLYMESSAGE>
