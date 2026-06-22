@@ -5,13 +5,13 @@ import {
   Calendar, Lock,
 } from 'lucide-react';
 import { httpsCallable } from 'firebase/functions';
-import type { TallyConfig, TallyLedger, SyncJob, Customer, Invoice } from '../types';
+import type { TallyConfig, TallyLedger, SyncJob, Customer, Invoice, BusinessProfile } from '../types';
 import {
   subscribeTallyConfig, saveTallyConfig, subscribeTallyLedgers,
   subscribeSyncJobs, enqueueSyncJob, isConnectorOnline,
   subscribeTallyInvoiceMap, saveTallyInvoiceMap, type TallyInvoiceMapping,
 } from '../lib/tally';
-import { getInvoices, updateCustomer, addCustomer, subscribeCustomers } from '../lib/firestore';
+import { getInvoices, updateCustomer, addCustomer, subscribeCustomers, getBusinessProfile } from '../lib/firestore';
 import { functions } from '../lib/firebase';
 import { resolvePartyLedger, ledgerExistsByName, matchStatusLabel, type PartyMatchResult } from '../lib/tallyMatch';
 import { haptic } from '../lib/haptic';
@@ -37,6 +37,7 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoiceMap, setInvoiceMap] = useState<Record<string, TallyInvoiceMapping>>({});
+  const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Live subscriptions for connector-driven data + customers, so the Ledger
@@ -50,13 +51,14 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
     return () => { unsubConfig(); unsubLedgers(); unsubJobs(); unsubMap(); unsubCustomers(); };
   }, [userId]);
 
-  // One-shot load for invoices.
+  // One-shot load for invoices + the business profile (for the header identity).
   useEffect(() => {
     let alive = true;
     (async () => {
-      const inv = await getInvoices(userId);
+      const [inv, prof] = await Promise.all([getInvoices(userId), getBusinessProfile(userId)]);
       if (!alive) return;
       setInvoices(inv);
+      setProfile(prof);
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -78,12 +80,20 @@ const Accounts: React.FC<AccountsProps> = ({ userId }) => {
           <Landmark className="text-profee-blue" size={28} />
         </div>
         <div className="flex-1 min-w-0">
+          {profile?.name && (
+            <p className="text-[11px] font-bold uppercase tracking-widest text-profee-blue/70 font-poppins mb-0.5 truncate">
+              {profile.name}
+            </p>
+          )}
           <h1 className="text-2xl md:text-3xl font-bold text-slate-800 font-poppins">Accounts</h1>
           <p className="text-slate-500 font-poppins text-sm mt-1">
             Sync your sales invoices to Tally Prime through the BillHippo Desktop Connector.
           </p>
         </div>
-        <ConnectorPill online={online} />
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <ConnectorPill online={online} />
+          <TallyMark />
+        </div>
       </div>
 
       {/* Tabs */}
@@ -146,6 +156,26 @@ const ConnectorPill: React.FC<{ online: boolean }> = ({ online }) => (
     {online ? 'Connector online' : 'Connector offline'}
   </span>
 );
+
+// "Works with Tally Prime" mark. Uses the Tally logo image dropped into the
+// app's public/ folder; if it isn't present yet, a clean text fallback renders
+// so the badge is never broken.
+const TallyMark: React.FC = () => {
+  const [imgOk, setImgOk] = useState(true);
+  return (
+    <span
+      className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm"
+      title="Push your invoices and ledgers to Tally Prime"
+    >
+      <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 font-poppins">Pushes to</span>
+      {imgOk ? (
+        <img src="/tally-logo.png" alt="Tally" className="h-4 w-auto object-contain" onError={() => setImgOk(false)} />
+      ) : (
+        <span className="text-sm font-black italic font-poppins" style={{ color: '#E4002B' }}>Tally</span>
+      )}
+    </span>
+  );
+};
 
 // ── Pairing code generator ────────────────────────────────────────────────────
 
