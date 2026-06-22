@@ -16,8 +16,12 @@ import { functions } from '../lib/firebase';
 import { resolvePartyLedger, ledgerExistsByName, matchStatusLabel, type PartyMatchResult } from '../lib/tallyMatch';
 import { haptic } from '../lib/haptic';
 
-// Set VITE_CONNECTOR_DOWNLOAD_URL in the build env once the signed installer is hosted.
-const CONNECTOR_DOWNLOAD_URL = import.meta.env.VITE_CONNECTOR_DOWNLOAD_URL || '';
+// Permanent "latest release" link — GitHub always redirects this to the newest
+// published installer, so the button never serves a stale build. Override with
+// VITE_CONNECTOR_DOWNLOAD_URL at build time if the installer moves elsewhere.
+const CONNECTOR_DOWNLOAD_URL =
+  import.meta.env.VITE_CONNECTOR_DOWNLOAD_URL ||
+  'https://github.com/billhippobusiness-cpu/Billhippo2.0/releases/latest/download/BillHippo-Connector-Setup.exe';
 
 type TabId = 'connector' | 'ledgers' | 'push';
 
