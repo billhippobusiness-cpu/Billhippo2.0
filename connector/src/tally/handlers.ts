@@ -169,38 +169,19 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
   return {};
 }
 
-/** Capture the populated mailing + GST-registration sub-blocks (and a party's
- *  state fields) from the masters export — the exact structures we must
- *  replicate on import. Falls back to a whole ledger block if not found. */
+/** Capture the FULL master block of a party that actually has a GSTIN, so we
+ *  can see exactly which flat fields (LEDGST..., PRIORSTATENAME) carry the
+ *  GSTIN, state and address on this Tally build. */
 function extractSampleLedger(xml: string): string {
-  const grab = (tag: string): string => {
-    const t = tag.replace(/\./g, "\\.");
-    const re = new RegExp(`<${t}>[\\s\\S]*?</${t}>`, "g");
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(xml))) {
-      if (m[0].replace(/<[^>]+>/g, "").trim()) return m[0]; // has real content
-    }
-    return "";
-  };
-  const parts = [grab("LEDGERMAILINGDETAILS.LIST"), grab("LEDGERGSTREGDETAILS.LIST")].filter(Boolean);
-  if (parts.length) {
-    // Include a party block that has a real GSTIN for context, trimmed to its
-    // identifying head (name/state/gstin lines).
-    const led = /<LEDGER\b[\s\S]*?<\/LEDGER>/g;
-    let m: RegExpExecArray | null;
-    let ctx = "";
-    while ((m = led.exec(xml))) {
-      if (/<(PARTYGSTIN|GSTIN)>\s*\d{2}[0-9A-Z]{8}/i.test(m[0])) { ctx = m[0].slice(0, 1200); break; }
-    }
-    return [ctx, ...parts].filter(Boolean).join("\n\n");
-  }
-  // Fallback: a whole ledger block that has a state/GSTIN/address.
+  const GSTIN = /[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]/; // 15-char GSTIN
   const led = /<LEDGER\b[\s\S]*?<\/LEDGER>/g;
   let m: RegExpExecArray | null;
+  let withState = "";
   while ((m = led.exec(xml))) {
-    if (/LEDSTATENAME|GSTIN|ADDRESS|MAILINGDETAILS/i.test(m[0])) return m[0];
+    if (GSTIN.test(m[0])) return m[0]; // a real GSTIN somewhere in this ledger
+    if (!withState && /<PRIORSTATENAME>\s*[A-Za-z]/.test(m[0])) withState = m[0];
   }
-  return "";
+  return withState;
 }
 
 /** Upsert the current ledgers and remove ones no longer present in Tally. */
