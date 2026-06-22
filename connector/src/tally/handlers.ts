@@ -169,21 +169,38 @@ async function handleFetchLedgers(uid: string): Promise<{ tallyVoucherId?: strin
   return {};
 }
 
-/** Pull the first existing <LEDGER> master block that has a state/GSTIN/address,
- *  so we can replicate Tally's exact import-able structure. Prefers a ledger
- *  with a real GSTIN, then one with an address, then one with a state. */
+/** Capture the populated mailing + GST-registration sub-blocks (and a party's
+ *  state fields) from the masters export — the exact structures we must
+ *  replicate on import. Falls back to a whole ledger block if not found. */
 function extractSampleLedger(xml: string): string {
-  const re = /<LEDGER\b[\s\S]*?<\/LEDGER>/g;
-  let m: RegExpExecArray | null;
-  let withAddr = "";
-  let withState = "";
-  while ((m = re.exec(xml))) {
-    const b = m[0];
-    if (/<(PARTYGSTIN|GSTIN)>\s*\d{2}[0-9A-Z]{8}/i.test(b)) return b; // real GSTIN → best
-    if (!withAddr && /<ADDRESS>\s*\S/i.test(b)) withAddr = b;
-    if (!withState && /<STATENAME>\s*[A-Za-z]/i.test(b)) withState = b;
+  const grab = (tag: string): string => {
+    const t = tag.replace(/\./g, "\\.");
+    const re = new RegExp(`<${t}>[\\s\\S]*?</${t}>`, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(xml))) {
+      if (m[0].replace(/<[^>]+>/g, "").trim()) return m[0]; // has real content
+    }
+    return "";
+  };
+  const parts = [grab("LEDGERMAILINGDETAILS.LIST"), grab("LEDGERGSTREGDETAILS.LIST")].filter(Boolean);
+  if (parts.length) {
+    // Include a party block that has a real GSTIN for context, trimmed to its
+    // identifying head (name/state/gstin lines).
+    const led = /<LEDGER\b[\s\S]*?<\/LEDGER>/g;
+    let m: RegExpExecArray | null;
+    let ctx = "";
+    while ((m = led.exec(xml))) {
+      if (/<(PARTYGSTIN|GSTIN)>\s*\d{2}[0-9A-Z]{8}/i.test(m[0])) { ctx = m[0].slice(0, 1200); break; }
+    }
+    return [ctx, ...parts].filter(Boolean).join("\n\n");
   }
-  return withAddr || withState || "";
+  // Fallback: a whole ledger block that has a state/GSTIN/address.
+  const led = /<LEDGER\b[\s\S]*?<\/LEDGER>/g;
+  let m: RegExpExecArray | null;
+  while ((m = led.exec(xml))) {
+    if (/LEDSTATENAME|GSTIN|ADDRESS|MAILINGDETAILS/i.test(m[0])) return m[0];
+  }
+  return "";
 }
 
 /** Upsert the current ledgers and remove ones no longer present in Tally. */
