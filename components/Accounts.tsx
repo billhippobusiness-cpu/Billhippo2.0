@@ -164,14 +164,14 @@ const TallyMark: React.FC = () => {
   const [imgOk, setImgOk] = useState(true);
   return (
     <span
-      className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm"
+      className="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-white border border-slate-200 shadow-sm"
       title="Push your invoices and ledgers to Tally Prime"
     >
       <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 font-poppins">Pushes to</span>
       {imgOk ? (
-        <img src="/tally-logo.png" alt="Tally" className="h-4 w-auto object-contain" onError={() => setImgOk(false)} />
+        <img src="/tally-logo.png" alt="Tally" className="h-8 w-auto object-contain" onError={() => setImgOk(false)} />
       ) : (
-        <span className="text-sm font-black italic font-poppins" style={{ color: '#E4002B' }}>Tally</span>
+        <span className="text-lg font-black italic font-poppins" style={{ color: '#E4002B' }}>Tally</span>
       )}
     </span>
   );
