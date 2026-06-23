@@ -67,6 +67,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [invoicesMap, setInvoicesMap] = useState<Record<string, Invoice>>({});
+  const [customerBalanceMap, setCustomerBalanceMap] = useState<Map<string, number>>(new Map());
   // Ledger sort: default Latest First (date desc)
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -112,7 +113,28 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
   const loadCustomers = async () => {
     try {
       setLoading(true);
-      const data = await getCustomers(userId);
+      const [data, allEntries] = await Promise.all([
+        getCustomers(userId),
+        getLedgerEntries(userId),
+      ]);
+
+      // Compute correct outstanding balance per customer from ledger (source of truth)
+      const balMap = new Map<string, number>();
+      for (const entry of allEntries) {
+        if (!entry.customerId) continue;
+        const cur = balMap.get(entry.customerId) ?? 0;
+        balMap.set(entry.customerId, cur + (entry.type === 'Debit' ? entry.amount : -entry.amount));
+      }
+      setCustomerBalanceMap(balMap);
+
+      // Silently repair any stale customer.balance fields in Firestore
+      for (const customer of data) {
+        const computed = balMap.get(customer.id) ?? 0;
+        if (customer.balance !== computed) {
+          updateCustomer(userId, customer.id, { balance: computed });
+        }
+      }
+
       setCustomers(data);
     } catch (err: any) {
       setError('Failed to load customers.');
@@ -120,6 +142,17 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     } finally {
       setLoading(false);
     }
+  };
+
+  const refreshBalanceMap = async () => {
+    const allEntries = await getLedgerEntries(userId);
+    const balMap = new Map<string, number>();
+    for (const entry of allEntries) {
+      if (!entry.customerId) continue;
+      const cur = balMap.get(entry.customerId) ?? 0;
+      balMap.set(entry.customerId, cur + (entry.type === 'Debit' ? entry.amount : -entry.amount));
+    }
+    setCustomerBalanceMap(balMap);
   };
 
   const loadBusinessProfile = async () => {
@@ -325,6 +358,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
 
       const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
       setLedgerEntries(updatedEntries);
+      refreshBalanceMap();
 
       const receiptEntry: ReceiptEntry = {
         id: entryId, date, type: 'Credit', amount, description,
@@ -360,6 +394,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
 
       const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
       setLedgerEntries(updatedEntries);
+      refreshBalanceMap();
       setEditPaymentModal({ open: false, entry: null });
       setEditAmount(''); setEditDesc(''); setEditDate('');
     } catch (err) { console.error(err); }
@@ -380,6 +415,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
       });
       const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
       setLedgerEntries(updatedEntries);
+      refreshBalanceMap();
       setDeletePaymentId(null);
       setReceiptModal({ open: false, entry: null });
     } catch (err) { console.error(err); }
@@ -1394,13 +1430,18 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                 </div>
               </div>
 
-              {/* Balance */}
-              <div className="text-right shrink-0">
-                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest hidden sm:block">Balance</p>
-                <p className={`text-sm sm:text-lg font-bold font-poppins ${customer.balance > 0 ? 'text-rose-500' : customer.balance < 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
-                  {customer.balance === 0 ? 'Settled' : `₹${Math.abs(customer.balance).toLocaleString('en-IN')}`}
-                </p>
-              </div>
+              {/* Balance — computed from ledger entries for accuracy */}
+              {(() => {
+                const bal = customerBalanceMap.get(customer.id) ?? customer.balance ?? 0;
+                return (
+                  <div className="text-right shrink-0">
+                    <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest hidden sm:block">Balance</p>
+                    <p className={`text-sm sm:text-lg font-bold font-poppins ${bal > 0 ? 'text-rose-500' : bal < 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                      {bal === 0 ? 'Settled' : `₹${Math.abs(bal).toLocaleString('en-IN')}`}
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Edit icon */}
               <button
