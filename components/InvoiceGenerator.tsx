@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle } from 'lucide-react';
-import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, SupplyType, type Quotation } from '../types';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, Briefcase, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle } from 'lucide-react';
+import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, ServiceItem, SupplyType, type Quotation } from '../types';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import { haptic } from '../lib/haptic';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
@@ -117,6 +117,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  const [showServicesPicker, setShowServicesPicker] = useState(false);
+  const [serviceItems, setServiceItems] = useState<ServiceItem[]>([]);
+  const [servicesSearch, setServicesSearch] = useState('');
+  const [servicesLoaded, setServicesLoaded] = useState(false);
   // Inline description autocomplete
   const [activeDescItemId, setActiveDescItemId] = useState<string | null>(null);
 
@@ -391,6 +395,40 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     await ensureInventoryLoaded();
     setInventorySearch('');
     setShowInventoryPicker(true);
+  };
+
+  const ensureServicesLoaded = async () => {
+    if (!servicesLoaded) {
+      const data = await getServiceItems(userId);
+      setServiceItems(data);
+      setServicesLoaded(true);
+    }
+  };
+
+  const openServicesPicker = async () => {
+    await ensureServicesLoaded();
+    setServicesSearch('');
+    setShowServicesPicker(true);
+  };
+
+  const handlePickServiceItem = (item: ServiceItem) => {
+    const firstEmpty = items.find(i => !i.description.trim());
+    const newLineItem: InvoiceItem = {
+      id: firstEmpty?.id || Math.random().toString(36).substr(2, 9),
+      description: item.name,
+      notes: item.description || '',
+      hsnCode: item.sacCode,
+      unit: item.unit,
+      quantity: 1,
+      rate: item.rate,
+      gstRate: item.gstRate,
+    };
+    if (firstEmpty) {
+      setItems(prev => prev.map(i => i.id === firstEmpty.id ? newLineItem : i));
+    } else {
+      setItems(prev => [...prev, newLineItem]);
+    }
+    setShowServicesPicker(false);
   };
 
   // Select an inventory item inline from the description autocomplete
@@ -1780,6 +1818,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             <div className="flex justify-between items-center mb-2 sm:mb-4 gap-2 flex-wrap">
               <h3 className="text-lg sm:text-xl font-bold flex items-center gap-3"><Plus className="text-profee-blue" size={22} /> Particulars</h3>
               <div className="flex items-center gap-3">
+                {profile.businessType === 'service' && (
+                  <button
+                    type="button"
+                    onClick={openServicesPicker}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors text-xs font-bold border border-indigo-200"
+                  >
+                    <Briefcase size={14} /> Pick from Services
+                  </button>
+                )}
                 {profile.businessType === 'trading' && (
                   <button
                     type="button"
@@ -2163,6 +2210,55 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 {addingInventory ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
                 {addingInventory ? 'Adding…' : 'Add to Inventory'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Services picker modal (service providers only) ── */}
+      {showServicesPicker && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40">
+          <div className="bg-white rounded-t-[2rem] sm:rounded-2xl shadow-2xl w-full max-w-lg sm:mx-4 max-h-[85vh] flex flex-col animate-sheet-up sm:animate-none">
+            <div className="flex justify-center pt-3 pb-1 sm:hidden"><div className="w-10 h-1 bg-slate-200 rounded-full" /></div>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="text-base font-bold font-poppins text-slate-900 flex items-center gap-2"><Briefcase size={18} className="text-indigo-600" /> Pick from Services</h2>
+              <button onClick={() => setShowServicesPicker(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><X size={16} /></button>
+            </div>
+            <div className="px-6 py-3 border-b border-slate-50">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                <input
+                  autoFocus type="text" placeholder="Search services…"
+                  value={servicesSearch} onChange={e => setServicesSearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 text-sm bg-slate-50 rounded-xl border-none focus:ring-2 ring-indigo-100 font-poppins font-medium"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {serviceItems
+                .filter(it => it.name.toLowerCase().includes(servicesSearch.toLowerCase()) || it.sacCode.toLowerCase().includes(servicesSearch.toLowerCase()))
+                .map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handlePickServiceItem(item)}
+                    className="w-full flex items-center justify-between px-6 py-4 hover:bg-indigo-50 border-b border-slate-50 transition-colors text-left group"
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 group-hover:text-indigo-800">{item.name}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">SAC: {item.sacCode || '—'} · {item.unit} · GST {item.gstRate}%</p>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-4">
+                      <p className="text-sm font-black text-slate-900">₹{item.rate.toLocaleString('en-IN')}</p>
+                    </div>
+                  </button>
+                ))
+              }
+              {serviceItems.length === 0 && (
+                <div className="px-6 py-12 text-center text-sm text-slate-400">
+                  No services found. Add services from the Services page.
+                </div>
+              )}
             </div>
           </div>
         </div>

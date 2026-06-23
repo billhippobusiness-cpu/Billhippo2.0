@@ -21,6 +21,7 @@ import CustomerManager from './components/CustomerManager';
 import OnboardingWizard from './components/OnboardingWizard';
 import InventoryManager from './components/InventoryManager';
 import PurchaseManager from './components/PurchaseManager';
+import ServicesManager from './components/ServicesManager';
 import CreditDebitNotes from './components/CreditDebitNotes';
 import DeliveryChallan from './components/DeliveryChallan';
 import QuotationManager from './components/QuotationManager';
@@ -351,6 +352,7 @@ const App: React.FC = () => {
       case 'settings':    return <ProfileSettings userId={userId} onBusinessTypeChange={() => {}} />;
       case 'inventory':   return <InventoryManager userId={userId} />;
       case 'purchases':   return <PurchaseManager userId={userId} />;
+      case 'services':    return <ServicesManager userId={userId} />;
       case 'ai-studio':   return <MediaStudio />;
       default:            return <Dashboard userId={userId} onNavigate={setActiveTab} />;
     }
@@ -376,6 +378,7 @@ const App: React.FC = () => {
         user={user}
         onLogout={handleLogout}
         showInventory={businessProfile?.businessType === 'trading'}
+        showServices={businessProfile?.businessType === 'service'}
         role={role}
       />
 
