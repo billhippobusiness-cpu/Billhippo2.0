@@ -147,6 +147,16 @@ export interface BusinessProfile {
   gstPortalPassword?: string;
 }
 
+export interface ServiceItem {
+  id: string;
+  name: string;
+  description?: string;
+  sacCode: string;
+  unit: string;
+  rate: number;
+  gstRate: number;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;

@@ -37,6 +37,7 @@ import type {
   Invoice,
   LedgerEntry,
   InventoryItem,
+  ServiceItem,
   CreditNote,
   DebitNote,
   Quotation,
@@ -207,6 +208,35 @@ export async function updateLedgerEntry(userId: string, entryId: string, data: P
     ...data,
     updatedAt: serverTimestamp(),
   });
+}
+
+// ═══════════════════════════════════════════
+//  SERVICES CATALOGUE
+// ═══════════════════════════════════════════
+
+export async function getServiceItems(userId: string): Promise<ServiceItem[]> {
+  const snap = await getDocs(userCollection(userId, 'services'));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ServiceItem));
+  return docs.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function addServiceItem(userId: string, item: Omit<ServiceItem, 'id'>): Promise<string> {
+  const ref = await addDoc(userCollection(userId, 'services'), {
+    ...item,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateServiceItem(userId: string, itemId: string, data: Partial<ServiceItem>) {
+  await updateDoc(userDoc(userId, 'services', itemId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteServiceItem(userId: string, itemId: string) {
+  await deleteDoc(userDoc(userId, 'services', itemId));
 }
 
 // ═══════════════════════════════════════════
