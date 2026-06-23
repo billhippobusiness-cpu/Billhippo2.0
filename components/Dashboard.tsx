@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
@@ -276,9 +277,25 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate, onCreateInvoi
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[11px] font-black uppercase tracking-widest text-profee-blue font-poppins mb-1">Overview</p>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900 font-poppins truncate">
-            {profile?.name || 'Your Business'}
-          </h1>
+          <motion.h1
+            className="text-2xl md:text-3xl font-bold text-slate-900 font-poppins"
+            initial="hidden"
+            animate="visible"
+            variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
+          >
+            {(profile?.name || 'Your Business').split(' ').map((word, i) => (
+              <motion.span
+                key={i}
+                className="inline-block mr-[0.3em]"
+                variants={{
+                  hidden: { opacity: 0, y: -18 },
+                  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 260, damping: 20 } },
+                }}
+              >
+                {word}
+              </motion.span>
+            ))}
+          </motion.h1>
           {(profile?.gstin || profile?.state) && (
             <p className="text-xs font-bold text-slate-400 font-poppins mt-1 truncate">
               {[profile?.gstin, profile?.state].filter(Boolean).join('  ·  ')}
