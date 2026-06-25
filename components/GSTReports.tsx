@@ -458,6 +458,15 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     setShowPortalLogin(false);
   };
 
+  const classifyPortalError = (err: any): string => {
+    const msg: string = err?.message ?? '';
+    if (/unauthenticated|token|txn|session/i.test(msg))
+      return 'GST Portal session expired. Please disconnect and reconnect to the GST Portal.';
+    if (/unavailable|network|timeout|fetch/i.test(msg))
+      return 'Could not reach the GST Portal. Check your connection and try again.';
+    return msg || 'Failed to fetch GST data. Please try again.';
+  };
+
   // Bulk fetch all months for a financial year (Apr–Mar)
   const handleBulkFetch = async () => {
     if (!profile?.gstin || !gstSession) return;
@@ -478,7 +487,8 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
         if (d3b.status === 'fulfilled') await saveGSTRCache(userId, '3b', profile.gstin, period, d3b.value as unknown as Record<string, any>);
         if (d1.status === 'fulfilled') await saveGSTRCache(userId, '1', profile.gstin, period, d1.value as unknown as Record<string, any>);
         setBulkProgress(p => ({ ...p, [period]: 'done' }));
-      } catch {
+      } catch (err: any) {
+        setPortalError(err?.message ?? `Failed to fetch GST data for period ${period}. Session may have expired.`);
         setBulkProgress(p => ({ ...p, [period]: 'error' }));
       }
     }
@@ -497,7 +507,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       setCacheFetchedAt(p => ({ ...p, '2b': now }));
       await saveGSTRCache(userId, '2b', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
-      setPortalError(err?.message ?? 'Failed to fetch GSTR-2B. Session may have expired.');
+      setPortalError(classifyPortalError(err));
     } finally {
       setPortalFetching(false);
     }
@@ -514,7 +524,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       setCacheFetchedAt(p => ({ ...p, '3b': now }));
       await saveGSTRCache(userId, '3b', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
-      setPortalError(err?.message ?? 'Failed to fetch GSTR-3B online data.');
+      setPortalError(classifyPortalError(err));
     } finally {
       setPortalFetching(false);
     }
@@ -532,7 +542,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       setCacheFetchedAt(p => ({ ...p, '1': now }));
       await saveGSTRCache(userId, '1', profile.gstin, wbPeriod, data as unknown as Record<string, any>);
     } catch (err: any) {
-      setPortalError(err?.message ?? 'Failed to fetch GSTR-1 online data.');
+      setPortalError(classifyPortalError(err));
     } finally {
       setPortalFetching(false);
     }

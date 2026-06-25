@@ -172,6 +172,7 @@ export const wbInitSession = onCall(
 
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
+    const ip        = clientIp(request);
     const url       = `${WB_BASE}/authentication/otprequest?email=${encodeURIComponent(email)}`;
 
     const res = await fetch(url, {
@@ -179,7 +180,7 @@ export const wbInitSession = onCall(
       headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
-        "ip_address":   "1.1.1.1",
+        "ip_address":   ip,
       }),
     });
 
@@ -224,6 +225,7 @@ export const wbVerifyOTP = onCall(
 
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
+    const ip        = clientIp(request);
     const url       = `${WB_BASE}/authentication/authtoken?email=${encodeURIComponent(email)}&otp=${encodeURIComponent(otp)}`;
 
     const res = await fetch(url, {
@@ -231,7 +233,7 @@ export const wbVerifyOTP = onCall(
       headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
-        "ip_address":   "1.1.1.1",
+        "ip_address":   ip,
         "txn":          txn,
       }),
     });
@@ -279,6 +281,7 @@ export const wbFetchGSTR2B = onCall(
 
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
+    const ip        = clientIp(request);
     const g         = gstin.toUpperCase();
     const url       = `${WB_BASE}/gstr2b/all?gstin=${g}&rtnprd=${period}&filenum=1&email=${encodeURIComponent(email)}`;
 
@@ -287,7 +290,7 @@ export const wbFetchGSTR2B = onCall(
       headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
-        "ip_address":   "1.1.1.1",
+        "ip_address":   ip,
         "txn":          authToken,
       }),
     });
@@ -326,6 +329,7 @@ export const wbFetchGSTR3B = onCall(
 
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
+    const ip        = clientIp(request);
     const g         = gstin.toUpperCase();
     const url       = `${WB_BASE}/gstr3b/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`;
 
@@ -334,7 +338,7 @@ export const wbFetchGSTR3B = onCall(
       headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
-        "ip_address":   "1.1.1.1",
+        "ip_address":   ip,
         "txn":          authToken,
       }),
     });
@@ -367,6 +371,7 @@ export const wbFetchGSTR1 = onCall(
 
     const email     = wbEmail.value();
     const stateCode = gstin.substring(0, 2);
+    const ip        = clientIp(request);
     const g         = gstin.toUpperCase();
     // smrytyp=E was incorrect (Export section only); use retsum without smrytyp for full summary
     const url       = `${WB_BASE}/gstr1/retsum?gstin=${g}&retperiod=${period}&email=${encodeURIComponent(email)}`;
@@ -376,7 +381,7 @@ export const wbFetchGSTR1 = onCall(
       headers: baseHeaders({
         "gst_username": gstUsername,
         "state_cd":     stateCode,
-        "ip_address":   "1.1.1.1",
+        "ip_address":   ip,
         "txn":          authToken,
       }),
     });

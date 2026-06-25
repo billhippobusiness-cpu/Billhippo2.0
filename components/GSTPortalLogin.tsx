@@ -43,6 +43,11 @@ const GSTPortalLogin: React.FC<GSTPortalLoginProps> = ({ gstin, prefilledUsernam
 
   const handleVerifyOTP = async () => {
     if (!otp.trim()) { setError('Please enter the OTP'); return; }
+    if (!sessionTxn) {
+      setError('Session expired. Please go back and request a new OTP.');
+      setStep('credentials');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
