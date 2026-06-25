@@ -145,6 +145,7 @@ export interface BusinessProfile {
   // GST Portal credentials (for fetching GSTR-2B/3B/1)
   gstPortalUsername?: string;
   gstPortalPassword?: string;
+  gstRegistrationType?: string;   // e.g. "Regular", "Composition Dealer"
 }
 
 export interface ServiceItem {
