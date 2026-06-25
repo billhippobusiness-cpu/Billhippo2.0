@@ -698,6 +698,16 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
             />
           </div>
 
+          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-4 font-poppins">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Terms & Conditions</label>
+            <textarea
+              className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm text-slate-700 focus:ring-2 ring-indigo-50 min-h-[100px] resize-none"
+              value={profile.termsAndConditions ?? ''}
+              onChange={e => setProfile({...profile, termsAndConditions: e.target.value})}
+              placeholder="e.g. Goods once sold will not be taken back."
+            />
+          </div>
+
           {/* ── Professional Access ── */}
           <ProfessionalAccess userId={userId} businessProfile={loading ? null : profile} />
 

@@ -221,7 +221,7 @@ const S = StyleSheet.create({
   m1ContactStrip: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 12, paddingTop: 9, borderTopWidth: 0.5, borderTopColor: BORDER, borderTopStyle: 'solid' },
   m1ContactText:  { fontSize: 7.5, color: LIGHT, lineHeight: 1.6 },
   m1SignCol:      { alignItems: 'flex-end' },
-  m1SignLine:     { width: 90, height: 0.5, backgroundColor: LIGHT, marginBottom: 4 },
+  m1SignLine:     { width: 120, height: 40, marginBottom: 4 },
   m1SignLabel:    { fontSize: 6.5, color: LIGHT, textTransform: 'uppercase', letterSpacing: 0.7 },
   m1SignName:     { fontSize: 8, fontFamily: 'Poppins', fontWeight: 600, color: DARK, marginTop: 1 },
 
