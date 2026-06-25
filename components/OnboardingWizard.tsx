@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Building2, MapPin, CreditCard, ArrowRight, ArrowLeft, CheckCircle, Loader2, Rocket, Briefcase, ShoppingCart } from 'lucide-react';
+import { Building2, MapPin, CreditCard, ArrowRight, ArrowLeft, CheckCircle, Loader2, Rocket, Briefcase, ShoppingCart, Search } from 'lucide-react';
 import { BusinessProfile } from '../types';
 import { saveBusinessProfile } from '../lib/firestore';
+import { lookupGSTIN } from '../lib/whitebooksApi';
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -25,6 +26,11 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // GSTIN lookup state
+  const [gstinFetching, setGstinFetching] = useState(false);
+  const [gstinFetchResult, setGstinFetchResult] = useState<any>(null);
+  const [gstinFetchError, setGstinFetchError] = useState<string | null>(null);
+
   const [profile, setProfile] = useState<BusinessProfile>({
     name: userName || '',
     tagline: '',
@@ -42,7 +48,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
     upiId: '',
     defaultNotes: 'Thank you for your business. Payments are due within 15 days.',
     termsAndConditions: '1. Goods once sold will not be taken back.',
-    gstEnabled: true,
+    gstEnabled: false,
     businessType: undefined,
     theme: {
       templateId: 'modern-2',
@@ -52,6 +58,31 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
       autoNumbering: true
     }
   });
+
+  const handleFetchGSTIN = async () => {
+    const g = profile.gstin.trim().toUpperCase();
+    if (g.length !== 15) return;
+    setGstinFetching(true);
+    setGstinFetchResult(null);
+    setGstinFetchError(null);
+    try {
+      const result = await lookupGSTIN(g);
+      setGstinFetchResult(result);
+      setProfile(prev => ({
+        ...prev,
+        name:                prev.name    || result.tradeName || result.legalName,
+        address:             result.address || prev.address,
+        city:                result.city    || prev.city,
+        state:               result.state   || prev.state,
+        pincode:             result.pincode || prev.pincode,
+        gstRegistrationType: result.taxpayerType || '',
+      }));
+    } catch (err: any) {
+      setGstinFetchError(err?.message ?? 'Could not fetch GSTIN details. Please check and try again.');
+    } finally {
+      setGstinFetching(false);
+    }
+  };
 
   // Step 0 = business type; steps 1-3 = original wizard steps
   const steps = [
@@ -158,70 +189,44 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
                 {/* Service */}
                 <button
                   onClick={() => setProfile({ ...profile, businessType: 'service' })}
-                  className={`relative p-8 rounded-[2rem] border-2 text-left transition-all group ${
+                  className={`p-8 rounded-3xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${
                     profile.businessType === 'service'
                       ? 'border-profee-blue bg-indigo-50 shadow-lg shadow-indigo-100'
-                      : 'border-slate-100 bg-slate-50/60 hover:border-slate-200'
+                      : 'border-slate-100 bg-slate-50 hover:border-slate-200'
                   }`}
                 >
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${profile.businessType === 'service' ? 'bg-profee-blue' : 'bg-slate-200'}`}>
+                    <Briefcase size={22} className={profile.businessType === 'service' ? 'text-white' : 'text-slate-500'} />
+                  </div>
+                  <div className={`text-xs font-bold uppercase tracking-widest mb-2 ${profile.businessType === 'service' ? 'text-profee-blue' : 'text-slate-400'}`}>Service</div>
+                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-1">Service Business</h3>
+                  <p className="text-xs text-slate-400 font-medium leading-relaxed">Consultants, lawyers, agencies, freelancers, IT services, architects, doctors</p>
                   {profile.businessType === 'service' && (
-                    <div className="absolute top-4 right-4 bg-profee-blue text-white p-1.5 rounded-full">
-                      <CheckCircle size={14} />
+                    <div className="mt-4 flex items-center gap-1.5 text-profee-blue font-bold text-xs">
+                      <CheckCircle size={14} /> Selected
                     </div>
                   )}
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-5 ${
-                    profile.businessType === 'service' ? 'bg-profee-blue' : 'bg-slate-200 group-hover:bg-slate-300'
-                  }`}>
-                    <Briefcase size={26} className={profile.businessType === 'service' ? 'text-white' : 'text-slate-500'} />
-                  </div>
-                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-2">Service Business</h3>
-                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                    Consultants, lawyers, agencies, freelancers, IT services, architects, doctors, etc.
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {['Consulting', 'IT Services', 'Legal', 'Design'].map(t => (
-                      <span key={t} className={`text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest ${
-                        profile.businessType === 'service' ? 'bg-indigo-100 text-profee-blue' : 'bg-slate-100 text-slate-400'
-                      }`}>{t}</span>
-                    ))}
-                  </div>
                 </button>
-
                 {/* Trading */}
                 <button
                   onClick={() => setProfile({ ...profile, businessType: 'trading' })}
-                  className={`relative p-8 rounded-[2rem] border-2 text-left transition-all group ${
+                  className={`p-8 rounded-3xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${
                     profile.businessType === 'trading'
-                      ? 'border-amber-400 bg-amber-50 shadow-lg shadow-amber-100'
-                      : 'border-slate-100 bg-slate-50/60 hover:border-slate-200'
+                      ? 'border-amber-500 bg-amber-50 shadow-lg shadow-amber-100'
+                      : 'border-slate-100 bg-slate-50 hover:border-slate-200'
                   }`}
                 >
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${profile.businessType === 'trading' ? 'bg-amber-500' : 'bg-slate-200'}`}>
+                    <ShoppingCart size={22} className={profile.businessType === 'trading' ? 'text-white' : 'text-slate-500'} />
+                  </div>
+                  <div className={`text-xs font-bold uppercase tracking-widest mb-2 ${profile.businessType === 'trading' ? 'text-amber-600' : 'text-slate-400'}`}>Trading</div>
+                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-1">Trading Business</h3>
+                  <p className="text-xs text-slate-400 font-medium leading-relaxed">Retailers, wholesalers, manufacturers, distributors (includes inventory management)</p>
                   {profile.businessType === 'trading' && (
-                    <div className="absolute top-4 right-4 bg-amber-500 text-white p-1.5 rounded-full">
-                      <CheckCircle size={14} />
+                    <div className="mt-4 flex items-center gap-1.5 text-amber-600 font-bold text-xs">
+                      <CheckCircle size={14} /> Selected
                     </div>
                   )}
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-5 ${
-                    profile.businessType === 'trading' ? 'bg-amber-500' : 'bg-slate-200 group-hover:bg-slate-300'
-                  }`}>
-                    <ShoppingCart size={26} className={profile.businessType === 'trading' ? 'text-white' : 'text-slate-500'} />
-                  </div>
-                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-2">Trading Business</h3>
-                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                    Retailers, wholesalers, manufacturers, distributors — any business selling physical goods.
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {['Retail', 'Wholesale', 'Manufacturing', 'Distribution'].map(t => (
-                      <span key={t} className={`text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest ${
-                        profile.businessType === 'trading' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'
-                      }`}>{t}</span>
-                    ))}
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-amber-100/60">
-                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">
-                      ✦ Includes Inventory Management
-                    </p>
-                  </div>
                 </button>
               </div>
             </div>
@@ -243,6 +248,100 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
           {/* Step 2: Address & GST */}
           {step === 2 && (
             <div className="space-y-6 font-poppins animate-in fade-in duration-300">
+
+              {/* GST Toggle — first */}
+              <div className="p-6 bg-indigo-50 rounded-2xl flex items-center justify-between border border-indigo-100">
+                <div>
+                  <p className="text-sm font-bold text-slate-800 font-poppins">GST Registered?</p>
+                  <p className="text-xs text-slate-400 font-medium mt-1">Enable if your business has a GSTIN</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setProfile({...profile, gstEnabled: !profile.gstEnabled, gstin: profile.gstEnabled ? '' : profile.gstin});
+                    setGstinFetchResult(null);
+                    setGstinFetchError(null);
+                  }}
+                  className={`w-14 h-7 rounded-full relative transition-colors border-2 ${profile.gstEnabled ? 'bg-emerald-400 border-emerald-300' : 'bg-slate-200 border-slate-200'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${profile.gstEnabled ? 'translate-x-8' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {/* GSTIN input + Fetch button — only when GST enabled */}
+              {profile.gstEnabled && (
+                <div className="space-y-3">
+                  <div className="flex gap-3 items-end">
+                    <div className="flex-1">
+                      <Input
+                        label="GSTIN Number *"
+                        value={profile.gstin}
+                        onChange={v => {
+                          setProfile({...profile, gstin: v.toUpperCase()});
+                          setGstinFetchResult(null);
+                          setGstinFetchError(null);
+                        }}
+                        placeholder="27AABCB1234A1Z1"
+                      />
+                    </div>
+                    <button
+                      onClick={handleFetchGSTIN}
+                      disabled={profile.gstin.trim().length !== 15 || gstinFetching}
+                      className="flex items-center gap-2 px-5 py-4 bg-indigo-600 text-white rounded-2xl font-bold text-sm hover:bg-indigo-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {gstinFetching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                      {gstinFetching ? 'Fetching...' : 'Fetch Details'}
+                    </button>
+                  </div>
+
+                  {/* Error */}
+                  {gstinFetchError && (
+                    <p className="text-xs text-rose-600 font-medium px-2">{gstinFetchError}</p>
+                  )}
+
+                  {/* Success card */}
+                  {gstinFetchResult && (
+                    <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
+                      <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-3">✓ Details Fetched — Address auto-filled below</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                        <div>
+                          <span className="text-slate-400 font-medium">Legal Name</span>
+                          <p className="font-bold text-slate-800">{gstinFetchResult.legalName}</p>
+                        </div>
+                        {gstinFetchResult.tradeName && gstinFetchResult.tradeName !== gstinFetchResult.legalName && (
+                          <div>
+                            <span className="text-slate-400 font-medium">Trade Name</span>
+                            <p className="font-bold text-slate-800">{gstinFetchResult.tradeName}</p>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-slate-400 font-medium">Registration Type</span>
+                          <p className="font-bold text-slate-800">{gstinFetchResult.taxpayerType || '—'}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-medium">Status</span>
+                          <p className={`font-bold ${/active/i.test(gstinFetchResult.status) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {gstinFetchResult.status || '—'}
+                          </p>
+                        </div>
+                        {gstinFetchResult.constitutionOfBusiness && (
+                          <div>
+                            <span className="text-slate-400 font-medium">Constitution</span>
+                            <p className="font-bold text-slate-800">{gstinFetchResult.constitutionOfBusiness}</p>
+                          </div>
+                        )}
+                        {gstinFetchResult.registrationDate && (
+                          <div>
+                            <span className="text-slate-400 font-medium">Registered On</span>
+                            <p className="font-bold text-slate-800">{gstinFetchResult.registrationDate}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Address fields */}
               <Input label="Street Address" value={profile.address} onChange={v => setProfile({...profile, address: v})} placeholder="Shop no. 5, MG Road" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Input label="City *" value={profile.city} onChange={v => setProfile({...profile, city: v})} placeholder="Mumbai" />
@@ -257,19 +356,6 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
                     {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-              </div>
-              <Input label="GSTIN Number" value={profile.gstin} onChange={v => setProfile({...profile, gstin: v})} placeholder="27AABCB1234A1Z1 (leave blank if not registered)" />
-              <div className="p-6 bg-indigo-50 rounded-2xl flex items-center justify-between border border-indigo-100">
-                <div>
-                  <p className="text-sm font-bold text-slate-800 font-poppins">GST Registered?</p>
-                  <p className="text-xs text-slate-400 font-medium mt-1">Enable if your business is GST registered</p>
-                </div>
-                <button
-                  onClick={() => setProfile({...profile, gstEnabled: !profile.gstEnabled})}
-                  className={`w-14 h-7 rounded-full relative transition-colors border-2 ${profile.gstEnabled ? 'bg-emerald-400 border-emerald-300' : 'bg-slate-200 border-slate-200'}`}
-                >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${profile.gstEnabled ? 'translate-x-8' : 'translate-x-1'}`} />
-                </button>
               </div>
             </div>
           )}
