@@ -31,6 +31,7 @@ import { fetchGSTR2B, fetchGSTR3BOnline, fetchGSTR1Online, GSTR2BData, GSTR3BOnl
 import GSTPortalLogin from './GSTPortalLogin';
 import { downloadGSTR2BExcel } from '../lib/gstr2bExport';
 import GSTR2BPDF from './pdf/GSTR2BPDF';
+import { getStoredFY, getFYLabel, getFYMonths, getFYQuarters, fyStartYear } from '../lib/financialYear';
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
@@ -83,30 +84,20 @@ function quarterLabel(qKey: string): string {
   return `Q${q} ${fyLabel} (${monthRanges[q]})`;
 }
 
-function generateQuarterOptions(): string[] {
-  // Returns last 8 quarters in descending order
-  const result: string[] = [];
+/** Default month to preselect for a FY: the current month if it falls inside
+ *  the FY, otherwise the FY's latest month. */
+function defaultMonthForFY(fyLabel: string): string {
   const now = new Date();
-  const month = now.getMonth() + 1;
-  const year = now.getFullYear();
+  const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const fyMonths = getFYMonths(fyLabel);
+  return fyMonths.includes(curYm) ? curYm : fyMonths[0];
+}
 
-  // Determine current quarter key
-  let curQ: number;
-  let curYear: number;
-  if (month >= 4 && month <= 6) { curQ = 1; curYear = year; }
-  else if (month >= 7 && month <= 9) { curQ = 2; curYear = year; }
-  else if (month >= 10 && month <= 12) { curQ = 3; curYear = year; }
-  else { curQ = 4; curYear = year - 1; }
-
-  for (let i = 0; i < 8; i++) {
-    result.push(`${curYear}-Q${curQ}`);
-    curQ--;
-    if (curQ === 0) {
-      curQ = 4;
-      curYear--;
-    }
-  }
-  return result;
+/** Default quarter to preselect for a FY: the current quarter if the FY is the
+ *  current one, otherwise the FY's latest quarter. */
+function defaultQuarterForFY(fyLabel: string): string {
+  if (fyLabel === getFYLabel()) return getCurrentIndianQuarter();
+  return getFYQuarters(fyLabel)[0];
 }
 
 function monthEndDate(ym: string): string {
@@ -154,13 +145,11 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Period state
+  // Period state — scoped to the financial year chosen on the Overview page
+  const [selectedFY] = useState(() => getStoredFY());
   const [periodMode, setPeriodMode] = useState<'monthly' | 'quarterly'>('monthly');
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const [selectedQuarter, setSelectedQuarter] = useState(() => getCurrentIndianQuarter());
+  const [selectedMonth, setSelectedMonth] = useState(() => defaultMonthForFY(getStoredFY()));
+  const [selectedQuarter, setSelectedQuarter] = useState(() => defaultQuarterForFY(getStoredFY()));
 
   // Detail panel
   const [activeDetail, setActiveDetail] = useState<ActiveDetail>(null);
@@ -191,10 +180,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const [cacheFetchedAt, setCacheFetchedAt] = useState<{ '2b'?: number; '3b'?: number; '1'?: number }>({});
   // Bulk / FY fetch
   const [showBulkFetch, setShowBulkFetch] = useState(false);
-  const [bulkFetchYear, setBulkFetchYear] = useState(() => {
-    const now = new Date();
-    return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1; // Indian FY start April
-  });
+  const [bulkFetchYear, setBulkFetchYear] = useState(() => fyStartYear(getStoredFY()));
   const [bulkProgress, setBulkProgress] = useState<Record<string, 'idle' | 'fetching' | 'done' | 'error'>>({});
   const [bulkFetching, setBulkFetching] = useState(false);
 
@@ -228,18 +214,11 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const custMap = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers]);
 
   // Month options (last 12 months)
-  const months = useMemo(() => {
-    const result: string[] = [];
-    const now = new Date();
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      result.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-    }
-    return result;
-  }, []);
+  // Months of the selected financial year (Apr–Mar), latest first
+  const months = useMemo(() => getFYMonths(selectedFY), [selectedFY]);
 
-  // Quarter options (last 8 quarters)
-  const quarterOptions = useMemo(() => generateQuarterOptions(), []);
+  // Quarters of the selected financial year (Q4–Q1), latest first
+  const quarterOptions = useMemo(() => getFYQuarters(selectedFY), [selectedFY]);
 
   // MMYYYY format for GSTR-1 fp
   const fp = useMemo(() => {

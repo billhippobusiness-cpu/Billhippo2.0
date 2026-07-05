@@ -10,6 +10,7 @@ import { getInvoices, getCustomers, getLedgerEntries, getBusinessProfile, saveBu
 import { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import PWAInstallButton from './PWAInstallButton';
+import { getStoredFY, setStoredFY } from '../lib/financialYear';
 
 interface DashboardProps { userId: string; onNavigate?: (tab: string) => void; onCreateInvoice?: () => void; }
 
@@ -53,7 +54,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate, onCreateInvoi
 
   // ── Filter state ──
   const [filterMode, setFilterMode] = useState<'fy' | 'custom'>('fy');
-  const [selectedFY, setSelectedFY] = useState(() => getFYLabel(new Date()));
+  const [selectedFY, setSelectedFY] = useState(() => getStoredFY());
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
@@ -73,6 +74,9 @@ const Dashboard: React.FC<DashboardProps> = ({ userId, onNavigate, onCreateInvoi
   const [detailModal, setDetailModal] = useState<ModalType>(null);
 
   const fyOptions = useMemo(() => generateFYOptions(), []);
+
+  // Persist the chosen FY so other screens (e.g. Tax Filing Center) scope to it
+  useEffect(() => { setStoredFY(selectedFY); }, [selectedFY]);
 
   useEffect(() => { loadData(); }, [userId]);
 
