@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Download, Smartphone, X, CheckCircle } from 'lucide-react';
-import { usePWAInstall } from '../hooks/usePWAInstall';
+import { usePWAInstall, type Platform, type Browser } from '../hooks/usePWAInstall';
 
 interface Props {
   variant?: 'hero' | 'banner' | 'compact';
@@ -8,9 +8,102 @@ interface Props {
 
 const LOGO = 'https://firebasestorage.googleapis.com/v0/b/billhippo-42f95.firebasestorage.app/o/Image%20assets%2FBillhippo%20logo.png?alt=media&token=539dea5b-d69a-4e72-be63-e042f09c267c';
 
+interface Guide {
+  title: string;
+  subtitle: string;
+  steps: { icon: string; text: string }[];
+  footer: string;
+}
+
+// Build platform-specific install instructions shown when the native prompt
+// isn't available (iOS Safari, desktop Safari/Firefox, or when the browser
+// hasn't fired `beforeinstallprompt` yet).
+function buildGuide(platform: Platform, browser: Browser): Guide {
+  // ── iOS / iPadOS ────────────────────────────────────────────────────────
+  if (platform === 'ios') {
+    if (browser === 'safari') {
+      return {
+        title: 'Install BillHippo',
+        subtitle: 'Add to your Home Screen',
+        steps: [
+          { icon: '⬆️', text: 'Tap the Share button at the bottom of Safari' },
+          { icon: '📲', text: 'Scroll down and tap "Add to Home Screen"' },
+          { icon: '✅', text: 'Tap Add — BillHippo appears on your home screen!' },
+        ],
+        footer: 'Works on iPhone & iPad · No App Store required',
+      };
+    }
+    return {
+      title: 'Install BillHippo',
+      subtitle: 'Add to your Home Screen',
+      steps: [
+        { icon: '🧭', text: 'Open billhippo.in in Safari (installing needs Safari on iOS)' },
+        { icon: '⬆️', text: 'Tap the Share button at the bottom of Safari' },
+        { icon: '📲', text: 'Scroll down and tap "Add to Home Screen"' },
+        { icon: '✅', text: 'Tap Add — BillHippo appears on your home screen!' },
+      ],
+      footer: 'Works on iPhone & iPad · No App Store required',
+    };
+  }
+
+  // ── Android ─────────────────────────────────────────────────────────────
+  if (platform === 'android') {
+    return {
+      title: 'Install BillHippo',
+      subtitle: 'Add to your Home Screen',
+      steps: [
+        { icon: '⋮', text: 'Tap the menu (⋮) at the top-right of your browser' },
+        { icon: '📲', text: 'Tap "Install app" or "Add to Home screen"' },
+        { icon: '✅', text: 'Tap Install — BillHippo appears on your home screen!' },
+      ],
+      footer: 'Installs instantly · No Play Store needed',
+    };
+  }
+
+  // ── Desktop: Safari on macOS (Safari 17+ supports "Add to Dock") ─────────
+  if (platform === 'macos' && browser === 'safari') {
+    return {
+      title: 'Install BillHippo',
+      subtitle: 'Add BillHippo to your Dock',
+      steps: [
+        { icon: '⬆️', text: 'Click the Share button in the Safari toolbar' },
+        { icon: '📌', text: 'Choose "Add to Dock"' },
+        { icon: '✅', text: 'Click Add — BillHippo opens as its own app' },
+      ],
+      footer: 'Requires Safari 17 or newer on macOS Sonoma+',
+    };
+  }
+
+  // ── Desktop: Firefox has no web-app install ──────────────────────────────
+  if (browser === 'firefox') {
+    return {
+      title: 'Install BillHippo',
+      subtitle: 'Install as a desktop app',
+      steps: [
+        { icon: '🌐', text: 'Firefox can\'t install web apps — open billhippo.in in Chrome or Edge' },
+        { icon: '⬇️', text: 'Click the install icon on the right of the address bar' },
+        { icon: '✅', text: 'Or just click "Launch App Now" to use BillHippo in your browser' },
+      ],
+      footer: 'BillHippo runs great in any browser — installing is optional',
+    };
+  }
+
+  // ── Desktop: Chrome / Edge / Chromium (Windows, macOS, Linux) ────────────
+  return {
+    title: 'Install BillHippo',
+    subtitle: 'Install as a desktop app',
+    steps: [
+      { icon: '🖥️', text: 'Look for the install icon (⊕) at the right end of the address bar' },
+      { icon: '🖱️', text: 'Click it, or open the browser menu → "Install BillHippo"' },
+      { icon: '✅', text: 'Click Install — BillHippo opens in its own window' },
+    ],
+    footer: 'Works on Windows, macOS & Linux · No download needed',
+  };
+}
+
 export default function PWAInstallButton({ variant = 'hero' }: Props) {
-  const { canInstall, isIOS, isInstalled, install } = usePWAInstall();
-  const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const { canInstall, isIOS, isInstalled, platform, browser, install } = usePWAInstall();
+  const [showGuide, setShowGuide] = useState(false);
   const [installed, setInstalled] = useState(false);
 
   if (isInstalled || installed) {
@@ -23,15 +116,18 @@ export default function PWAInstallButton({ variant = 'hero' }: Props) {
   }
 
   const handleClick = async () => {
-    if (isIOS) { setShowIOSGuide(true); return; }
+    // Preferred path: browser exposed a native install prompt (Android Chrome,
+    // desktop Chrome/Edge). This covers Windows, macOS, Linux and Android.
     if (canInstall) {
-      await install();
-      setInstalled(true);
-    } else {
-      // Desktop or unsupported — show iOS-style instructions
-      setShowIOSGuide(true);
+      const accepted = await install();
+      if (accepted) setInstalled(true);
+      return;
     }
+    // No native prompt — show instructions tailored to this OS + browser.
+    setShowGuide(true);
   };
+
+  const guide = buildGuide(platform, browser);
 
   // ── Compact variant (used in dashboard card) ──────────────────────────────
   if (variant === 'compact') {
@@ -44,7 +140,7 @@ export default function PWAInstallButton({ variant = 'hero' }: Props) {
           <Download size={15} />
           {isIOS ? 'Add to Home Screen' : 'Download App'}
         </button>
-        {showIOSGuide && <IOSGuideModal onClose={() => setShowIOSGuide(false)} />}
+        {showGuide && <InstallGuideModal guide={guide} onClose={() => setShowGuide(false)} />}
       </>
     );
   }
@@ -57,7 +153,7 @@ export default function PWAInstallButton({ variant = 'hero' }: Props) {
           <img src={LOGO} alt="BillHippo" className="w-12 h-12 object-contain flex-shrink-0 rounded-xl bg-white/10 p-1" />
           <div className="flex-1 min-w-0">
             <p className="font-black text-sm leading-tight">Get the BillHippo App</p>
-            <p className="text-xs text-indigo-200 mt-0.5">Install on your phone — no App Store needed</p>
+            <p className="text-xs text-indigo-200 mt-0.5">Install on any device — no App Store needed</p>
           </div>
           <button
             onClick={handleClick}
@@ -67,7 +163,7 @@ export default function PWAInstallButton({ variant = 'hero' }: Props) {
             {isIOS ? 'Add' : 'Install'}
           </button>
         </div>
-        {showIOSGuide && <IOSGuideModal onClose={() => setShowIOSGuide(false)} />}
+        {showGuide && <InstallGuideModal guide={guide} onClose={() => setShowGuide(false)} />}
       </>
     );
   }
@@ -82,13 +178,13 @@ export default function PWAInstallButton({ variant = 'hero' }: Props) {
         <Smartphone size={22} />
         {isIOS ? 'Add to Home Screen' : 'Download Free App'}
       </button>
-      {showIOSGuide && <IOSGuideModal onClose={() => setShowIOSGuide(false)} />}
+      {showGuide && <InstallGuideModal guide={guide} onClose={() => setShowGuide(false)} />}
     </>
   );
 }
 
-// ── iOS step-by-step guide modal ──────────────────────────────────────────────
-function IOSGuideModal({ onClose }: { onClose: () => void }) {
+// ── Platform-aware install guide modal ────────────────────────────────────────
+function InstallGuideModal({ guide, onClose }: { guide: Guide; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -99,8 +195,8 @@ function IOSGuideModal({ onClose }: { onClose: () => void }) {
             <div className="flex items-center gap-3">
               <img src={LOGO} alt="BillHippo" className="w-10 h-10 object-contain rounded-xl border border-slate-100" />
               <div>
-                <p className="font-black text-slate-800 text-sm">Install BillHippo</p>
-                <p className="text-xs text-slate-400">Add to your Home Screen</p>
+                <p className="font-black text-slate-800 text-sm">{guide.title}</p>
+                <p className="text-xs text-slate-400">{guide.subtitle}</p>
               </div>
             </div>
             <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100">
@@ -109,15 +205,10 @@ function IOSGuideModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="space-y-3">
-            {[
-              { step: '1', icon: '🌐', text: 'Open this page in Safari (not Chrome)' },
-              { step: '2', icon: '⬆️', text: 'Tap the Share button at the bottom of Safari' },
-              { step: '3', icon: '📲', text: 'Scroll down and tap "Add to Home Screen"' },
-              { step: '4', icon: '✅', text: 'Tap Add — BillHippo appears on your home screen!' },
-            ].map(({ step, icon, text }) => (
-              <div key={step} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
+            {guide.steps.map(({ icon, text }, i) => (
+              <div key={i} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
                 <span className="flex-shrink-0 w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 text-xs font-black flex items-center justify-center">
-                  {step}
+                  {i + 1}
                 </span>
                 <div className="flex items-start gap-2">
                   <span className="text-base leading-none mt-0.5">{icon}</span>
@@ -128,7 +219,7 @@ function IOSGuideModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <p className="text-center text-xs text-slate-400 mt-4">
-            Works on iPhone & iPad · No App Store required
+            {guide.footer}
           </p>
         </div>
       </div>
