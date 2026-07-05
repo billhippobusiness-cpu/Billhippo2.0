@@ -32,6 +32,7 @@ import GSTPortalLogin from './GSTPortalLogin';
 import { downloadGSTR2BExcel } from '../lib/gstr2bExport';
 import GSTR2BPDF from './pdf/GSTR2BPDF';
 import { getStoredFY, getFYLabel, getFYMonths, getFYQuarters, fyStartYear } from '../lib/financialYear';
+import { computeSetOff, headTotal } from '../lib/gstSetOff';
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
 
@@ -280,6 +281,31 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const totalSGST = useMemo(() => filteredInvoices.reduce((s, i) => s + i.sgst, 0), [filteredInvoices]);
   const totalIGST = useMemo(() => filteredInvoices.reduce((s, i) => s + i.igst, 0), [filteredInvoices]);
   const totalTax = totalCGST + totalSGST + totalIGST;
+
+  // Net output liability (invoices − credit notes + debit notes) and the ITC
+  // set-off worked out against GSTR-2B — mirrors the GSTR-3B PDF computation.
+  const netLiability = useMemo(() => {
+    const cnI = filteredCreditNotes.reduce((s, n) => s + n.igst, 0);
+    const cnC = filteredCreditNotes.reduce((s, n) => s + n.cgst, 0);
+    const cnS = filteredCreditNotes.reduce((s, n) => s + n.sgst, 0);
+    const dnI = filteredDebitNotes.reduce((s, n) => s + n.igst, 0);
+    const dnC = filteredDebitNotes.reduce((s, n) => s + n.cgst, 0);
+    const dnS = filteredDebitNotes.reduce((s, n) => s + n.sgst, 0);
+    return {
+      igst: totalIGST - cnI + dnI,
+      cgst: totalCGST - cnC + dnC,
+      sgst: totalSGST - cnS + dnS,
+    };
+  }, [totalIGST, totalCGST, totalSGST, filteredCreditNotes, filteredDebitNotes]);
+
+  const itcCredit = useMemo(() => (
+    gstr2bData
+      ? { igst: gstr2bData.totalIGST, cgst: gstr2bData.totalCGST, sgst: gstr2bData.totalSGST }
+      : { igst: 0, cgst: 0, sgst: 0 }
+  ), [gstr2bData]);
+
+  const itcSetOff = useMemo(() => computeSetOff(netLiability, itcCredit), [netLiability, itcCredit]);
+
   const b2bCount = useMemo(() => filteredInvoices.filter(i => i.gstType === GSTType.CGST_SGST).length, [filteredInvoices]);
   const igstCount = useMemo(() => filteredInvoices.filter(i => i.gstType === GSTType.IGST).length, [filteredInvoices]);
 
@@ -1020,8 +1046,62 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* ── ITC & Net Tax Payable (set off against GSTR-2B) ── */}
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">Tax Payment Working</th>
+                        <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">IGST</th>
+                        <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">CGST</th>
+                        <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">SGST</th>
+                        <th className="px-6 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-slate-100">
+                        <td className="px-6 py-3 text-sm text-slate-700 font-medium">Output Tax Liability</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(netLiability.igst)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(netLiability.cgst)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-slate-600">{inr(netLiability.sgst)}</td>
+                        <td className="px-6 py-3 text-sm text-right font-bold text-slate-800">{inr(headTotal(netLiability))}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100 bg-emerald-50/50">
+                        <td className="px-6 py-3 text-sm text-emerald-700 font-medium flex items-center gap-1">
+                          <Cloud size={12} /> Less: ITC available {gstr2bData ? '(GSTR-2B)' : ''}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-right text-emerald-700">{inr(-itcCredit.igst)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-emerald-700">{inr(-itcCredit.cgst)}</td>
+                        <td className="px-6 py-3 text-sm text-right text-emerald-700">{inr(-itcCredit.sgst)}</td>
+                        <td className="px-6 py-3 text-sm text-right font-bold text-emerald-800">{inr(-headTotal(itcCredit))}</td>
+                      </tr>
+                      <tr className="bg-indigo-600 text-white font-bold">
+                        <td className="px-6 py-4 text-sm">Net Tax Payable in Cash</td>
+                        <td className="px-6 py-4 text-sm text-right">{inr(itcSetOff.cash.igst)}</td>
+                        <td className="px-6 py-4 text-sm text-right">{inr(itcSetOff.cash.cgst)}</td>
+                        <td className="px-6 py-4 text-sm text-right">{inr(itcSetOff.cash.sgst)}</td>
+                        <td className="px-6 py-4 text-sm text-right">{inr(headTotal(itcSetOff.cash))}</td>
+                      </tr>
+                      {headTotal(itcSetOff.creditCarried) > 0 && (
+                        <tr className="bg-slate-50">
+                          <td className="px-6 py-3 text-xs text-slate-500">ITC carried forward to credit ledger</td>
+                          <td className="px-6 py-3 text-xs text-right text-slate-500">{inr(itcSetOff.creditCarried.igst)}</td>
+                          <td className="px-6 py-3 text-xs text-right text-slate-500">{inr(itcSetOff.creditCarried.cgst)}</td>
+                          <td className="px-6 py-3 text-xs text-right text-slate-500">{inr(itcSetOff.creditCarried.sgst)}</td>
+                          <td className="px-6 py-3 text-xs text-right font-bold text-slate-600">{inr(headTotal(itcSetOff.creditCarried))}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
                 <p className="text-xs text-slate-400 font-poppins">
-                  Note: ITC (input tax credit) details must be filled manually in the GST portal.
+                  {gstr2bData ? (
+                    <span className="text-emerald-600 font-semibold">ITC auto-drafted from GSTR-2B fetched from the GST portal and set off against your output liability.</span>
+                  ) : (
+                    <>Note: Connect the GST portal and fetch <strong>GSTR-2B</strong> to auto-populate ITC and work out the net tax payable in cash.</>
+                  )}
                   {gstr3bOnline && <span className="text-teal-600 font-bold ml-2">· Teal rows = filed data from GST portal</span>}
                 </p>
               </div>
@@ -1884,6 +1964,13 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
               periodLabel={periodLabel}
               natureOfReturn={periodMode === 'monthly' ? 'Monthly' : 'Quarterly'}
               logoUrl={profile.theme?.logoUrl}
+              itc={gstr2bData ? {
+                igst: gstr2bData.totalIGST,
+                cgst: gstr2bData.totalCGST,
+                sgst: gstr2bData.totalSGST,
+                taxable: gstr2bData.totalTaxableValue,
+                source: 'GSTR-2B',
+              } : null}
             />
           }
           fileName={`GSTR-3B_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}

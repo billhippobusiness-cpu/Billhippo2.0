@@ -27,6 +27,7 @@ import {
   Font,
 } from '@react-pdf/renderer';
 import type { BusinessProfile, Invoice, Customer, CreditNote, DebitNote } from '../../types';
+import { computeSetOff } from '../../lib/gstSetOff';
 
 // ─── Register Poppins ─────────────────────────────────────────────────────────
 Font.register({
@@ -305,6 +306,13 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 );
 
 // ─── Props ────────────────────────────────────────────────────────────────────
+export interface ITCInput {
+  igst: number;
+  cgst: number;
+  sgst: number;
+  taxable?: number;
+  source?: string; // e.g. 'GSTR-2B'
+}
 export interface GSTR3BPDFProps {
   profile: BusinessProfile;
   invoices: Invoice[];
@@ -314,6 +322,8 @@ export interface GSTR3BPDFProps {
   periodLabel: string;
   natureOfReturn: 'Monthly' | 'Quarterly';
   logoUrl?: string;
+  /** Input Tax Credit available for the period (e.g. fetched from GSTR-2B). */
+  itc?: ITCInput | null;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -326,6 +336,7 @@ const GSTR3BPDF: React.FC<GSTR3BPDFProps> = ({
   periodLabel,
   natureOfReturn,
   logoUrl,
+  itc,
 }) => {
   const today = new Date().toLocaleDateString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -393,13 +404,20 @@ const GSTR3BPDF: React.FC<GSTR3BPDFProps> = ({
     { label: 'Total Liability',          igst: totIgst, cgst: totCgst, sgst: totSgst, total: true },
   ];
 
-  // ─── ITC Available / Reversal (manual entry — defaults to 0) ─────────────
+  // ─── ITC Available (sourced from GSTR-2B when fetched from the portal) ────
+  const itcIgst = itc?.igst ?? 0;
+  const itcCgst = itc?.cgst ?? 0;
+  const itcSgst = itc?.sgst ?? 0;
+  const itcTotal = itcIgst + itcCgst + itcSgst;
+  const hasItc = itcTotal > 0;
+  const itcSource = itc?.source || 'GSTR-2B';
+
   const itcRows: TaxRow[] = [
     { label: 'Purchase Register', igst: 0, cgst: 0, sgst: 0 },
-    { label: 'GSTR-2B',           igst: 0, cgst: 0, sgst: 0 },
+    { label: `${itcSource} (Auto-drafted)`, igst: itcIgst, cgst: itcCgst, sgst: itcSgst, emphasize: hasItc },
     { label: 'Import of Goods',   igst: 0, cgst: 0, sgst: 0 },
     { label: 'RCM ITC',           igst: 0, cgst: 0, sgst: 0 },
-    { label: 'Total Available ITC', igst: 0, cgst: 0, sgst: 0, total: true },
+    { label: 'Total Available ITC', igst: itcIgst, cgst: itcCgst, sgst: itcSgst, total: true },
   ];
 
   const itcReversalRows: TaxRow[] = [
@@ -410,20 +428,25 @@ const GSTR3BPDF: React.FC<GSTR3BPDFProps> = ({
   ];
 
   // ─── Tax Payment Working ─────────────────────────────────────────────────
-  // Without ITC data, full liability flows to cash payment.
+  // Apply available ITC against the output liability using the statutory
+  // set-off order; anything left flows to cash payment.
+  const setOff = computeSetOff(
+    { igst: totIgst, cgst: totCgst, sgst: totSgst },
+    { igst: itcIgst, cgst: itcCgst, sgst: itcSgst },
+  );
+  const cashTotal = setOff.cash.igst + setOff.cash.cgst + setOff.cash.sgst;
   const paymentRows: TaxRow[] = [
-    { label: 'Liability',          igst: totIgst, cgst: totCgst, sgst: totSgst, emphasize: true },
-    { label: 'Less: ITC Utilized', igst: 0, cgst: 0, sgst: 0 },
-    { label: 'Cash Payment',       igst: totIgst, cgst: totCgst, sgst: totSgst },
-    { label: 'Balance Liability',  igst: 0, cgst: 0, sgst: 0, total: true },
+    { label: 'Output Liability',   igst: totIgst, cgst: totCgst, sgst: totSgst, emphasize: true },
+    { label: 'Less: ITC Utilised', igst: -setOff.utilised.igst, cgst: -setOff.utilised.cgst, sgst: -setOff.utilised.sgst },
+    { label: 'Tax Payable in Cash', igst: setOff.cash.igst, cgst: setOff.cash.cgst, sgst: setOff.cash.sgst, total: true },
   ];
 
-  // ─── Electronic Ledger Status (KV table — manual / 0 by default) ─────────
+  // ─── Electronic Ledger Status — unused ITC carried forward to credit ledger
   const ledgerRows: KVRow[] = [
-    { label: 'IGST Credit Ledger', value: '0' },
-    { label: 'CGST Credit Ledger', value: '0' },
-    { label: 'SGST Credit Ledger', value: '0' },
-    { label: 'Cash Ledger',        value: '0' },
+    { label: 'IGST Credit Ledger (c/f)', value: inr(setOff.creditCarried.igst) },
+    { label: 'CGST Credit Ledger (c/f)', value: inr(setOff.creditCarried.cgst) },
+    { label: 'SGST Credit Ledger (c/f)', value: inr(setOff.creditCarried.sgst) },
+    { label: 'Net Tax Payable in Cash',  value: inr(cashTotal) },
   ];
 
   // ─── Reconciliation ──────────────────────────────────────────────────────
@@ -435,21 +458,22 @@ const GSTR3BPDF: React.FC<GSTR3BPDFProps> = ({
     { label: 'IGST',          a: totIgst,    b: totIgst },
   ];
 
-  // 7B: Books vs GSTR-3B — Sales = computed; Purchases / ITC need manual entry.
+  // 7B: Books vs GSTR-3B — Sales = computed; ITC/Purchases sourced from GSTR-2B.
+  const itcTaxable = itc?.taxable ?? 0;
   const booksReconRows: ReconRow[] = [
-    { label: 'Sales',     a: totTaxable, b: totTaxable },
-    { label: 'Purchases', a: 0, b: 0 },
-    { label: 'ITC',       a: 0, b: 0 },
+    { label: 'Sales',           a: totTaxable, b: totTaxable },
+    { label: 'Purchases (2B)',  a: itcTaxable, b: itcTaxable },
+    { label: 'ITC',             a: itcTotal, b: itcTotal },
   ];
 
   // ─── Risk & Exception ────────────────────────────────────────────────────
   const totalLiability = totIgst + totCgst + totSgst;
   const risks: KVRow[] = [
     { label: 'GSTR-1 mismatch',       value: 'No' },
-    { label: 'ITC mismatch with 2B',  value: 'Pending manual review' },
-    { label: 'Excess ITC claimed',    value: 'No' },
+    { label: 'ITC mismatch with 2B',  value: hasItc ? 'ITC sourced from 2B' : 'Pending — connect GST portal' },
+    { label: 'Excess ITC claimed',    value: itcTotal > totalLiability && totalLiability > 0 ? 'ITC exceeds liability (c/f)' : 'No' },
     { label: 'RCM unpaid',            value: 'No' },
-    { label: 'Interest exposure',     value: totalLiability > 0 ? 'Verify due date' : 'No' },
+    { label: 'Interest exposure',     value: cashTotal > 0 ? 'Verify due date' : 'No' },
   ];
 
   // ─── Business Snapshot ───────────────────────────────────────────────────
@@ -522,7 +546,7 @@ const GSTR3BPDF: React.FC<GSTR3BPDFProps> = ({
         </Section>
 
         {/* 4A. ITC Available */}
-        <Section title="4A. INPUT TAX CREDIT (ITC) AVAILABLE">
+        <Section title={hasItc ? '4A. INPUT TAX CREDIT (ITC) AVAILABLE — FROM GSTR-2B' : '4A. INPUT TAX CREDIT (ITC) AVAILABLE'}>
           <TaxTable3 firstCol="Source" rows={itcRows} />
         </Section>
 
@@ -561,7 +585,9 @@ const GSTR3BPDF: React.FC<GSTR3BPDFProps> = ({
           <Text style={S.closingText}>
             This layout is generated by BillHippo for understanding by assessees, accountants and tax practitioners.
             It follows the business flow: Sales → Liability → ITC → Payment → Reconciliation.
-            ITC, purchase and ledger figures must be verified against your purchase register and GSTR-2B before filing.
+            {hasItc
+              ? ' ITC figures are auto-drafted from GSTR-2B fetched from the GST portal and set off against the output liability; verify against your purchase register before filing.'
+              : ' Connect the GST portal to auto-fetch GSTR-2B so ITC is set off against the liability; otherwise ITC must be entered manually before filing.'}
           </Text>
         </View>
 
