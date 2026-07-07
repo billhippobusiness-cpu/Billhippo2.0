@@ -1264,15 +1264,22 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const upiAppMarks = (
     <div className="flex items-center justify-between w-full px-1">
       <span className="flex items-center gap-1">
-        <svg width="12" height="13" viewBox="0 0 11 12"><polygon points="0,1 6,1 9.5,6 3.5,6" fill="#E8752B" /><polygon points="1.5,6 7.5,6 11,11 5,11" fill="#66A22E" /></svg>
+        <svg width="15" height="10" viewBox="0 0 22 14"><polygon points="0,0 11,0 17,7 6,7" fill="#E97A26" /><polygon points="4,7 15,7 21,14 10,14" fill="#5CA632" /></svg>
         <span className="text-[10px] font-black" style={{ color: '#0B3D7A' }}>UPI</span>
       </span>
       <span className="flex items-center gap-1">
-        <svg width="13" height="13" viewBox="0 0 12 12"><rect x="0" y="0" width="6" height="6" fill="#EA4335" /><rect x="6" y="0" width="6" height="6" fill="#4285F4" /><rect x="0" y="6" width="6" height="6" fill="#FBBC05" /><rect x="6" y="6" width="6" height="6" fill="#34A853" /><circle cx="6" cy="6" r="2.6" fill="#fff" /></svg>
+        <svg width="14" height="14" viewBox="0 0 26 26">
+          <path d="M4.6 8.4 A9.5 9.5 0 0 1 21 6.6" stroke="#EA4335" strokeWidth="5" fill="none" />
+          <path d="M4.6 8.4 A9.5 9.5 0 0 0 5.2 18.6" stroke="#FBBC04" strokeWidth="5" fill="none" />
+          <path d="M5.2 18.6 A9.5 9.5 0 0 0 20.4 18.9" stroke="#34A853" strokeWidth="5" fill="none" />
+          <path d="M20.4 18.9 A9.5 9.5 0 0 0 21 6.6" stroke="#4285F4" strokeWidth="5" fill="none" />
+          <rect x="13" y="10.6" width="9.7" height="4.8" fill="#4285F4" />
+          <rect x="12.5" y="5" width="2" height="5.6" fill="#fff" />
+        </svg>
         <span className="text-[10px] font-semibold" style={{ color: '#5F6368' }}>Pay</span>
       </span>
       <span className="flex items-center gap-1">
-        <span className="inline-flex items-center justify-center rounded" style={{ width: 13, height: 13, backgroundColor: '#5F259F' }}><span className="text-[6px] font-black text-white">Pe</span></span>
+        <span className="inline-flex items-center justify-center rounded" style={{ width: 14, height: 14, backgroundColor: '#5F259F' }}><span className="text-[7px] font-black text-white leading-none">Pe</span></span>
         <span className="text-[9px] font-black" style={{ color: '#5F259F' }}>PhonePe</span>
       </span>
       <span className="flex items-baseline">
