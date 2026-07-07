@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, Briefcase, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle, User, Building2, MapPin, Landmark, BarChart3, ShieldCheck, StickyNote } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, Briefcase, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle, User, Building2, MapPin, Landmark, BarChart3, ShieldCheck, StickyNote, Phone, Mail, Lock, Smartphone, CreditCard } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, ServiceItem, SupplyType, type Quotation } from '../types';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
@@ -1252,11 +1252,227 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     </div>
   );
 
+  // ═══════════════════════════════════════════
+  //  PAYMENT FIRST TEMPLATE (on-screen preview)
+  //  Navy (primary) + derived teal accent, big "Pay Instantly" QR panel.
+  // ═══════════════════════════════════════════
+  const pfNavy = profile.theme.primaryColor;
+  const pfTeal = mixHex(profile.theme.primaryColor, '#0FB5C4', 0.78);
+  const pfTealDark = mixHex(pfTeal, '#04222b', 0.28);
+
+  // Simplified UPI-app marks for the "We Accept" row (functional payment indicators)
+  const upiAppMarks = (
+    <div className="flex items-center justify-between w-full px-1">
+      <span className="flex items-center gap-1">
+        <svg width="12" height="13" viewBox="0 0 11 12"><polygon points="0,1 6,1 9.5,6 3.5,6" fill="#E8752B" /><polygon points="1.5,6 7.5,6 11,11 5,11" fill="#66A22E" /></svg>
+        <span className="text-[10px] font-black" style={{ color: '#0B3D7A' }}>UPI</span>
+      </span>
+      <span className="flex items-center gap-1">
+        <svg width="13" height="13" viewBox="0 0 12 12"><rect x="0" y="0" width="6" height="6" fill="#EA4335" /><rect x="6" y="0" width="6" height="6" fill="#4285F4" /><rect x="0" y="6" width="6" height="6" fill="#FBBC05" /><rect x="6" y="6" width="6" height="6" fill="#34A853" /><circle cx="6" cy="6" r="2.6" fill="#fff" /></svg>
+        <span className="text-[10px] font-semibold" style={{ color: '#5F6368' }}>Pay</span>
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="inline-flex items-center justify-center rounded" style={{ width: 13, height: 13, backgroundColor: '#5F259F' }}><span className="text-[6px] font-black text-white">Pe</span></span>
+        <span className="text-[9px] font-black" style={{ color: '#5F259F' }}>PhonePe</span>
+      </span>
+      <span className="flex items-baseline">
+        <span className="text-[11px] font-black" style={{ color: '#002970' }}>Pay</span>
+        <span className="text-[11px] font-black" style={{ color: '#00B9F1' }}>tm</span>
+      </span>
+    </div>
+  );
+
+  const paymentFirstTemplate = (
+    <div className="bg-white w-full max-w-[860px] mx-auto border border-slate-100 print:shadow-none print:border-none shadow-2xl rounded-[2rem] overflow-hidden" style={{ fontFamily: profile.theme.fontFamily }}>
+      <div className="px-10 pt-10 pb-10">
+
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-3">
+            <div className="w-[60px] h-[60px] rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0" style={{ backgroundColor: pfTeal }}>
+              {profile.theme.logoUrl ? <img src={profile.theme.logoUrl} className="w-full h-full object-contain" alt="logo" /> : <span className="text-3xl font-black text-white">{profile.name.charAt(0)}</span>}
+            </div>
+            <div>
+              <h1 className="text-[22px] font-black leading-tight tracking-tight" style={{ color: pfNavy }}>{profile.name}</h1>
+              <div className="space-y-0.5 mt-1">
+                <p className="flex items-center gap-1.5 text-[10px] text-slate-500"><MapPin size={10} style={{ color: pfTeal }} strokeWidth={2.5} />{profile.address}, {profile.city}, {profile.state} – {profile.pincode}</p>
+                {profile.gstin && <p className="flex items-center gap-1.5 text-[10px] text-slate-500"><FileText size={10} style={{ color: pfTeal }} strokeWidth={2.5} />GSTIN: <span className="font-black" style={{ color: pfNavy }}>{profile.gstin}</span></p>}
+                {profile.phone && <p className="flex items-center gap-1.5 text-[10px] text-slate-500"><Phone size={10} style={{ color: pfTeal }} strokeWidth={2.5} />{profile.phone}</p>}
+                {profile.email && <p className="flex items-center gap-1.5 text-[10px] text-slate-500"><Mail size={10} style={{ color: pfTeal }} strokeWidth={2.5} />{profile.email}</p>}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col items-end">
+            <h2 className="text-[46px] font-black leading-none tracking-tight" style={{ color: pfNavy }}>INVOICE</h2>
+            <p className="text-[9px] font-black tracking-wide mt-0.5 mb-2" style={{ color: pfTeal }}>PAYMENT-FIRST. FAST. SECURE. EASY.</p>
+            <div className="space-y-1.5 text-right">
+              <div className="flex items-center justify-end gap-3"><span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Invoice No.</span><span className="text-[12px] font-black text-slate-900 w-24 text-left">{invoiceNumber}</span></div>
+              <div className="flex items-center justify-end gap-3"><span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Date</span><span className="text-[12px] font-black text-slate-900 w-24 text-left">{invoiceDate}</span></div>
+              <div className="flex items-center justify-end gap-3"><span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Status</span><span className="w-24 text-left"><span className="inline-block text-[9px] font-black uppercase px-2.5 py-1 rounded-full bg-rose-100 text-rose-500">Unpaid</span></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 my-6"></div>
+
+        {/* ── Body ── */}
+        <div className="flex gap-5">
+          {/* LEFT */}
+          <div className="w-[58%] space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { icon: <User size={11} className="text-white" strokeWidth={2.5} />, label: 'Billed By', name: profile.name, addr: `${profile.address}, ${profile.city}, ${profile.state} – ${profile.pincode}`, ph: profile.phone, gst: profile.gstin },
+                { icon: <Building2 size={11} className="text-white" strokeWidth={2.5} />, label: 'Billed To', name: selectedCustomer?.name || 'Party Name', addr: `${selectedCustomer?.address || '—'}, ${selectedCustomer?.city || '—'}, ${selectedCustomer?.state || '—'} – ${selectedCustomer?.pincode || '—'}`, ph: selectedCustomer?.phone, gst: selectedCustomer?.gstin },
+              ].map((b, i) => (
+                <div key={i} className="rounded-lg border border-slate-100 overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: pfNavy }}>
+                    {b.icon}<span className="text-[9px] font-black text-white uppercase tracking-wide">{b.label}</span>
+                  </div>
+                  <div className="p-3">
+                    <p className="text-[11px] font-black text-slate-900">{b.name}</p>
+                    <p className="text-[9px] text-slate-500 leading-relaxed mt-0.5">{b.addr}</p>
+                    {b.ph && <p className="text-[9px] text-slate-500">Ph: {b.ph}</p>}
+                    {b.gst && <><p className="text-[7px] font-bold text-slate-400 uppercase mt-1.5">GSTIN</p><p className="text-[10px] font-black" style={{ color: pfNavy }}>{b.gst}</p></>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-100">
+                <Globe size={13} style={{ color: pfTeal }} strokeWidth={2.5} />
+                <div><p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Place of Supply</p><p className="text-[10px] font-black text-slate-800">{selectedCustomer?.state || profile.state}</p></div>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-100">
+                <Globe size={13} style={{ color: pfTeal }} strokeWidth={2.5} />
+                <div><p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Country of Supply</p><p className="text-[10px] font-black text-slate-800">India</p></div>
+              </div>
+            </div>
+            {/* table */}
+            <div className="rounded-lg overflow-hidden border border-slate-100">
+              <table className="w-full text-left border-collapse text-[8px]">
+                <thead>
+                  <tr className="text-white font-black uppercase" style={{ backgroundColor: pfNavy }}>
+                    <th className="px-1.5 py-2">#</th><th className="px-1.5 py-2">Item Description</th><th className="px-1 py-2 text-center">HSN</th><th className="px-1 py-2 text-center">Qty</th><th className="px-1 py-2 text-right">Rate</th><th className="px-1 py-2 text-center">GST%</th><th className="px-1 py-2 text-right">Taxable</th>
+                    {gstType === GSTType.CGST_SGST ? (<><th className="px-1 py-2 text-right">SGST</th><th className="px-1 py-2 text-right">CGST</th></>) : (<th className="px-1 py-2 text-right" colSpan={2}>IGST</th>)}
+                    <th className="px-1.5 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {items.map((item, idx) => {
+                    const taxable = r2(item.quantity * item.rate);
+                    const itemTax = r2(taxable * item.gstRate / 100);
+                    const halfTax = r2(itemTax / 2);
+                    return (
+                      <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                        <td className="px-1.5 py-2 text-slate-400 font-bold">{idx + 1}</td>
+                        <td className="px-1.5 py-2 font-semibold text-slate-800">{item.description || 'No description'}</td>
+                        <td className="px-1 py-2 text-center text-slate-500">{item.hsnCode || '—'}</td>
+                        <td className="px-1 py-2 text-center font-black text-slate-800">{item.quantity}</td>
+                        <td className="px-1 py-2 text-right text-slate-600">{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-1 py-2 text-center text-slate-500">{item.gstRate}%</td>
+                        <td className="px-1 py-2 text-right text-slate-700">{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        {gstType === GSTType.CGST_SGST ? (<><td className="px-1 py-2 text-right text-slate-600">{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td className="px-1 py-2 text-right text-slate-600">{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></>) : (<td className="px-1 py-2 text-right text-slate-600" colSpan={2}>{itemTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>)}
+                        <td className="px-1.5 py-2 text-right font-black text-slate-900">{(taxable + itemTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* RIGHT — payment hero */}
+          <div className="flex-1">
+            <div className="rounded-2xl overflow-hidden border-2" style={{ borderColor: pfTeal }}>
+              <div className="flex items-center justify-center gap-2 py-2.5" style={{ backgroundColor: pfNavy }}>
+                <Lock size={12} className="text-white" strokeWidth={2.5} /><span className="text-[11px] font-black text-white uppercase tracking-widest">Pay Instantly</span>
+              </div>
+              <div className="flex flex-col items-center px-4 py-4" style={{ backgroundColor: pfTeal }}>
+                {profile.upiId && upiQrUrl ? (<>
+                  <p className="text-[9px] font-black text-white uppercase tracking-widest mb-2">Scan to Pay</p>
+                  <div className="bg-white rounded-lg p-2"><img src={upiQrUrl} className="w-[110px] h-[110px]" alt="UPI QR" /></div>
+                  <p className="text-[9px] font-black text-white uppercase tracking-widest mt-3 mb-1.5">UPI ID</p>
+                  <div className="bg-white rounded-md py-1.5 px-3 w-full text-center"><span className="text-[12px] font-black" style={{ color: pfNavy }}>{profile.upiId}</span></div>
+                </>) : (
+                  <p className="text-[9px] font-black text-white uppercase tracking-widest py-4">Payment Details Below</p>
+                )}
+              </div>
+              <div className="text-center px-4 py-3" style={{ backgroundColor: pfTealDark }}>
+                <p className="text-[9px] font-black text-white uppercase tracking-widest">Total Amount Due</p>
+                <p className="text-[34px] font-black text-white leading-none mt-1">₹{roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</p>
+                <p className="text-[9px] font-medium text-white/90 mt-1.5 leading-snug">{numberToWords(roundedTotal)}</p>
+              </div>
+              <div className="bg-white px-3 py-2.5">
+                <p className="text-center text-[8px] font-black uppercase tracking-widest mb-2" style={{ color: pfTeal }}>We Accept</p>
+                {upiAppMarks}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Bottom: Payment details + Summary ── */}
+        <div className="flex gap-6 mt-6">
+          <div className="w-[58%] space-y-4">
+            <div>
+              <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide mb-2" style={{ color: pfNavy }}><Receipt size={12} strokeWidth={2.5} />Payment Details</p>
+              <div className="space-y-1.5 text-[10px]">
+                {profile.bankName && <div className="flex items-center gap-2"><Landmark size={11} className="text-slate-400" /><span className="text-slate-500 w-20">Bank</span><span className="font-bold text-slate-800">{profile.bankName}</span></div>}
+                {profile.accountNumber && <div className="flex items-center gap-2"><CreditCard size={11} className="text-slate-400" /><span className="text-slate-500 w-20">Account No.</span><span className="font-bold text-slate-800">{profile.accountNumber}</span></div>}
+                {profile.ifscCode && <div className="flex items-center gap-2"><FileText size={11} className="text-slate-400" /><span className="text-slate-500 w-20">IFSC</span><span className="font-bold text-slate-800">{profile.ifscCode}</span></div>}
+                {profile.upiId && <div className="flex items-center gap-2"><Smartphone size={11} className="text-slate-400" /><span className="text-slate-500 w-20">UPI ID</span><span className="font-black" style={{ color: pfTeal }}>{profile.upiId}</span></div>}
+              </div>
+            </div>
+            {profile.termsAndConditions && (<div>
+              <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide mb-1.5" style={{ color: pfNavy }}><ShieldCheck size={12} strokeWidth={2.5} />Terms & Conditions</p>
+              <p className="text-[9px] text-slate-500 leading-relaxed whitespace-pre-line">{profile.termsAndConditions}</p>
+            </div>)}
+            {profile.defaultNotes && (<div>
+              <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide mb-1.5" style={{ color: pfNavy }}><StickyNote size={12} strokeWidth={2.5} />Additional Notes</p>
+              <p className="text-[9px] text-slate-500 italic leading-relaxed">{profile.defaultNotes}</p>
+            </div>)}
+          </div>
+          <div className="flex-1">
+            <div className="rounded-xl border border-slate-100 overflow-hidden">
+              <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide px-4 py-2.5 bg-slate-50" style={{ color: pfNavy }}><Receipt size={12} strokeWidth={2.5} />Invoice Summary</p>
+              <div className="px-4 py-2 text-[10px]">
+                <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">Sub Total</span><span className="font-black text-slate-800">₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                {gstType === GSTType.CGST_SGST ? (<>
+                  <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">CGST</span><span className="font-bold text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                  <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">SGST</span><span className="font-bold text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                </>) : (<div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">IGST</span><span className="font-bold text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+                {roundOff !== 0 && <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">Round Off</span><span className="font-bold text-slate-700">{roundOff > 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>}
+              </div>
+              <div className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: pfNavy }}>
+                <span className="text-[12px] font-black text-white uppercase tracking-wide">Total Due</span>
+                <span className="text-[22px] font-black text-white">₹{roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Footer ── */}
+        <div className="flex justify-between items-end pt-5 mt-5 border-t border-slate-100">
+          <div className="text-[9px] text-slate-400 font-medium space-y-0.5">
+            {profile.email && <p>✉ {profile.email}</p>}
+            {profile.phone && <p>✆ {profile.phone}</p>}
+          </div>
+          <div className="text-right">
+            <div className="w-28 border-t border-slate-200 ml-auto mb-1"></div>
+            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Authorised Signatory</p>
+            <p className="text-[9px] font-black text-slate-700 mt-0.5">{profile.name}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const invoiceTemplate = profile.theme.templateId === 'modern-2'
     ? modern2Template
     : profile.theme.templateId === 'geometric'
       ? geometricTemplate
-      : modern1Template;
+      : profile.theme.templateId === 'payment-first'
+        ? paymentFirstTemplate
+        : modern1Template;
 
   // ═══════════════════════════════════════════
   //  LIST VIEW: Searchable table of all invoices

@@ -101,7 +101,7 @@ export enum GSTType {
 }
 
 export interface BusinessTheme {
-  templateId: 'modern-1' | 'modern-2' | 'geometric';
+  templateId: 'modern-1' | 'modern-2' | 'geometric' | 'payment-first';
   primaryColor: string;
   fontFamily: string;
   logoUrl?: string;

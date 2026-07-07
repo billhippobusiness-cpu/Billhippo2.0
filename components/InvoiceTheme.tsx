@@ -15,14 +15,16 @@ const COLORS = [
   { name: 'Ocean Blue', value: '#0284c7' },
 ];
 
-// Default colours that ship with the Geometric Corporate Invoice style.
-// Chosen when the user first switches to this template (they can override afterwards).
-const GEOMETRIC_TEAL = '#149AAB';   // primary teal accent (hexagons, TOTAL banner)
+// Default colours that ship with certain styles — applied when the user first
+// switches to that template (they can override the colour afterwards).
+const GEOMETRIC_TEAL = '#149AAB';    // Geometric: primary teal accent
+const PAYMENT_FIRST_NAVY = '#1E3A8A'; // Payment First: primary navy (teal accent derived)
 
 const TEMPLATES = [
   { id: 'modern-1', name: 'Modern 1', desc: 'Logo Left, Title Center/Right. Professional billing boxes.' },
   { id: 'modern-2', name: 'Modern 2', desc: 'Business info left, Invoice title right. Full GST table with QR payment.' },
   { id: 'geometric', name: 'Geometric Corporate Invoice', desc: 'Bold geometric header, hexagon accents & angular banners. Teal & navy corporate look.' },
+  { id: 'payment-first', name: 'Payment First', desc: 'Big Pay Instantly QR panel with UPI apps. Payment-focused navy & teal layout.' },
 ];
 
 // Blend two hex colours (t=0 → a, t=1 → b). Used to derive the geometric
@@ -125,11 +127,13 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                   onClick={() => setTheme(prev => ({
                     ...prev,
                     templateId: t.id as any,
-                    // Selecting the Geometric style applies its signature teal as the
-                    // default colour (the user can still pick any colour afterwards).
+                    // Selecting a themed style applies its signature default colour
+                    // (the user can still pick any colour afterwards).
                     ...(t.id === 'geometric' && prev.templateId !== 'geometric'
                       ? { primaryColor: GEOMETRIC_TEAL }
-                      : {}),
+                      : t.id === 'payment-first' && prev.templateId !== 'payment-first'
+                        ? { primaryColor: PAYMENT_FIRST_NAVY }
+                        : {}),
                   }))}
                   className={`p-5 rounded-[2rem] border-2 text-left transition-all relative ${theme.templateId === t.id ? 'bg-indigo-50 border-profee-blue' : 'bg-white border-slate-50 hover:border-slate-100'}`}
                  >
@@ -341,7 +345,7 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                       <div className="h-10 w-1/3 rounded-xl" style={{ backgroundColor: theme.primaryColor }}></div>
                    </div>
                 </div>
-              ) : (
+              ) : theme.templateId === 'geometric' ? (
                 /* ── Geometric Corporate Invoice preview ── */
                 (() => {
                   const navy = mixHex(theme.primaryColor, '#0e2a4a', 0.68);
@@ -402,6 +406,68 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                           <div className="w-1/2 flex items-center text-white px-3 py-2.5" style={{ backgroundColor: theme.primaryColor, clipPath: 'polygon(8% 0, 100% 0, 100% 100%, 0 100%)' }}>
                              <span className="text-[9px] font-black uppercase tracking-widest">Total</span>
                              <span className="ml-auto text-[15px] font-black">₹1,954</span>
+                          </div>
+                       </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                /* ── Payment First preview ── */
+                (() => {
+                  const navy = theme.primaryColor;
+                  const teal = mixHex(theme.primaryColor, '#0FB5C4', 0.78);
+                  return (
+                    <div className="flex gap-3">
+                       {/* Left column */}
+                       <div className="flex-1 space-y-2.5">
+                          <div className="flex items-start gap-2">
+                             <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black text-white flex-shrink-0" style={{ backgroundColor: teal }}>B</div>
+                             <div className="space-y-0.5">
+                               <p className="text-[9px] font-black" style={{ color: navy }}>Business Name</p>
+                               <p className="text-[6px] text-slate-400 leading-tight">123 Main Street, Mumbai</p>
+                             </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                             {['Billed by', 'Billed to'].map((lbl, i) => (
+                               <div key={i} className="rounded-md border border-slate-100 overflow-hidden">
+                                  <div className="text-[5px] font-black uppercase tracking-widest text-white px-1.5 py-1" style={{ backgroundColor: navy }}>{lbl}</div>
+                                  <div className="p-1.5 space-y-1">
+                                     <div className="h-1 w-3/4 bg-slate-100 rounded"></div>
+                                     <div className="h-1 w-1/2 bg-slate-100 rounded"></div>
+                                  </div>
+                               </div>
+                             ))}
+                          </div>
+                          <div className="rounded-md overflow-hidden border border-slate-100">
+                             <div className="h-3.5 w-full flex items-center px-1.5 text-[5px] font-black text-white uppercase gap-2" style={{ backgroundColor: navy }}>
+                               <span className="flex-1">Description</span><span>Total</span>
+                             </div>
+                             <div className="p-1.5 space-y-1">
+                                {[0, 1].map(r => (<div key={r} className="h-1 w-full bg-slate-100 rounded"></div>))}
+                             </div>
+                          </div>
+                       </div>
+                       {/* Right: payment hero */}
+                       <div className="w-[38%] rounded-xl overflow-hidden border" style={{ borderColor: teal }}>
+                          <div className="text-center text-[6px] font-black text-white uppercase tracking-widest py-1" style={{ backgroundColor: navy }}>🔒 Pay Instantly</div>
+                          <div className="p-2 space-y-1.5" style={{ backgroundColor: teal }}>
+                             <p className="text-center text-[6px] font-black text-white uppercase tracking-widest">Scan to Pay</p>
+                             <div className="bg-white rounded-md aspect-square flex items-center justify-center mx-auto w-full">
+                                <div className="grid grid-cols-4 grid-rows-4 gap-0.5 w-4/5 h-4/5">
+                                   {Array.from({ length: 16 }).map((_, i) => (<div key={i} className={(i * 7) % 3 ? 'bg-slate-900' : 'bg-transparent'}></div>))}
+                                </div>
+                             </div>
+                             <div className="bg-white/95 rounded text-center text-[6px] font-black py-0.5" style={{ color: navy }}>upi@ybl</div>
+                          </div>
+                          <div className="text-center py-1.5" style={{ backgroundColor: mixHex(teal, '#000000', 0.12) }}>
+                             <p className="text-[5px] font-bold text-white/90 uppercase tracking-widest">Total Amount Due</p>
+                             <p className="text-[13px] font-black text-white leading-none mt-0.5">₹1,954</p>
+                          </div>
+                          <div className="bg-white px-1 py-1.5">
+                             <p className="text-center text-[5px] font-black uppercase tracking-widest mb-1" style={{ color: teal }}>We Accept</p>
+                             <div className="flex justify-center gap-1 text-[5px] font-black text-slate-400">
+                                <span>UPI</span><span>GPay</span><span>PhonePe</span><span>Paytm</span>
+                             </div>
                           </div>
                        </div>
                     </div>
