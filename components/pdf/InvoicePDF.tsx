@@ -800,32 +800,33 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
       </Svg>
     );
 
-    // ── "We Accept" UPI-app marks (simplified functional representations) ──
+    // ── "We Accept" UPI-app marks (brand-coloured functional representations) ──
     const upiMark = (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-        <Svg width={11} height={12} viewBox="0 0 11 12">
-          <Polygon points="0,1 6,1 9.5,6 3.5,6" fill="#E8752B" />
-          <Polygon points="1.5,6 7.5,6 11,11 5,11" fill="#66A22E" />
+        <Svg width={14} height={9} viewBox="0 0 22 14">
+          <Polygon points="0,0 11,0 17,7 6,7" fill="#E97A26" />
+          <Polygon points="4,7 15,7 21,14 10,14" fill="#5CA632" />
         </Svg>
         <Text style={{ fontSize: 8.5, fontFamily: 'Poppins', fontWeight: 800, color: '#0B3D7A' }}>UPI</Text>
       </View>
     );
     const gpayMark = (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-        <Svg width={12} height={12} viewBox="0 0 12 12">
-          <Rect x={0} y={0} width={6} height={6} fill="#EA4335" />
-          <Rect x={6} y={0} width={6} height={6} fill="#4285F4" />
-          <Rect x={0} y={6} width={6} height={6} fill="#FBBC05" />
-          <Rect x={6} y={6} width={6} height={6} fill="#34A853" />
-          <Circle cx={6} cy={6} r={2.6} fill={WHITE} />
+        <Svg width={13} height={13} viewBox="0 0 26 26">
+          <Path d="M4.6 8.4 A9.5 9.5 0 0 1 21 6.6" stroke="#EA4335" strokeWidth={5} fill="none" />
+          <Path d="M4.6 8.4 A9.5 9.5 0 0 0 5.2 18.6" stroke="#FBBC04" strokeWidth={5} fill="none" />
+          <Path d="M5.2 18.6 A9.5 9.5 0 0 0 20.4 18.9" stroke="#34A853" strokeWidth={5} fill="none" />
+          <Path d="M20.4 18.9 A9.5 9.5 0 0 0 21 6.6" stroke="#4285F4" strokeWidth={5} fill="none" />
+          <Rect x={13} y={10.6} width={9.7} height={4.8} fill="#4285F4" />
+          <Rect x={12.5} y={5} width={2} height={5.6} fill={WHITE} />
         </Svg>
         <Text style={{ fontSize: 9, fontFamily: 'Poppins', fontWeight: 600, color: '#5F6368' }}>Pay</Text>
       </View>
     );
     const phonepeMark = (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-        <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: '#5F259F', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: 6, fontFamily: 'Poppins', fontWeight: 700, color: WHITE }}>Pe</Text>
+        <View style={{ width: 13, height: 13, borderRadius: 3.5, backgroundColor: '#5F259F', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 6.5, fontFamily: 'Poppins', fontWeight: 700, color: WHITE }}>Pe</Text>
         </View>
         <Text style={{ fontSize: 8, fontFamily: 'Poppins', fontWeight: 700, color: '#5F259F' }}>PhonePe</Text>
       </View>
