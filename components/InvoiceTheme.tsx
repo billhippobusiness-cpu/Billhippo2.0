@@ -15,11 +15,27 @@ const COLORS = [
   { name: 'Ocean Blue', value: '#0284c7' },
 ];
 
+// Default colours that ship with the Geometric Corporate Invoice style.
+// Chosen when the user first switches to this template (they can override afterwards).
+const GEOMETRIC_TEAL = '#149AAB';   // primary teal accent (hexagons, TOTAL banner)
+
 const TEMPLATES = [
   { id: 'modern-1', name: 'Modern 1', desc: 'Logo Left, Title Center/Right. Professional billing boxes.' },
   { id: 'modern-2', name: 'Modern 2', desc: 'Business info left, Invoice title right. Full GST table with QR payment.' },
-  { id: 'minimal', name: 'Minimalist', desc: 'Clean, airy layout for creative services.' },
+  { id: 'geometric', name: 'Geometric Corporate Invoice', desc: 'Bold geometric header, hexagon accents & angular banners. Teal & navy corporate look.' },
 ];
+
+// Blend two hex colours (t=0 → a, t=1 → b). Used to derive the geometric
+// template's navy secondary tone from whatever primary colour the user picks.
+const mixHex = (a: string, b: string, t: number): string => {
+  const ah = a.replace('#', ''), bh = b.replace('#', '');
+  const ch = (i: number) => {
+    const av = parseInt(ah.slice(i, i + 2), 16);
+    const bv = parseInt(bh.slice(i, i + 2), 16);
+    return Math.round(av * (1 - t) + bv * t).toString(16).padStart(2, '0');
+  };
+  return `#${ch(0)}${ch(2)}${ch(4)}`;
+};
 
 const FONTS = [
   { name: 'Professional Poppins', value: 'Poppins, sans-serif' },
@@ -106,7 +122,15 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                {TEMPLATES.map(t => (
                  <button
                   key={t.id}
-                  onClick={() => setTheme({...theme, templateId: t.id as any})}
+                  onClick={() => setTheme(prev => ({
+                    ...prev,
+                    templateId: t.id as any,
+                    // Selecting the Geometric style applies its signature teal as the
+                    // default colour (the user can still pick any colour afterwards).
+                    ...(t.id === 'geometric' && prev.templateId !== 'geometric'
+                      ? { primaryColor: GEOMETRIC_TEAL }
+                      : {}),
+                  }))}
                   className={`p-5 rounded-[2rem] border-2 text-left transition-all relative ${theme.templateId === t.id ? 'bg-indigo-50 border-profee-blue' : 'bg-white border-slate-50 hover:border-slate-100'}`}
                  >
                     {theme.templateId === t.id && (
@@ -318,10 +342,71 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                    </div>
                 </div>
               ) : (
-                <div className="space-y-6 text-center pt-20">
-                   <div className="h-12 w-12 rounded-full mx-auto" style={{ backgroundColor: theme.primaryColor }}></div>
-                   <p className="text-xs font-bold text-slate-300 italic">Minimal Layout Selected</p>
-                </div>
+                /* ── Geometric Corporate Invoice preview ── */
+                (() => {
+                  const navy = mixHex(theme.primaryColor, '#0e2a4a', 0.68);
+                  return (
+                    <div className="space-y-3">
+                       {/* Header: logo + business | angular INVOICE banner */}
+                       <div className="flex justify-between items-start">
+                          <div className="flex items-start gap-2">
+                             <div className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0" style={{ color: theme.primaryColor, border: `2px solid ${theme.primaryColor}` }}>B</div>
+                             <div className="space-y-0.5">
+                               <p className="text-[10px] font-black text-slate-800">Business Name</p>
+                               <p className="text-[7px] text-slate-400 leading-tight">123 Main Street, Mumbai</p>
+                               <p className="text-[7px] font-bold leading-tight" style={{ color: theme.primaryColor }}>GSTIN: 27XXXXXX1234Z</p>
+                             </div>
+                          </div>
+                          <div className="relative">
+                             <div className="px-4 py-1.5 text-white text-[13px] font-black tracking-tight" style={{ background: navy, clipPath: 'polygon(12% 0, 100% 0, 100% 100%, 0 100%)' }}>INVOICE</div>
+                             <div className="absolute -bottom-1 left-2 h-1 w-8" style={{ backgroundColor: theme.primaryColor }}></div>
+                          </div>
+                       </div>
+                       {/* Billed by / to angular banner labels */}
+                       <div className="grid grid-cols-2 gap-2">
+                          {['Billed by', 'Billed to'].map((lbl, i) => (
+                            <div key={i} className="rounded-lg border border-slate-100 overflow-hidden">
+                               <div className="flex items-center gap-1.5 px-2 py-1">
+                                  <div className="w-3 h-3 rotate-90" style={{ backgroundColor: i === 0 ? navy : theme.primaryColor, clipPath: 'polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%)' }}></div>
+                                  <span className="text-[6px] font-black uppercase tracking-widest text-white px-2 py-0.5" style={{ backgroundColor: navy, clipPath: 'polygon(0 0, 100% 0, 88% 100%, 0 100%)' }}>{lbl}</span>
+                               </div>
+                               <div className="px-2 pb-2 space-y-1">
+                                  <p className="text-[8px] font-black text-slate-800">{i === 0 ? 'Business Name' : 'Customer Party'}</p>
+                                  <div className="h-1.5 w-3/4 bg-slate-100 rounded"></div>
+                               </div>
+                            </div>
+                          ))}
+                       </div>
+                       {/* Table with navy header */}
+                       <div className="rounded-lg overflow-hidden border border-slate-100">
+                          <div className="h-5 w-full flex items-center px-2 text-[6px] font-black text-white uppercase tracking-widest gap-3" style={{ backgroundColor: navy }}>
+                            <span className="w-3">#</span><span className="flex-1">Description</span><span>Qty</span><span>Total</span>
+                          </div>
+                          <div className="p-2 space-y-1.5">
+                             {[0, 1].map(r => (
+                               <div key={r} className={`flex gap-3 items-center h-2.5 rounded ${r % 2 ? 'bg-slate-50' : ''}`}>
+                                 <div className="w-3 h-1.5 bg-slate-100 rounded"></div>
+                                 <div className="flex-1 h-1.5 bg-slate-100 rounded"></div>
+                                 <div className="w-5 h-1.5 bg-slate-100 rounded"></div>
+                               </div>
+                             ))}
+                          </div>
+                       </div>
+                       {/* Bank (left) | big angular TOTAL banner (right) */}
+                       <div className="flex gap-2 items-end">
+                          <div className="flex-1 p-2 bg-slate-50 rounded-lg border border-slate-100 space-y-1">
+                             <p className="text-[6px] font-black uppercase tracking-widest" style={{ color: theme.primaryColor }}>Bank & Payment</p>
+                             <div className="h-1.5 w-full bg-slate-200 rounded"></div>
+                             <div className="h-1.5 w-2/3 bg-slate-200 rounded"></div>
+                          </div>
+                          <div className="w-1/2 flex items-center text-white px-3 py-2.5" style={{ backgroundColor: theme.primaryColor, clipPath: 'polygon(8% 0, 100% 0, 100% 100%, 0 100%)' }}>
+                             <span className="text-[9px] font-black uppercase tracking-widest">Total</span>
+                             <span className="ml-auto text-[15px] font-black">₹1,954</span>
+                          </div>
+                       </div>
+                    </div>
+                  );
+                })()
               )}
            </div>
         </div>
