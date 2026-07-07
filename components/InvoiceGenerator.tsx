@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, Briefcase, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, Briefcase, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle, User, Building2, MapPin, Landmark, BarChart3, ShieldCheck, StickyNote } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, ServiceItem, SupplyType, type Quotation } from '../types';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
@@ -21,6 +21,18 @@ const DEFAULT_PROFILE: BusinessProfile = {
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+// Blend two hex colours (t=0 → a, t=1 → b) — derives the Geometric template's
+// navy secondary tone from whatever primary colour the user has selected.
+const mixHex = (a: string, b: string, t: number): string => {
+  const ah = a.replace('#', ''), bh = b.replace('#', '');
+  const ch = (i: number) => {
+    const av = parseInt(ah.slice(i, i + 2), 16);
+    const bv = parseInt(bh.slice(i, i + 2), 16);
+    return Math.round(av * (1 - t) + bv * t).toString(16).padStart(2, '0');
+  };
+  return `#${ch(0)}${ch(2)}${ch(4)}`;
+};
 
 const numberToWords = (amount: number): string => {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
@@ -1030,7 +1042,221 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     </div>
   );
 
-  const invoiceTemplate = profile.theme.templateId === 'modern-2' ? modern2Template : modern1Template;
+  // ═══════════════════════════════════════════
+  //  GEOMETRIC CORPORATE TEMPLATE (on-screen preview)
+  //  Teal (primary) + derived navy, angular banners, hexagon badges.
+  // ═══════════════════════════════════════════
+  const geoTeal = profile.theme.primaryColor;
+  const geoNavy = mixHex(profile.theme.primaryColor, '#0e2a4a', 0.68);
+  const HEX_CLIP = 'polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)';
+  const geoHex = (icon: React.ReactNode) => (
+    <span className="inline-flex items-center justify-center flex-shrink-0" style={{ width: 22, height: 22, backgroundColor: geoTeal, clipPath: HEX_CLIP }}>
+      {icon}
+    </span>
+  );
+  const geoLabel = (icon: React.ReactNode, label: string) => (
+    <div className="flex items-center gap-1.5">
+      {geoHex(icon)}
+      <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white px-3 py-1" style={{ backgroundColor: geoNavy, clipPath: 'polygon(0 0, 100% 0, 94% 100%, 0 100%)' }}>{label}</span>
+    </div>
+  );
+
+  const geometricTemplate = (
+    <div className="bg-white w-full max-w-[860px] mx-auto border border-slate-100 print:shadow-none print:border-none shadow-2xl rounded-[2rem] overflow-hidden" style={{ fontFamily: profile.theme.fontFamily }}>
+      <div className="px-10 pt-10 pb-10 flex flex-col space-y-6">
+
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-start gap-3">
+            <div className="w-[64px] h-[64px] rounded-xl overflow-hidden border-2 flex items-center justify-center flex-shrink-0" style={{ borderColor: geoTeal }}>
+              {profile.theme.logoUrl
+                ? <img src={profile.theme.logoUrl} className="w-full h-full object-contain" alt="logo" />
+                : <span className="text-3xl font-black" style={{ color: geoTeal }}>{profile.name.charAt(0)}</span>}
+            </div>
+            <div>
+              <h1 className="text-[22px] font-black text-slate-900 leading-tight tracking-tight">{profile.name}</h1>
+              <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">{profile.address}, {profile.city}</p>
+              <p className="text-[10px] text-slate-500 leading-relaxed">{profile.state} – {profile.pincode}</p>
+              {profile.gstin && <p className="text-[10px] font-black mt-0.5" style={{ color: geoTeal }}>GSTIN: {profile.gstin}</p>}
+              {profile.phone && <p className="text-[10px] text-slate-500">Ph: {profile.phone}</p>}
+            </div>
+          </div>
+          <div className="flex flex-col items-end">
+            <div className="relative">
+              <div className="px-6 py-2 text-white text-[26px] font-black tracking-tight" style={{ backgroundColor: geoNavy, clipPath: 'polygon(12% 0, 100% 0, 100% 100%, 0 100%)' }}>INVOICE</div>
+              <div className="absolute left-3 -bottom-1 h-[3px] w-10" style={{ backgroundColor: geoTeal }}></div>
+            </div>
+            <div className="mt-4 space-y-1.5 text-right">
+              <div className="flex items-center justify-end gap-3"><span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Invoice #</span><span className="text-[12px] font-black text-slate-900">{invoiceNumber}</span></div>
+              <div className="flex items-center justify-end gap-3"><span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Date</span><span className="text-[12px] font-black text-slate-900">{invoiceDate}</span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Geometric divider */}
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-2" style={{ backgroundColor: geoTeal, clipPath: 'polygon(0 0, 100% 0, 50% 100%)' }}></span>
+          <span className="w-3 h-2" style={{ backgroundColor: geoNavy, clipPath: 'polygon(0 0, 100% 0, 50% 100%)' }}></span>
+          <span className="w-3 h-2 opacity-40" style={{ backgroundColor: geoTeal, clipPath: 'polygon(0 0, 100% 0, 50% 100%)' }}></span>
+          <span className="flex-1 h-[1.5px] ml-1" style={{ backgroundColor: `${geoNavy}30` }}></span>
+        </div>
+
+        {/* ── Billed by / to ── */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-xl border border-slate-100 overflow-hidden">
+            <div className="px-4 pt-4">{geoLabel(<User size={11} className="text-white" strokeWidth={2.5} />, 'Billed By')}</div>
+            <div className="px-4 pb-4 pt-3">
+              <p className="text-[13px] font-black text-slate-900">{profile.name}</p>
+              <p className="text-[10px] text-slate-500 leading-relaxed mt-1">{profile.address}, {profile.city}, {profile.state} – {profile.pincode}</p>
+              {profile.phone && <p className="text-[10px] text-slate-500">Ph: {profile.phone}</p>}
+              <div className="flex gap-6 mt-3">
+                <div><p className="text-[7px] font-bold text-slate-400 uppercase">GSTIN</p><p className="text-[10px] font-black text-slate-800">{profile.gstin || '—'}</p></div>
+                <div><p className="text-[7px] font-bold text-slate-400 uppercase">PAN</p><p className="text-[10px] font-black text-slate-800">{profile.pan || '—'}</p></div>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-100 overflow-hidden">
+            <div className="px-4 pt-4">{geoLabel(<Building2 size={11} className="text-white" strokeWidth={2.5} />, 'Billed To')}</div>
+            <div className="px-4 pb-4 pt-3">
+              <p className="text-[13px] font-black text-slate-900">{selectedCustomer?.name || 'Party Name'}</p>
+              <p className="text-[10px] text-slate-500 leading-relaxed mt-1">{selectedCustomer?.address || '—'}, {selectedCustomer?.city || '—'}, {selectedCustomer?.state || '—'} – {selectedCustomer?.pincode || '—'}</p>
+              {selectedCustomer?.phone && <p className="text-[10px] text-slate-500">Ph: {selectedCustomer.phone}</p>}
+              <div className="flex gap-6 mt-3">
+                <div><p className="text-[7px] font-bold text-slate-400 uppercase">GSTIN</p><p className="text-[10px] font-black text-slate-800">{selectedCustomer?.gstin || '—'}</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Place / Country of Supply ── */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/70">
+            {geoHex(<MapPin size={11} className="text-white" strokeWidth={2.5} />)}
+            <div><p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Place of Supply</p><p className="text-[11px] font-black text-slate-800 mt-0.5">{selectedCustomer?.state || profile.state}</p></div>
+          </div>
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/70">
+            {geoHex(<Globe size={11} className="text-white" strokeWidth={2.5} />)}
+            <div><p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Country of Supply</p><p className="text-[11px] font-black text-slate-800 mt-0.5">India</p></div>
+          </div>
+        </div>
+
+        {/* ── Items table ── */}
+        <div className="rounded-xl overflow-hidden border border-slate-100 shadow-sm">
+          <table className="w-full text-left border-collapse text-[10px]">
+            <thead>
+              <tr className="text-white font-black uppercase tracking-wide" style={{ backgroundColor: geoNavy }}>
+                <th className="px-3 py-3 w-7">#</th>
+                <th className="px-3 py-3">Item Description</th>
+                <th className="px-2 py-3 text-center">HSN/SAC</th>
+                <th className="px-2 py-3 text-center">Qty</th>
+                <th className="px-2 py-3 text-center">GST%</th>
+                <th className="px-3 py-3 text-right">Taxable Amt</th>
+                {gstType === GSTType.CGST_SGST ? (<><th className="px-2 py-3 text-right">SGST</th><th className="px-2 py-3 text-right">CGST</th></>) : (<th className="px-2 py-3 text-right" colSpan={2}>IGST</th>)}
+                <th className="px-3 py-3 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {items.map((item, idx) => {
+                const taxable = r2(item.quantity * item.rate);
+                const itemTax = r2(taxable * item.gstRate / 100);
+                const halfTax = r2(itemTax / 2);
+                return (
+                  <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                    <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
+                    <td className="px-3 py-3 font-semibold text-slate-800">{item.description || 'No description'}</td>
+                    <td className="px-2 py-3 text-center text-slate-500">{item.hsnCode || '—'}</td>
+                    <td className="px-2 py-3 text-center font-black text-slate-800">{item.quantity}</td>
+                    <td className="px-2 py-3 text-center text-slate-500">{item.gstRate}%</td>
+                    <td className="px-3 py-3 text-right text-slate-700">₹{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    {gstType === GSTType.CGST_SGST ? (<><td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></>) : (<td className="px-2 py-3 text-right text-slate-600" colSpan={2}>₹{itemTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>)}
+                    <td className="px-3 py-3 text-right font-black text-slate-900">₹{(taxable + itemTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Bank (left) | Summary + TOTAL (right) ── */}
+        <div className="grid grid-cols-2 gap-8 pt-1">
+          {/* Left */}
+          <div className="space-y-5">
+            <div className="space-y-3">
+              {geoLabel(<Landmark size={11} className="text-white" strokeWidth={2.5} />, 'Bank & Payment')}
+              <div className="flex gap-4 items-start">
+                <div className="flex-1 space-y-1.5 text-[10px]">
+                  {profile.bankName && <div className="flex justify-between"><span className="text-slate-400 font-bold">Bank</span><span className="text-slate-800 font-bold">{profile.bankName}</span></div>}
+                  {profile.accountNumber && <div className="flex justify-between"><span className="text-slate-400 font-bold">Account No.</span><span className="text-slate-800 font-bold">{profile.accountNumber}</span></div>}
+                  {profile.ifscCode && <div className="flex justify-between"><span className="text-slate-400 font-bold">IFSC</span><span className="text-slate-800 font-bold">{profile.ifscCode}</span></div>}
+                  {profile.upiId && <div className="flex justify-between pt-1.5 border-t border-slate-100"><span className="text-slate-400 font-bold">UPI ID</span><span className="font-black" style={{ color: geoTeal }}>{profile.upiId}</span></div>}
+                </div>
+                {profile.upiId && upiQrUrl && (
+                  <div className="flex-shrink-0 flex flex-col items-center">
+                    <p className="text-[6px] font-black uppercase tracking-widest mb-1" style={{ color: geoTeal }}>Scan to Pay</p>
+                    <div className="p-1.5 border border-slate-100 rounded-xl bg-white shadow-sm"><img src={upiQrUrl} className="w-[56px] h-[56px]" alt="UPI QR" /></div>
+                  </div>
+                )}
+              </div>
+            </div>
+            {profile.termsAndConditions && (
+              <div className="space-y-2">
+                {geoLabel(<ShieldCheck size={11} className="text-white" strokeWidth={2.5} />, 'Terms & Conditions')}
+                <p className="text-[9px] text-slate-500 leading-relaxed whitespace-pre-line">{profile.termsAndConditions}</p>
+              </div>
+            )}
+            {profile.defaultNotes && (
+              <div className="space-y-2">
+                {geoLabel(<StickyNote size={11} className="text-white" strokeWidth={2.5} />, 'Additional Notes')}
+                <p className="text-[9px] text-slate-500 italic leading-relaxed">{profile.defaultNotes}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Right */}
+          <div className="space-y-3">
+            {geoLabel(<BarChart3 size={11} className="text-white" strokeWidth={2.5} />, 'Summary')}
+            <div className="text-[11px] font-bold">
+              <div className="flex justify-between py-2 border-b border-slate-100"><span className="text-slate-400">Sub Total</span><span className="text-slate-800">₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+              {gstType === GSTType.CGST_SGST ? (<>
+                <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">CGST</span><span className="text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">SGST</span><span className="text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+              </>) : (<div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">IGST</span><span className="text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+              {roundOff !== 0 && (<div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">Round Off</span><span className="text-slate-700">{roundOff > 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+            </div>
+            {/* Big angular TOTAL banner */}
+            <div className="flex items-center justify-between text-white pl-8 pr-5 py-3.5" style={{ backgroundColor: geoTeal, clipPath: 'polygon(9% 0, 100% 0, 100% 100%, 0 100%)' }}>
+              <span className="text-[15px] font-black uppercase tracking-widest">Total</span>
+              <span className="text-[26px] font-black">₹{roundedTotal.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+            </div>
+            <div className="relative rounded-xl p-3 overflow-hidden" style={{ backgroundColor: `${geoTeal}14` }}>
+              <div className="absolute top-0 right-0 w-9 h-9" style={{ backgroundColor: `${geoTeal}28`, clipPath: 'polygon(100% 0, 100% 100%, 0 0)' }}></div>
+              <p className="text-[7px] font-black uppercase tracking-widest" style={{ color: geoTeal }}>Invoice Total (in words)</p>
+              <p className="text-[10px] font-black text-slate-700 italic leading-snug mt-1">{numberToWords(roundedTotal)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Contact + Signature ── */}
+        <div className="flex justify-between items-end pt-4 border-t border-slate-100">
+          <div className="text-[9px] text-slate-400 font-medium space-y-0.5">
+            {profile.email && <p>✉ {profile.email}</p>}
+            {profile.phone && <p>✆ {profile.phone}</p>}
+          </div>
+          <div className="text-right">
+            <div className="w-28 border-t border-slate-200 ml-auto mb-1"></div>
+            <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Authorised Signatory</p>
+            <p className="text-[9px] font-black text-slate-700 mt-0.5">{profile.name}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const invoiceTemplate = profile.theme.templateId === 'modern-2'
+    ? modern2Template
+    : profile.theme.templateId === 'geometric'
+      ? geometricTemplate
+      : modern1Template;
 
   // ═══════════════════════════════════════════
   //  LIST VIEW: Searchable table of all invoices
