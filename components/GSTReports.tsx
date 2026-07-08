@@ -20,13 +20,17 @@ import {
   ShieldCheck,
   WifiOff,
 } from 'lucide-react';
-import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes, saveGSTRCache, loadGSTRCache, loadGSTSession } from '../lib/firestore';
+import { getInvoices, getCustomers, getBusinessProfile, getCreditNotes, getDebitNotes, getPurchases, saveGSTRCache, loadGSTRCache, loadGSTSession } from '../lib/firestore';
 import { downloadGSTR1Excel, downloadGSTR1JSON } from '../lib/gstr1Generator';
 import { downloadSalesRegisterExcel, downloadNotesRegisterExcel, downloadHSNExcel, aggregateHSN } from '../lib/salesRegisterExport';
-import { Invoice, GSTType, Customer, BusinessProfile, CreditNote, DebitNote } from '../types';
+import { Invoice, GSTType, Customer, BusinessProfile, CreditNote, DebitNote, Purchase } from '../types';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import SalesRegisterPDF from './pdf/SalesRegisterPDF';
 import GSTR3BPDF from './pdf/GSTR3BPDF';
+import CMP08PDF from './pdf/CMP08PDF';
+import GSTR4PDF from './pdf/GSTR4PDF';
+import { docScheme, periodSchemeKind, schemeRangesInPeriod, COMPOSITION_CATEGORIES } from '../lib/gstScheme';
+import { computeCMP08, computeGSTR4, downloadCMP08Excel, downloadGSTR4Excel, cmp08DueDate, gstr4DueDate } from '../lib/compositionReports';
 import { fetchGSTR2B, fetchGSTR3BOnline, fetchGSTR1Online, GSTR2BData, GSTR3BOnlineData, GSTR1OnlineData } from '../lib/whitebooksApi';
 import GSTPortalLogin from './GSTPortalLogin';
 import { downloadGSTR2BExcel } from '../lib/gstr2bExport';
@@ -97,7 +101,7 @@ interface GSTReportsProps {
   onNavigate?: (tab: string) => void;
 }
 
-type ActiveDetail = 'gstr1' | 'gstr3b' | 'taxsummary' | 'salesregister' | 'gstr2b' | null;
+type ActiveDetail = 'gstr1' | 'gstr3b' | 'taxsummary' | 'salesregister' | 'gstr2b' | 'cmp08' | 'gstr4' | null;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -106,6 +110,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   const [debitNotes, setDebitNotes] = useState<DebitNote[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -126,6 +131,8 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   // PDF Preview
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [gstr3bPdfOpen, setGstr3bPdfOpen] = useState(false);
+  const [cmp08PdfOpen, setCmp08PdfOpen] = useState(false);
+  const [gstr4PdfOpen, setGstr4PdfOpen] = useState(false);
 
   // GSTR-1 view toggle: 'app' = invoices from this app, 'portal' = fetched portal data
   const [gstr1View, setGstr1View] = useState<'app' | 'portal'>('app');
@@ -153,18 +160,20 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     const load = async () => {
       try {
         setLoading(true);
-        const [invData, custData, profileData, cnData, dnData] = await Promise.all([
+        const [invData, custData, profileData, cnData, dnData, purchaseData] = await Promise.all([
           getInvoices(userId),
           getCustomers(userId),
           getBusinessProfile(userId),
           getCreditNotes(userId),
           getDebitNotes(userId),
+          getPurchases(userId),
         ]);
         setInvoices(invData);
         setCustomers(custData);
         setProfile(profileData);
         setCreditNotes(cnData);
         setDebitNotes(dnData);
+        setPurchases(purchaseData);
       } catch (err) {
         console.error(err);
       } finally {
@@ -238,28 +247,90 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     return debitNotes.filter(dn => dn.date >= start && dn.date <= end);
   }, [debitNotes, periodMode, selectedMonth, selectedQuarter]);
 
-  // Aggregate calculations
-  const totalTaxable = useMemo(() => filteredInvoices.reduce((s, i) => s + i.totalBeforeTax, 0), [filteredInvoices]);
-  const totalCGST = useMemo(() => filteredInvoices.reduce((s, i) => s + i.cgst, 0), [filteredInvoices]);
-  const totalSGST = useMemo(() => filteredInvoices.reduce((s, i) => s + i.sgst, 0), [filteredInvoices]);
-  const totalIGST = useMemo(() => filteredInvoices.reduce((s, i) => s + i.igst, 0), [filteredInvoices]);
+  // ── GST scheme scoping ──
+  // The selected period may be regular, composition, or mixed (mid-period
+  // switch). GSTR-1/3B consume only regular-scheme documents; CMP-08/GSTR-4
+  // consume only composition-scheme documents. Sales Register shows all.
+  const periodRange = useMemo(() => {
+    if (periodMode === 'monthly') return { start: `${selectedMonth}-01`, end: monthEndDate(selectedMonth) };
+    return quarterToDateRange(selectedQuarter);
+  }, [periodMode, selectedMonth, selectedQuarter]);
+
+  const schemeKind = useMemo(
+    () => periodSchemeKind(profile, periodRange.start, periodRange.end),
+    [profile, periodRange],
+  );
+  const showRegularReports = schemeKind === 'regular' || schemeKind === 'mixed' || schemeKind === 'none';
+  const showCompositionReports = schemeKind === 'composition' || schemeKind === 'mixed';
+
+  const schemeRanges = useMemo(
+    () => schemeRangesInPeriod(profile, periodRange.start, periodRange.end),
+    [profile, periodRange],
+  );
+  const rangeChip = (scheme: 'regular' | 'composition') => {
+    if (schemeKind !== 'mixed') return null;
+    return schemeRanges
+      .filter(rg => rg.scheme === scheme)
+      .map(rg => `${fmtDate(rg.start)} – ${fmtDate(rg.end)}`)
+      .join(', ');
+  };
+
+  const regularInvoices = useMemo(
+    () => filteredInvoices.filter(i => docScheme(i, profile) === 'regular'),
+    [filteredInvoices, profile],
+  );
+  const regularCreditNotes = useMemo(
+    () => filteredCreditNotes.filter(n => docScheme(n, profile) === 'regular'),
+    [filteredCreditNotes, profile],
+  );
+  const regularDebitNotes = useMemo(
+    () => filteredDebitNotes.filter(n => docScheme(n, profile) === 'regular'),
+    [filteredDebitNotes, profile],
+  );
+
+  // Composition reports: CMP-08 for the selected/current quarter, GSTR-4 for the FY
+  const cmp08Quarter = useMemo(() => {
+    if (periodMode === 'quarterly') return selectedQuarter;
+    // Monthly mode: quarter containing the selected month
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const fyYear = m >= 4 ? y : y - 1;
+    const q = m >= 4 && m <= 6 ? 1 : m >= 7 && m <= 9 ? 2 : m >= 10 && m <= 12 ? 3 : 4;
+    return `${fyYear}-Q${q}`;
+  }, [periodMode, selectedMonth, selectedQuarter]);
+
+  const cmp08Data = useMemo(
+    () => (profile ? computeCMP08(profile, invoices, creditNotes, debitNotes, cmp08Quarter) : null),
+    [profile, invoices, creditNotes, debitNotes, cmp08Quarter],
+  );
+  const gstr4Data = useMemo(
+    () => (profile && showCompositionReports ? computeGSTR4(profile, invoices, creditNotes, debitNotes, purchases, selectedFY) : null),
+    [profile, invoices, creditNotes, debitNotes, purchases, selectedFY, showCompositionReports],
+  );
+
+  // Aggregate calculations (regular-scheme docs — feed GSTR-1/3B surfaces)
+  const totalTaxable = useMemo(() => regularInvoices.reduce((s, i) => s + i.totalBeforeTax, 0), [regularInvoices]);
+  const totalCGST = useMemo(() => regularInvoices.reduce((s, i) => s + i.cgst, 0), [regularInvoices]);
+  const totalSGST = useMemo(() => regularInvoices.reduce((s, i) => s + i.sgst, 0), [regularInvoices]);
+  const totalIGST = useMemo(() => regularInvoices.reduce((s, i) => s + i.igst, 0), [regularInvoices]);
   const totalTax = totalCGST + totalSGST + totalIGST;
+  // All-document sales figure for the quick-stats bar (includes Bills of Supply)
+  const totalSalesAll = useMemo(() => filteredInvoices.reduce((s, i) => s + i.totalAmount, 0), [filteredInvoices]);
 
   // Net output liability (invoices − credit notes + debit notes) and the ITC
   // set-off worked out against GSTR-2B — mirrors the GSTR-3B PDF computation.
   const netLiability = useMemo(() => {
-    const cnI = filteredCreditNotes.reduce((s, n) => s + n.igst, 0);
-    const cnC = filteredCreditNotes.reduce((s, n) => s + n.cgst, 0);
-    const cnS = filteredCreditNotes.reduce((s, n) => s + n.sgst, 0);
-    const dnI = filteredDebitNotes.reduce((s, n) => s + n.igst, 0);
-    const dnC = filteredDebitNotes.reduce((s, n) => s + n.cgst, 0);
-    const dnS = filteredDebitNotes.reduce((s, n) => s + n.sgst, 0);
+    const cnI = regularCreditNotes.reduce((s, n) => s + n.igst, 0);
+    const cnC = regularCreditNotes.reduce((s, n) => s + n.cgst, 0);
+    const cnS = regularCreditNotes.reduce((s, n) => s + n.sgst, 0);
+    const dnI = regularDebitNotes.reduce((s, n) => s + n.igst, 0);
+    const dnC = regularDebitNotes.reduce((s, n) => s + n.cgst, 0);
+    const dnS = regularDebitNotes.reduce((s, n) => s + n.sgst, 0);
     return {
       igst: totalIGST - cnI + dnI,
       cgst: totalCGST - cnC + dnC,
       sgst: totalSGST - cnS + dnS,
     };
-  }, [totalIGST, totalCGST, totalSGST, filteredCreditNotes, filteredDebitNotes]);
+  }, [totalIGST, totalCGST, totalSGST, regularCreditNotes, regularDebitNotes]);
 
   const itcCredit = useMemo(() => (
     gstr2bData
@@ -269,8 +340,8 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
   const itcSetOff = useMemo(() => computeSetOff(netLiability, itcCredit), [netLiability, itcCredit]);
 
-  const b2bCount = useMemo(() => filteredInvoices.filter(i => i.gstType === GSTType.CGST_SGST).length, [filteredInvoices]);
-  const igstCount = useMemo(() => filteredInvoices.filter(i => i.gstType === GSTType.IGST).length, [filteredInvoices]);
+  const b2bCount = useMemo(() => regularInvoices.filter(i => i.gstType === GSTType.CGST_SGST).length, [regularInvoices]);
+  const igstCount = useMemo(() => regularInvoices.filter(i => i.gstType === GSTType.IGST).length, [regularInvoices]);
 
   // Outstanding dues
   const unpaidInvoices = useMemo(
@@ -293,10 +364,10 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   // HSN aggregated data
   const hsnRows = useMemo(() => aggregateHSN(filteredInvoices), [filteredInvoices]);
 
-  // Rate-wise breakdown for Tax Summary
+  // Rate-wise breakdown for Tax Summary (regular-scheme docs only)
   const rateBreakdown = useMemo(() => {
     const map = new Map<number, { taxable: number; cgst: number; sgst: number; igst: number; tax: number; count: number }>();
-    for (const inv of filteredInvoices) {
+    for (const inv of regularInvoices) {
       for (const item of inv.items) {
         const rate = item.gstRate;
         const taxableAmt = item.quantity * item.rate;
@@ -316,7 +387,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     return Array.from(map.entries())
       .map(([rate, vals]) => ({ rate, ...vals }))
       .sort((a, b) => a.rate - b.rate);
-  }, [filteredInvoices]);
+  }, [regularInvoices]);
 
   // Filing deadlines
   const filingDeadlines = useMemo(() => {
@@ -356,23 +427,33 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
 
     const fmt = (d: Date) => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
+    // Composition deadlines: CMP-08 (18th after quarter end) and GSTR-4 (30 June after FY)
+    const cmp08DueStr = cmp08DueDate(cmp08Quarter);
+    const cmp08Due = new Date(cmp08DueStr);
+    const diffDaysCMP08 = Math.ceil((cmp08Due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    const gstr4DueStr = gstr4DueDate(selectedFY);
+    const gstr4Due = new Date(gstr4DueStr);
+    const diffDaysGSTR4 = Math.ceil((gstr4Due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
     return {
       gstr1: { date: fmt(gstr1Due), days: diffDaysGSTR1, color: getColor(diffDaysGSTR1), icon: getIcon(diffDaysGSTR1) },
       gstr3b: { date: fmt(gstr3bDue), days: diffDaysGSTR3B, color: getColor(diffDaysGSTR3B), icon: getIcon(diffDaysGSTR3B) },
+      cmp08: { date: fmt(cmp08Due), days: diffDaysCMP08, color: getColor(diffDaysCMP08), icon: getIcon(diffDaysCMP08) },
+      gstr4: { date: fmt(gstr4Due), days: diffDaysGSTR4, color: getColor(diffDaysGSTR4), icon: getIcon(diffDaysGSTR4) },
     };
-  }, [periodMode, selectedMonth, selectedQuarter]);
+  }, [periodMode, selectedMonth, selectedQuarter, cmp08Quarter, selectedFY]);
 
   // GSTR-1 download handlers (monthly only)
   const handleDownloadExcel = async () => {
-    if (!profile || filteredInvoices.length === 0 || periodMode !== 'monthly') return;
+    if (!profile || regularInvoices.length === 0 || periodMode !== 'monthly') return;
     setGeneratingExcel(true);
     try {
       downloadGSTR1Excel({
         profile,
-        invoices: filteredInvoices,
+        invoices: regularInvoices,
         customers,
-        creditNotes: filteredCreditNotes,
-        debitNotes: filteredDebitNotes,
+        creditNotes: regularCreditNotes,
+        debitNotes: regularDebitNotes,
         fp,
       });
     } finally {
@@ -381,15 +462,15 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
   };
 
   const handleDownloadJson = async () => {
-    if (!profile || filteredInvoices.length === 0 || periodMode !== 'monthly') return;
+    if (!profile || regularInvoices.length === 0 || periodMode !== 'monthly') return;
     setGeneratingJson(true);
     try {
       downloadGSTR1JSON({
         profile,
-        invoices: filteredInvoices,
+        invoices: regularInvoices,
         customers,
-        creditNotes: filteredCreditNotes,
-        debitNotes: filteredDebitNotes,
+        creditNotes: regularCreditNotes,
+        debitNotes: regularDebitNotes,
         fp,
       });
     } finally {
@@ -406,10 +487,14 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     else if (detail === 'taxsummary') setActiveSubTab('ratewise');
     else if (detail === 'salesregister') setActiveSubTab('salesreg');
     else if (detail === 'gstr2b') setActiveSubTab('summary');
+    else if (detail === 'cmp08') setActiveSubTab('summary');
+    else if (detail === 'gstr4') setActiveSubTab('outward');
     else setActiveSubTab('');
+    // CMP-08 is a quarterly statement — switch the period picker to quarterly
+    if (detail === 'cmp08' && periodMode !== 'quarterly') setPeriodMode('quarterly');
   };
 
-  const hasGSTR1Data = filteredInvoices.length > 0;
+  const hasGSTR1Data = regularInvoices.length > 0;
 
   const isSessionActive = () => gstSession && gstSession.expiresAt > Date.now();
 
@@ -645,8 +730,8 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
         { id: 'creditnotes', label: 'Credit Notes' },
         { id: 'debitnotes', label: 'Debit Notes' },
       ];
-      const b2bInvoices = filteredInvoices.filter(i => i.gstType === GSTType.CGST_SGST || (custMap.get(i.customerId)?.gstin));
-      const b2csInvoices = filteredInvoices.filter(i => i.gstType === GSTType.IGST);
+      const b2bInvoices = regularInvoices.filter(i => i.gstType === GSTType.CGST_SGST || (custMap.get(i.customerId)?.gstin));
+      const b2csInvoices = regularInvoices.filter(i => i.gstType === GSTType.IGST);
 
       return (
         <div>
@@ -779,7 +864,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        <NoteTableRows noteList={filteredCreditNotes} emptyMsg="No credit notes for this period." />
+                        <NoteTableRows noteList={regularCreditNotes} emptyMsg="No credit notes for this period." />
                       </tbody>
                     </table>
                   </div>
@@ -795,7 +880,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        <NoteTableRows noteList={filteredDebitNotes} emptyMsg="No debit notes for this period." />
+                        <NoteTableRows noteList={regularDebitNotes} emptyMsg="No debit notes for this period." />
                       </tbody>
                     </table>
                   </div>
@@ -844,7 +929,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {[
-                          { label: 'Taxable Value (B2B)', app: filteredInvoices.filter(i => custMap.get(i.customerId)?.gstin).reduce((s, i) => s + i.totalBeforeTax, 0), portal: gstr1Online.totalTaxableValue },
+                          { label: 'Taxable Value (B2B)', app: regularInvoices.filter(i => custMap.get(i.customerId)?.gstin).reduce((s, i) => s + i.totalBeforeTax, 0), portal: gstr1Online.totalTaxableValue },
                           { label: 'IGST', app: totalIGST, portal: gstr1Online.totalIGST },
                           { label: 'CGST', app: totalCGST, portal: gstr1Online.totalCGST },
                           { label: 'SGST', app: totalSGST, portal: gstr1Online.totalSGST },
@@ -1080,7 +1165,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    <InvoiceTableRows invList={filteredInvoices} emptyMsg="No invoices for this period." />
+                    <InvoiceTableRows invList={regularInvoices} emptyMsg="No invoices for this period." />
                   </tbody>
                 </table>
               </div>
@@ -1226,7 +1311,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    <InvoiceTableRows invList={filteredInvoices} emptyMsg="No invoices for this period." />
+                    <InvoiceTableRows invList={regularInvoices} emptyMsg="No invoices for this period." />
                   </tbody>
                 </table>
               </div>
@@ -1584,6 +1669,242 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
       );
     }
 
+    // ─── CMP-08 detail (composition, quarterly) ───────────────────────────────
+    if (activeDetail === 'cmp08') {
+      if (!cmp08Data) {
+        return (
+          <p className="text-sm text-slate-400 py-8 text-center">
+            No composition period falls in {quarterLabel(cmp08Quarter)}.
+          </p>
+        );
+      }
+      const catInfo = COMPOSITION_CATEGORIES[cmp08Data.category];
+      return (
+        <div className="space-y-6">
+          {/* Summary chips */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="rounded-2xl bg-indigo-50 border border-indigo-100 p-4">
+              <p className="text-xs font-bold text-indigo-500 uppercase tracking-wide mb-1">Category</p>
+              <p className="text-sm font-bold text-slate-800">{catInfo.shortLabel}</p>
+            </div>
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
+              <p className="text-xs font-bold text-emerald-600 uppercase tracking-wide mb-1">Outward Turnover</p>
+              <p className="text-sm font-bold text-slate-800">{inr(cmp08Data.outwardTurnover)}</p>
+            </div>
+            <div className="rounded-2xl bg-purple-50 border border-purple-100 p-4">
+              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-1">Tax Payable ({cmp08Data.ratePct}%)</p>
+              <p className="text-sm font-bold text-slate-800">{inr(cmp08Data.taxPayable)}</p>
+            </div>
+            <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4">
+              <p className="text-xs font-bold text-amber-600 uppercase tracking-wide mb-1">Filing Due</p>
+              <p className="text-sm font-bold text-slate-800">{fmtDate(cmp08Data.dueDate)}</p>
+            </div>
+          </div>
+
+          {cmp08Data.clipped && (
+            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-700 font-semibold">
+              A scheme change falls inside this quarter — CMP-08 covers only {fmtDate(cmp08Data.start)} to {fmtDate(cmp08Data.end)}.
+            </div>
+          )}
+
+          {/* Turnover derivation */}
+          <div className="rounded-2xl border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-5 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">Particulars</th>
+                  <th className="px-5 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">Documents</th>
+                  <th className="px-5 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-slate-100">
+                  <td className="px-5 py-3 text-slate-700 font-medium">Bills of Supply issued</td>
+                  <td className="px-5 py-3 text-right text-slate-500">{cmp08Data.invoiceCount}</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-800">{inr(cmp08Data.invoiceTotal)}</td>
+                </tr>
+                <tr className="border-b border-slate-100 bg-slate-50/50">
+                  <td className="px-5 py-3 text-slate-700 font-medium">Less: Credit Notes</td>
+                  <td className="px-5 py-3 text-right text-slate-500">{cmp08Data.creditNoteCount}</td>
+                  <td className="px-5 py-3 text-right font-bold text-rose-600">{cmp08Data.creditNoteTotal ? `− ${inr(cmp08Data.creditNoteTotal)}` : inr(0)}</td>
+                </tr>
+                <tr className="border-b border-slate-100">
+                  <td className="px-5 py-3 text-slate-700 font-medium">Add: Debit Notes</td>
+                  <td className="px-5 py-3 text-right text-slate-500">{cmp08Data.debitNoteCount}</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-800">{inr(cmp08Data.debitNoteTotal)}</td>
+                </tr>
+                <tr className="bg-slate-800 text-white font-bold">
+                  <td className="px-5 py-3">Net Outward Turnover</td>
+                  <td className="px-5 py-3"></td>
+                  <td className="px-5 py-3 text-right">{inr(cmp08Data.outwardTurnover)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Tax split */}
+          <div className="rounded-2xl border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-5 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">Self-Assessed Tax (Table 3, Form GST CMP-08)</th>
+                  <th className="px-5 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">CGST ({catInfo.cgstPct}%)</th>
+                  <th className="px-5 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">SGST ({catInfo.sgstPct}%)</th>
+                  <th className="px-5 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-slate-100">
+                  <td className="px-5 py-3 text-slate-700 font-medium">Outward supplies ({inr(cmp08Data.outwardTurnover)} × {cmp08Data.ratePct}%)</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-800">{inr(cmp08Data.cgst)}</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-800">{inr(cmp08Data.sgst)}</td>
+                  <td className="px-5 py-3 text-right font-bold text-purple-600">{inr(cmp08Data.taxPayable)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-xs text-slate-400">
+            Reverse-charge inward supplies (Table 3, row 2) must be self-assessed — BillHippo does not track RCM purchases.
+            Composition dealers cannot collect tax from customers or claim ITC.
+          </p>
+
+          {/* Downloads */}
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setCmp08PdfOpen(true)}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+            >
+              <Download size={15} /> Download PDF
+            </button>
+            <button
+              onClick={() => profile && downloadCMP08Excel(cmp08Data, profile)}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-50 transition-all"
+            >
+              <FileSpreadsheet size={15} /> Download Excel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── GSTR-4 detail (composition, annual) ─────────────────────────────────
+    if (activeDetail === 'gstr4') {
+      if (!gstr4Data || gstr4Data.quarters.length === 0) {
+        return (
+          <p className="text-sm text-slate-400 py-8 text-center">
+            No composition period falls in FY {selectedFY}.
+          </p>
+        );
+      }
+      return (
+        <div className="space-y-6">
+          {/* Sub-tabs */}
+          <div className="flex items-center gap-2">
+            {[['outward', 'Outward & Tax Paid'], ['inward', 'Inward Supplies']].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setActiveSubTab(key)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSubTab === key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {activeSubTab === 'outward' && (
+            <div className="rounded-2xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    {['Quarter', 'Period', 'Rate', 'Turnover', 'CGST', 'SGST', 'Tax Paid'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide last:text-right">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {gstr4Data.quarters.map(q => (
+                    <tr key={q.quarterKey} className="border-b border-slate-100">
+                      <td className="px-4 py-3 font-bold text-slate-800">{q.quarterKey.split('-')[1]}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{fmtDate(q.start)} – {fmtDate(q.end)}{q.clipped ? ' (part)' : ''}</td>
+                      <td className="px-4 py-3 text-slate-600">{q.ratePct}%</td>
+                      <td className="px-4 py-3 text-slate-700">{inr(q.outwardTurnover)}</td>
+                      <td className="px-4 py-3 text-slate-700">{inr(q.cgst)}</td>
+                      <td className="px-4 py-3 text-slate-700">{inr(q.sgst)}</td>
+                      <td className="px-4 py-3 text-right font-bold text-purple-600">{inr(q.taxPayable)}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-800 text-white font-bold">
+                    <td className="px-4 py-3" colSpan={3}>TOTAL — FY {gstr4Data.fyLabel}</td>
+                    <td className="px-4 py-3">{inr(gstr4Data.outwardTotal)}</td>
+                    <td className="px-4 py-3">{inr(gstr4Data.taxTotal / 2)}</td>
+                    <td className="px-4 py-3">{inr(gstr4Data.taxTotal / 2)}</td>
+                    <td className="px-4 py-3 text-right">{inr(gstr4Data.taxTotal)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {activeSubTab === 'inward' && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-5 py-3 text-left text-slate-500 text-xs font-bold uppercase tracking-wide">GST Rate</th>
+                      <th className="px-5 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">Taxable Value</th>
+                      <th className="px-5 py-3 text-right text-slate-500 text-xs font-bold uppercase tracking-wide">Tax (Cost)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gstr4Data.inwardByRate.map(rw => (
+                      <tr key={rw.gstRate} className="border-b border-slate-100">
+                        <td className="px-5 py-3 font-bold text-slate-700">{rw.gstRate}%</td>
+                        <td className="px-5 py-3 text-right text-slate-700">{inr(rw.taxableValue)}</td>
+                        <td className="px-5 py-3 text-right text-slate-700">{inr(rw.tax)}</td>
+                      </tr>
+                    ))}
+                    {gstr4Data.inwardByRate.length === 0 && (
+                      <tr><td colSpan={3} className="px-5 py-6 text-center text-sm text-slate-400">No purchases recorded in the composition period.</td></tr>
+                    )}
+                    <tr className="bg-slate-800 text-white font-bold">
+                      <td className="px-5 py-3">TOTAL ({gstr4Data.purchaseCount} purchases)</td>
+                      <td className="px-5 py-3 text-right">{inr(gstr4Data.inwardTaxableTotal)}</td>
+                      <td className="px-5 py-3 text-right">{inr(gstr4Data.inwardTaxTotal)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-400">
+                ITC is not claimable under the composition scheme — GST paid on purchases is a cost. Reported in GSTR-4 table 4 (inward supplies).
+              </p>
+            </div>
+          )}
+
+          <p className="text-xs text-slate-500 font-semibold">
+            GSTR-4 for FY {gstr4Data.fyLabel} is due by {fmtDate(gstr4Data.dueDate)}.
+          </p>
+
+          {/* Downloads */}
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setGstr4PdfOpen(true)}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+            >
+              <Download size={15} /> Download PDF
+            </button>
+            <button
+              onClick={() => profile && downloadGSTR4Excel(gstr4Data, profile)}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-50 transition-all"
+            >
+              <FileSpreadsheet size={15} /> Download Excel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return null;
   };
 
@@ -1593,6 +1914,8 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
     taxsummary: 'Tax Summary',
     salesregister: 'Sales Register',
     gstr2b: 'GSTR-2B — Portal Data',
+    cmp08: 'CMP-08 — Quarterly Statement (Composition)',
+    gstr4: 'GSTR-4 — Annual Return (Composition)',
   };
 
   // ─── Main render ─────────────────────────────────────────────────────────────
@@ -1668,15 +1991,24 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
         <StatChip
           icon={<IndianRupee size={16} className="text-emerald-600" />}
           label="Total Sales"
-          value={inr(totalTaxable + totalTax)}
+          value={inr(totalSalesAll)}
           bg="bg-emerald-50"
         />
-        <StatChip
-          icon={<TrendingUp size={16} className="text-purple-600" />}
-          label="Total Tax"
-          value={inr(totalTax)}
-          bg="bg-purple-50"
-        />
+        {schemeKind === 'composition' ? (
+          <StatChip
+            icon={<TrendingUp size={16} className="text-purple-600" />}
+            label="CMP-08 Payable"
+            value={inr(cmp08Data?.taxPayable ?? 0)}
+            bg="bg-purple-50"
+          />
+        ) : (
+          <StatChip
+            icon={<TrendingUp size={16} className="text-purple-600" />}
+            label={schemeKind === 'mixed' ? 'Tax (Regular Period)' : 'Total Tax'}
+            value={inr(totalTax)}
+            bg="bg-purple-50"
+          />
+        )}
         <StatChip
           icon={<AlertCircle size={16} className="text-amber-600" />}
           label="Credit / Debit Notes"
@@ -1685,7 +2017,35 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
         />
       </div>
 
-      {/* ── GST Portal Session Status ── */}
+      {/* ── Composition scheme banner ── */}
+      {schemeKind === 'composition' && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3">
+          <ShieldCheck size={18} className="text-emerald-500 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-emerald-700">
+              Composition Scheme{cmp08Data ? ` — ${COMPOSITION_CATEGORIES[cmp08Data.category].shortLabel}` : ''}
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              You file CMP-08 quarterly and GSTR-4 annually. GSTR-1, GSTR-3B and GSTR-2B (ITC) do not apply while on composition.
+            </p>
+          </div>
+        </div>
+      )}
+      {schemeKind === 'mixed' && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-center gap-3">
+          <AlertTriangle size={18} className="text-amber-500 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-amber-700">GST scheme changed during this period</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {schemeRanges.map(rg => `${rg.scheme === 'composition' ? 'Composition' : 'Regular'}: ${fmtDate(rg.start)} – ${fmtDate(rg.end)}`).join(' · ')}
+              {' '}— each report below covers only its scheme's documents.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── GST Portal Session Status (regular-scheme returns only) ── */}
+      {schemeKind !== 'composition' && (
       <div className={`rounded-2xl border p-4 flex items-center justify-between gap-4 ${isSessionActive() ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
         <div className="flex items-center gap-3">
           {isSessionActive()
@@ -1724,46 +2084,87 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           </button>
         </div>
       </div>
+      )}
 
       {/* ── Report cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* GSTR-1 */}
-        <ReportCard
-          color="bg-indigo-500"
-          title="GSTR-1"
-          desc="Outward supplies — GST portal compliant Excel & JSON"
-          status={hasGSTR1Data ? 'Ready' : 'No Data'}
-          fields={[
-            `B2B Invoices: ${b2bCount}`,
-            `Inter-state (IGST): ${igstCount}`,
-            `Total Invoices: ${filteredInvoices.length}`,
-            `Credit Notes: ${filteredCreditNotes.length}`,
-          ]}
-          onClick={() => openDetail('gstr1')}
-          active={activeDetail === 'gstr1'}
-        />
+        {/* CMP-08 (composition) */}
+        {showCompositionReports && (
+          <ReportCard
+            color="bg-indigo-500"
+            title="CMP-08"
+            desc={`Quarterly self-assessed tax statement${rangeChip('composition') ? ` — Composition: ${rangeChip('composition')}` : ''}`}
+            status={cmp08Data && cmp08Data.invoiceCount > 0 ? 'Ready' : 'No Data'}
+            fields={[
+              `Turnover: ${inr(cmp08Data?.outwardTurnover ?? 0)}`,
+              `Rate: ${cmp08Data ? `${cmp08Data.ratePct}%` : '—'}`,
+              `Tax Payable: ${inr(cmp08Data?.taxPayable ?? 0)}`,
+              `Bills of Supply: ${cmp08Data?.invoiceCount ?? 0}`,
+            ]}
+            onClick={() => openDetail('cmp08')}
+            active={activeDetail === 'cmp08'}
+          />
+        )}
 
-        {/* GSTR-3B */}
-        <ReportCard
-          color="bg-purple-500"
-          title="GSTR-3B"
-          desc="Summary of outward & inward supplies"
-          status={filteredInvoices.length > 0 ? 'Ready' : 'No Data'}
-          fields={[
-            `Taxable: ${inr(totalTaxable)}`,
-            `CGST: ${inr(totalCGST)}`,
-            `SGST: ${inr(totalSGST)}`,
-            `IGST: ${inr(totalIGST)}`,
-          ]}
-          onClick={() => openDetail('gstr3b')}
-          active={activeDetail === 'gstr3b'}
-        />
+        {/* GSTR-4 (composition, annual) */}
+        {showCompositionReports && (
+          <ReportCard
+            color="bg-purple-500"
+            title="GSTR-4"
+            desc={`Annual return — FY ${selectedFY}`}
+            status={gstr4Data && gstr4Data.quarters.length > 0 ? 'Ready' : 'No Data'}
+            fields={[
+              `FY Turnover: ${inr(gstr4Data?.outwardTotal ?? 0)}`,
+              `Tax Paid: ${inr(gstr4Data?.taxTotal ?? 0)}`,
+              `Inward (Purchases): ${inr(gstr4Data?.inwardTaxableTotal ?? 0)}`,
+              `Due: 30 June ${fyStartYear(selectedFY) + 1}`,
+            ]}
+            onClick={() => openDetail('gstr4')}
+            active={activeDetail === 'gstr4'}
+          />
+        )}
 
-        {/* Sales Register */}
+        {/* GSTR-1 (regular) */}
+        {showRegularReports && (
+          <ReportCard
+            color="bg-indigo-500"
+            title="GSTR-1"
+            desc={`Outward supplies — GST portal compliant Excel & JSON${rangeChip('regular') ? ` — Regular: ${rangeChip('regular')}` : ''}`}
+            status={hasGSTR1Data ? 'Ready' : 'No Data'}
+            fields={[
+              `B2B Invoices: ${b2bCount}`,
+              `Inter-state (IGST): ${igstCount}`,
+              `Total Invoices: ${regularInvoices.length}`,
+              `Credit Notes: ${regularCreditNotes.length}`,
+            ]}
+            onClick={() => openDetail('gstr1')}
+            active={activeDetail === 'gstr1'}
+          />
+        )}
+
+        {/* GSTR-3B (regular) */}
+        {showRegularReports && (
+          <ReportCard
+            color="bg-purple-500"
+            title="GSTR-3B"
+            desc={`Summary of outward & inward supplies${rangeChip('regular') ? ` — Regular: ${rangeChip('regular')}` : ''}`}
+            status={regularInvoices.length > 0 ? 'Ready' : 'No Data'}
+            fields={[
+              `Taxable: ${inr(totalTaxable)}`,
+              `CGST: ${inr(totalCGST)}`,
+              `SGST: ${inr(totalSGST)}`,
+              `IGST: ${inr(totalIGST)}`,
+            ]}
+            onClick={() => openDetail('gstr3b')}
+            active={activeDetail === 'gstr3b'}
+          />
+        )}
+
+        {/* Sales Register (all documents) */}
         <ReportCard
           color="bg-emerald-500"
           title="Sales Register"
-          desc="Full register with PDF & Excel export"
+          desc={schemeKind === 'composition' ? 'Bill of Supply register with PDF & Excel export' : 'Full register with PDF & Excel export'}
           status={filteredInvoices.length > 0 ? 'Ready' : 'No Data'}
           fields={[
             `Invoices: ${filteredInvoices.length}`,
@@ -1775,21 +2176,23 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           active={activeDetail === 'salesregister'}
         />
 
-        {/* GSTR-2B Portal */}
-        <ReportCard
-          color="bg-teal-500"
-          title="GSTR-2B"
-          desc="Input Tax Credit from GST Portal — fetch & compare"
-          status={gstr2bData ? 'Fetched' : isSessionActive() ? 'Ready' : 'Login Required'}
-          fields={[
-            gstr2bData ? `Suppliers: ${gstr2bData.suppliers.length}` : 'Connect to GST Portal',
-            gstr2bData ? `Invoices: ${gstr2bData.invoiceCount}` : 'Auto-fetch GSTR-2B data',
-            gstr2bData ? `ITC: ${inr(gstr2bData.totalIGST + gstr2bData.totalCGST + gstr2bData.totalSGST)}` : 'Download as PDF & Excel',
-            gstr2bData ? `Period: ${portalDataPeriod}` : 'Compare with your purchases',
-          ]}
-          onClick={() => openDetail('gstr2b')}
-          active={activeDetail === 'gstr2b'}
-        />
+        {/* GSTR-2B Portal (regular only — ITC is not claimable under composition) */}
+        {showRegularReports && schemeKind !== 'composition' && (
+          <ReportCard
+            color="bg-teal-500"
+            title="GSTR-2B"
+            desc="Input Tax Credit from GST Portal — fetch & compare"
+            status={gstr2bData ? 'Fetched' : isSessionActive() ? 'Ready' : 'Login Required'}
+            fields={[
+              gstr2bData ? `Suppliers: ${gstr2bData.suppliers.length}` : 'Connect to GST Portal',
+              gstr2bData ? `Invoices: ${gstr2bData.invoiceCount}` : 'Auto-fetch GSTR-2B data',
+              gstr2bData ? `ITC: ${inr(gstr2bData.totalIGST + gstr2bData.totalCGST + gstr2bData.totalSGST)}` : 'Download as PDF & Excel',
+              gstr2bData ? `Period: ${portalDataPeriod}` : 'Compare with your purchases',
+            ]}
+            onClick={() => openDetail('gstr2b')}
+            active={activeDetail === 'gstr2b'}
+          />
+        )}
       </div>
 
       {/* ── Detail panel ── */}
@@ -1833,6 +2236,7 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           GST Filing Deadlines
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {showRegularReports && (
           <div className={`rounded-2xl border p-4 flex items-start gap-3 ${filingDeadlines.gstr1.color}`}>
             {filingDeadlines.gstr1.icon}
             <div>
@@ -1847,6 +2251,8 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
               </p>
             </div>
           </div>
+          )}
+          {showRegularReports && (
           <div className={`rounded-2xl border p-4 flex items-start gap-3 ${filingDeadlines.gstr3b.color}`}>
             {filingDeadlines.gstr3b.icon}
             <div>
@@ -1861,6 +2267,39 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
               </p>
             </div>
           </div>
+          )}
+          {showCompositionReports && (
+          <div className={`rounded-2xl border p-4 flex items-start gap-3 ${filingDeadlines.cmp08.color}`}>
+            {filingDeadlines.cmp08.icon}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide mb-0.5">CMP-08 (Quarterly)</p>
+              <p className="text-sm font-semibold">Due: {filingDeadlines.cmp08.date}</p>
+              <p className="text-xs mt-0.5">
+                {filingDeadlines.cmp08.days < 0
+                  ? `Overdue by ${Math.abs(filingDeadlines.cmp08.days)} days`
+                  : filingDeadlines.cmp08.days === 0
+                  ? 'Due today'
+                  : `${filingDeadlines.cmp08.days} days remaining`}
+              </p>
+            </div>
+          </div>
+          )}
+          {showCompositionReports && (
+          <div className={`rounded-2xl border p-4 flex items-start gap-3 ${filingDeadlines.gstr4.color}`}>
+            {filingDeadlines.gstr4.icon}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide mb-0.5">GSTR-4 (Annual — FY {selectedFY})</p>
+              <p className="text-sm font-semibold">Due: {filingDeadlines.gstr4.date}</p>
+              <p className="text-xs mt-0.5">
+                {filingDeadlines.gstr4.days < 0
+                  ? `Overdue by ${Math.abs(filingDeadlines.gstr4.days)} days`
+                  : filingDeadlines.gstr4.days === 0
+                  ? 'Due today'
+                  : `${filingDeadlines.gstr4.days} days remaining`}
+              </p>
+            </div>
+          </div>
+          )}
         </div>
       </div>
 
@@ -1920,10 +2359,10 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           document={
             <GSTR3BPDF
               profile={profile}
-              invoices={filteredInvoices}
+              invoices={regularInvoices}
               customers={customers}
-              creditNotes={filteredCreditNotes}
-              debitNotes={filteredDebitNotes}
+              creditNotes={regularCreditNotes}
+              debitNotes={regularDebitNotes}
               periodLabel={periodLabel}
               natureOfReturn={periodMode === 'monthly' ? 'Monthly' : 'Quarterly'}
               logoUrl={profile.theme?.logoUrl}
@@ -1938,6 +2377,36 @@ const GSTReports: React.FC<GSTReportsProps> = ({ userId, onNavigate }) => {
           }
           fileName={`GSTR-3B_${periodLabel.replace(/[^a-zA-Z0-9\-_]/g, '_')}.pdf`}
           onDone={() => setGstr3bPdfOpen(false)}
+        />
+      )}
+
+      {/* ── CMP-08 direct download ── */}
+      {cmp08PdfOpen && profile && cmp08Data && (
+        <PDFDirectDownload
+          document={
+            <CMP08PDF
+              profile={profile}
+              data={cmp08Data}
+              logoUrl={profile.theme?.logoUrl}
+            />
+          }
+          fileName={`CMP-08_${cmp08Data.quarterKey}.pdf`}
+          onDone={() => setCmp08PdfOpen(false)}
+        />
+      )}
+
+      {/* ── GSTR-4 direct download ── */}
+      {gstr4PdfOpen && profile && gstr4Data && (
+        <PDFDirectDownload
+          document={
+            <GSTR4PDF
+              profile={profile}
+              data={gstr4Data}
+              logoUrl={profile.theme?.logoUrl}
+            />
+          }
+          fileName={`GSTR-4_FY${gstr4Data.fyLabel}.pdf`}
+          onDone={() => setGstr4PdfOpen(false)}
         />
       )}
 
