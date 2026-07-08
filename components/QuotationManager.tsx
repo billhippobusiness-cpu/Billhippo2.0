@@ -47,6 +47,14 @@ const r2  = (n: number) => Math.round(n * 100) / 100;
 const inr = (n: number) =>
   `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// Blend two hex colours: t=0 → a, t=1 → b (same helper as InvoiceGenerator)
+const mixHex = (a: string, b: string, t: number): string => {
+  const pa = a.replace('#', ''), pb = b.replace('#', '');
+  const ca = [0, 2, 4].map(i => parseInt(pa.substring(i, i + 2), 16));
+  const cb = [0, 2, 4].map(i => parseInt(pb.substring(i, i + 2), 16));
+  return '#' + ca.map((v, i) => Math.round(v + (cb[i] - v) * t).toString(16).padStart(2, '0')).join('');
+};
+
 const STATUS_CONFIG: Record<QuotationStatus, { label: string; bg: string; text: string; dot: string }> = {
   Draft:     { label: 'Draft',     bg: 'bg-slate-100',  text: 'text-slate-600',  dot: 'bg-slate-400' },
   Sent:      { label: 'Sent',      bg: 'bg-blue-50',    text: 'text-blue-700',   dot: 'bg-blue-500' },
@@ -222,6 +230,10 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     if (!selectedCustomer) return GSTType.CGST_SGST;
     return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [selectedCustomer, profile.state]);
+
+  // Header colour follows the user's theme (Settings → Invoice Theme)
+  const primaryColor = profile.theme?.primaryColor || '#f59e0b';
+  const primaryDark  = mixHex(primaryColor, '#000000', 0.18);
 
   // Composition-period quotations carry no GST (they will convert into Bills of Supply)
   const quoteScheme = useMemo(() => getSchemeOnDate(profile, quotationDate), [profile, quotationDate]);
@@ -513,28 +525,31 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
           {/* ── Quotation document ── */}
           <div className="lg:col-span-8">
             <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden premium-shadow border border-amber-50">
-              {/* Amber header */}
-              <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 sm:px-10 pt-8 sm:pt-10 pb-6 sm:pb-8 text-white">
+              {/* Header — colour follows the user's theme (Settings → Invoice Theme) */}
+              <div
+                className="px-5 sm:px-10 pt-8 sm:pt-10 pb-6 sm:pb-8 text-white"
+                style={{ background: `linear-gradient(90deg, ${primaryColor}, ${primaryDark})` }}
+              >
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-5 sm:gap-4">
                   <div className="min-w-0">
-                    <p className="text-amber-100 text-xs font-bold uppercase tracking-widest mb-1">From</p>
+                    <p className="text-white/70 text-xs font-bold uppercase tracking-widest mb-1">From</p>
                     <h2 className="text-xl sm:text-2xl font-bold font-poppins break-words">{profile.name}</h2>
-                    {profile.gstin && <p className="text-amber-100 text-sm mt-0.5 break-words">GSTIN: {profile.gstin}</p>}
-                    {profile.address && <p className="text-amber-100 text-sm mt-0.5 break-words">{profile.address}{profile.city ? `, ${profile.city}` : ''}</p>}
-                    {profile.state && <p className="text-amber-100 text-sm">{profile.state} {profile.pincode}</p>}
+                    {profile.gstin && <p className="text-white/80 text-sm mt-0.5 break-words">GSTIN: {profile.gstin}</p>}
+                    {profile.address && <p className="text-white/80 text-sm mt-0.5 break-words">{profile.address}{profile.city ? `, ${profile.city}` : ''}</p>}
+                    {profile.state && <p className="text-white/80 text-sm">{profile.state} {profile.pincode}</p>}
                   </div>
                   <div className="sm:text-right shrink-0">
                     <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-2xl px-5 py-2 mb-4">
                       <ScrollText size={18} className="text-white" />
                       <span className="text-xl font-black font-poppins tracking-widest">QUOTATION</span>
                     </div>
-                    <p className="text-amber-100 text-xs uppercase tracking-widest">Quotation No.</p>
+                    <p className="text-white/70 text-xs uppercase tracking-widest">Quotation No.</p>
                     <p className="font-bold text-lg font-poppins">{q.quotationNumber}</p>
-                    <p className="text-amber-100 text-xs mt-2 uppercase tracking-widest">Date</p>
+                    <p className="text-white/70 text-xs mt-2 uppercase tracking-widest">Date</p>
                     <p className="font-semibold text-sm">{formatDate(q.date)}</p>
                     {q.validUntil && (
                       <>
-                        <p className="text-amber-100 text-xs mt-2 uppercase tracking-widest">Valid Until</p>
+                        <p className="text-white/70 text-xs mt-2 uppercase tracking-widest">Valid Until</p>
                         <p className="font-semibold text-sm">{formatDate(q.validUntil)}</p>
                       </>
                     )}
@@ -615,9 +630,9 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                         <span>IGST</span><span>{inr(q.igst)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between font-black text-lg text-slate-900 border-t border-amber-200 pt-2 font-poppins">
+                    <div className="flex justify-between font-black text-lg text-slate-900 border-t pt-2 font-poppins" style={{ borderColor: `${primaryColor}55` }}>
                       <span>Total</span>
-                      <span className="text-amber-600">{inr(q.totalAmount)}</span>
+                      <span style={{ color: primaryDark }}>{inr(q.totalAmount)}</span>
                     </div>
                   </div>
                 </div>
@@ -769,13 +784,13 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     return (
       <div className="max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 pb-20">
         {/* Header */}
-        <div className="flex justify-between items-end">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins shrink-0">
               <ArrowLeft size={18} />
             </button>
-            <div>
-              <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-4xl font-bold font-poppins text-slate-900 tracking-tight">
                 {editingQuotation ? 'Edit Quotation' : 'New Quotation'}
               </h1>
               <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">
@@ -783,32 +798,34 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
               </p>
             </div>
           </div>
-          <div className="flex gap-4 items-center">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center">
             {error && <span className="text-sm font-bold text-rose-500 font-poppins">{error}</span>}
-            <button
-              onClick={() => { if (previewQuotation) setMode('preview'); }}
-              disabled={!previewQuotation}
-              className="bg-white border border-slate-200 text-slate-700 px-8 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-slate-50 transition-all font-poppins disabled:opacity-40"
-            >
-              <Eye size={20} /> Preview
-            </button>
-            <button
-              onClick={() => handleSave()}
-              disabled={saving}
-              className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-lg shadow-amber-200 hover:scale-105 transition-all font-poppins disabled:opacity-50"
-            >
-              {saving ? <><Loader2 size={20} className="animate-spin" /> Saving…</> : <><Save size={20} /> {editingQuotation ? 'Update' : 'Save Quotation'}</>}
-            </button>
+            <div className="flex gap-3 sm:gap-4">
+              <button
+                onClick={() => { if (previewQuotation) setMode('preview'); }}
+                disabled={!previewQuotation}
+                className="flex-1 sm:flex-none bg-white border border-slate-200 text-slate-700 px-5 sm:px-8 py-3.5 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all font-poppins disabled:opacity-40"
+              >
+                <Eye size={20} /> Preview
+              </button>
+              <button
+                onClick={() => handleSave()}
+                disabled={saving}
+                className="flex-1 sm:flex-none bg-gradient-to-r from-amber-500 to-orange-500 text-white px-5 sm:px-10 py-3.5 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-lg shadow-amber-200 hover:scale-105 transition-all font-poppins disabled:opacity-50"
+              >
+                {saving ? <><Loader2 size={20} className="animate-spin" /> Saving…</> : <><Save size={20} /> {editingQuotation ? 'Update' : 'Save Quotation'}</>}
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left column: main form */}
           <div className="lg:col-span-8 space-y-8">
-            <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-amber-50 space-y-8 font-poppins">
+            <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-amber-50 space-y-6 sm:space-y-8 font-poppins">
 
               {/* Row 1: Customer | Quotation# | Date | Valid Until */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8">
                 {/* Customer selector */}
                 <div className="space-y-3 relative">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Customer *</label>
@@ -877,7 +894,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8">
                 {/* Date */}
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Quotation Date</label>
@@ -914,8 +931,94 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                     </button>
                   )}
                 </div>
-                <div className="rounded-2xl overflow-hidden border border-slate-100">
-                  <table className="w-full text-sm font-poppins">
+                {/* Mobile: stacked item cards */}
+                <div className="sm:hidden space-y-3">
+                  {items.map((item, idx) => {
+                    const lineTotal = r2(item.quantity * item.rate);
+                    const lineTax = isComposition ? 0 : r2(lineTotal * item.gstRate / 100);
+                    return (
+                      <div key={item.id} className="bg-slate-50/60 rounded-2xl p-4 space-y-3 border border-slate-100">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Item {idx + 1}</span>
+                          <button
+                            onClick={() => handleRemoveItem(item.id)}
+                            disabled={items.length === 1}
+                            className="p-2 text-rose-400 active:bg-rose-50 rounded-xl transition-all disabled:opacity-30"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Description *</label>
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={e => handleItemChange(item.id, 'description', e.target.value)}
+                            placeholder="Product / Service…"
+                            autoComplete="off"
+                            className="w-full bg-white border-none rounded-xl px-4 py-3 text-sm font-medium shadow-sm placeholder-slate-300"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">HSN/SAC</label>
+                            <input
+                              type="text"
+                              value={item.hsnCode}
+                              onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)}
+                              placeholder="HSN"
+                              className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-medium shadow-sm placeholder-slate-300"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Qty</label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              value={item.quantity}
+                              onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                              className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Rate (₹)</label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              value={item.rate}
+                              onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)}
+                              className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center shadow-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">GST %</label>
+                            {isComposition ? (
+                              <div className="w-full bg-white rounded-xl px-3 py-3 text-sm font-bold text-center text-slate-300 shadow-sm">N/A</div>
+                            ) : (
+                              <select
+                                value={item.gstRate}
+                                onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
+                                className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-bold text-center appearance-none shadow-sm"
+                              >
+                                {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                          <span className="text-xs text-slate-400 font-medium">Amount</span>
+                          <span className="text-base font-black text-slate-900">{inr(lineTotal + lineTax)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop: items table */}
+                <div className="hidden sm:block rounded-2xl overflow-hidden border border-slate-100 overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm font-poppins">
                     <thead>
                       <tr className="bg-slate-800 text-white">
                         <th className="text-left px-4 py-3 font-bold text-xs">Description</th>
@@ -1181,18 +1284,18 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
   return (
     <div className="max-w-7xl mx-auto space-y-8 pb-20 animate-in fade-in slide-in-from-bottom-4">
       {/* Page header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">Quotations</h1>
-          <p className="text-sm text-slate-400 mt-1 font-medium font-poppins">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-3xl sm:text-4xl font-bold font-poppins text-slate-900 tracking-tight">Quotations</h1>
+          <p className="text-sm text-slate-400 mt-1 font-medium font-poppins hidden sm:block">
             Send proposals to customers — convert to invoice when accepted
           </p>
         </div>
         <button
           onClick={handleNewQuotation}
-          className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-8 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-lg shadow-amber-200 hover:scale-105 active:scale-95 transition-all font-poppins"
+          className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-5 sm:px-8 py-3 sm:py-4 rounded-2xl font-bold flex items-center gap-2 sm:gap-3 shadow-lg shadow-amber-200 hover:scale-105 active:scale-95 transition-all font-poppins shrink-0"
         >
-          <Plus size={20} /> New Quotation
+          <Plus size={20} /> <span className="hidden sm:inline">New Quotation</span><span className="sm:hidden">New</span>
         </button>
       </div>
 
@@ -1271,8 +1374,78 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-[2.5rem] border border-slate-50 overflow-hidden card-shadow">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-50 overflow-hidden card-shadow">
+          {/* Mobile card list (shown < md) */}
+          <div className="md:hidden divide-y divide-slate-50">
+            {filteredQuotations.map(q => (
+              <div key={q.id} className="px-5 py-4 active:bg-amber-50/40 transition-colors">
+                <div
+                  className="flex items-start justify-between gap-3 mb-2"
+                  onClick={() => handlePreviewQuotation(q)}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-slate-900 font-poppins break-words">{q.quotationNumber}</p>
+                    <p className="text-sm font-medium text-slate-600 truncate">{q.customerName}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {formatDate(q.date)}{q.validUntil ? ` · Valid till ${formatDate(q.validUntil)}` : ''}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-base font-black text-slate-900 font-poppins">{inr(q.totalAmount)}</p>
+                    <div className="mt-1"><StatusBadge status={q.status} /></div>
+                    {q.status === 'Converted' && (() => {
+                      const num = q.convertedInvoiceNumber
+                        || (q.convertedInvoiceId ? invoiceMap.get(q.convertedInvoiceId) : undefined);
+                      return num
+                        ? <p className="text-[10px] text-violet-500 font-bold mt-1 font-poppins">{num}</p>
+                        : null;
+                    })()}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    onClick={() => handlePreviewQuotation(q)}
+                    className="flex-1 py-2 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all font-poppins"
+                  >
+                    <Eye size={14} /> View
+                  </button>
+                  {q.status !== 'Converted' && (
+                    <button
+                      onClick={() => handleEditQuotation(q)}
+                      className="flex-1 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all font-poppins"
+                    >
+                      <Edit3 size={14} /> Edit
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { const cust = customers.find(c => c.id === q.customerId) ?? { id: '', name: q.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: 0 }; setDownloadTarget({ document: <QuotationPDF quotation={q} business={profile} customer={cust} />, fileName: `Quotation-${q.quotationNumber.replace(/\//g, '-')}.pdf` }); }}
+                    className="flex-1 py-2 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all font-poppins"
+                  >
+                    <Download size={14} /> PDF
+                  </button>
+                  {(q.status === 'Accepted' || q.status === 'Sent') && (
+                    <button
+                      onClick={() => handleConvertToInvoice(q)}
+                      className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all font-poppins"
+                    >
+                      <FileCheck size={14} /> Convert
+                    </button>
+                  )}
+                  {q.status !== 'Converted' && (
+                    <button
+                      onClick={() => setDeleteTarget(q)}
+                      className="p-2 rounded-xl bg-rose-50 text-rose-400 active:scale-95 transition-all"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Table (hidden on mobile) */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full font-poppins">
               <thead>
                 <tr className="bg-slate-800 text-white">
