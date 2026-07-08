@@ -31,7 +31,7 @@ import { fetchGSTR2B, fetchGSTR3BOnline, fetchGSTR1Online, GSTR2BData, GSTR3BOnl
 import GSTPortalLogin from './GSTPortalLogin';
 import { downloadGSTR2BExcel } from '../lib/gstr2bExport';
 import GSTR2BPDF from './pdf/GSTR2BPDF';
-import { getStoredFY, getFYLabel, getFYMonths, getFYQuarters, fyStartYear } from '../lib/financialYear';
+import { getStoredFY, getFYLabel, getFYMonths, getFYQuarters, fyStartYear, getQuarterMonths, quarterToDateRange, quarterLabel } from '../lib/financialYear';
 import { computeSetOff, headTotal } from '../lib/gstSetOff';
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
@@ -46,43 +46,6 @@ function getCurrentIndianQuarter(): string {
   if (month >= 10 && month <= 12) return `${year}-Q3`;
   // month 1-3 belongs to Q4 of the previous FY year
   return `${year - 1}-Q4`;
-}
-
-function getQuarterMonths(q: 1 | 2 | 3 | 4, year: number): string[] {
-  // Returns YYYY-MM strings for all months in the quarter
-  if (q === 1) return [`${year}-04`, `${year}-05`, `${year}-06`];
-  if (q === 2) return [`${year}-07`, `${year}-08`, `${year}-09`];
-  if (q === 3) return [`${year}-10`, `${year}-11`, `${year}-12`];
-  // Q4: Jan-Mar of year+1
-  return [`${year + 1}-01`, `${year + 1}-02`, `${year + 1}-03`];
-}
-
-function quarterToDateRange(qKey: string): { start: string; end: string } {
-  // qKey format: "YYYY-Q1" | "YYYY-Q2" | "YYYY-Q3" | "YYYY-Q4"
-  const [yearStr, qPart] = qKey.split('-');
-  const year = parseInt(yearStr, 10);
-  const q = parseInt(qPart.replace('Q', ''), 10) as 1 | 2 | 3 | 4;
-  if (q === 1) return { start: `${year}-04-01`, end: `${year}-06-30` };
-  if (q === 2) return { start: `${year}-07-01`, end: `${year}-09-30` };
-  if (q === 3) return { start: `${year}-10-01`, end: `${year}-12-31` };
-  // Q4: Jan-Mar of year+1
-  return { start: `${year + 1}-01-01`, end: `${year + 1}-03-31` };
-}
-
-function quarterLabel(qKey: string): string {
-  const [yearStr, qPart] = qKey.split('-');
-  const year = parseInt(yearStr, 10);
-  const q = parseInt(qPart.replace('Q', ''), 10);
-  const fyStart = year;
-  const fyEnd = year + 1;
-  const fyLabel = `FY ${fyStart}-${String(fyEnd).slice(2)}`;
-  const monthRanges: Record<number, string> = {
-    1: 'Apr – Jun',
-    2: 'Jul – Sep',
-    3: 'Oct – Dec',
-    4: 'Jan – Mar',
-  };
-  return `Q${q} ${fyLabel} (${monthRanges[q]})`;
 }
 
 /** Default month to preselect for a FY: the current month if it falls inside

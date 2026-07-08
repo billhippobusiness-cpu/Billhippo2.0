@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart, Plus, Pencil, Trash2, Check, Search, Eye, EyeOff } from 'lucide-react';
-import { BusinessProfile, BankAccount } from '../types';
+import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart, Plus, Pencil, Trash2, Check, Search, Eye, EyeOff, ArrowLeftRight, AlertTriangle, RotateCcw } from 'lucide-react';
+import { BusinessProfile, BankAccount, CompositionCategory, GSTScheme, SchemePeriod } from '../types';
 import { getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 import { lookupGSTIN } from '../lib/whitebooksApi';
+import { COMPOSITION_CATEGORIES, DEFAULT_COMPOSITION_CATEGORY, GST_EPOCH, getSchemeHistory, appendSchemeChange, displayDate } from '../lib/gstScheme';
 import ProfessionalAccess from './ProfessionalAccess';
 
 const INDIAN_STATES = [
@@ -66,6 +67,14 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
   const [gstinFetchMsg, setGstinFetchMsg] = useState<string | null>(null);
   const [showGstPassword, setShowGstPassword] = useState(false);
 
+  // GST scheme change modal state
+  const [showSchemeModal, setShowSchemeModal] = useState(false);
+  const [schemeModalError, setSchemeModalError] = useState<string | null>(null);
+  const [switchDate, setSwitchDate] = useState(new Date().toISOString().split('T')[0]);
+  const [switchCategory, setSwitchCategory] = useState<CompositionCategory>(DEFAULT_COMPOSITION_CATEGORY);
+  const [switchSaving, setSwitchSaving] = useState(false);
+  const [showSchemeHistory, setShowSchemeHistory] = useState(false);
+
   const handleFetchGstinDetails = async () => {
     const g = (profile.gstin || '').trim().toUpperCase();
     if (g.length !== 15) {
@@ -83,13 +92,85 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
         city:    prev.city    || r.city,
         state:   r.state      || prev.state,
         pincode: prev.pincode || r.pincode,
+        gstRegistrationType: r.taxpayerType || prev.gstRegistrationType,
       }));
-      setGstinFetchMsg(`✓ Fetched: ${r.tradeName || r.legalName} — ${r.status}`);
+      // Non-blocking hint when the portal's scheme disagrees with the app's
+      const portalIsComposition = /composition/i.test(r.taxpayerType || '');
+      const appScheme = currentScheme();
+      const mismatch = r.taxpayerType && ((portalIsComposition && appScheme !== 'composition') || (!portalIsComposition && appScheme === 'composition'))
+        ? ` — Note: GST portal shows "${r.taxpayerType}" but this profile is set to the ${appScheme} scheme. Update it under GST Scheme below if needed.`
+        : '';
+      setGstinFetchMsg(`✓ Fetched: ${r.tradeName || r.legalName} — ${r.status}${mismatch}`);
     } catch (err: any) {
       setGstinFetchMsg(err?.message ?? 'Failed to fetch GSTIN details');
     } finally {
       setGstinFetching(false);
     }
+  };
+
+  // ── GST scheme helpers ──
+  // Current scheme = last entry of the (normalized) history; legacy profiles
+  // without a stored history are regular.
+  function currentScheme(): GSTScheme {
+    const history = getSchemeHistory(profile);
+    return history[history.length - 1].scheme;
+  }
+  function currentSchemeEntry(): SchemePeriod {
+    const history = getSchemeHistory(profile);
+    return history[history.length - 1];
+  }
+
+  const openSchemeModal = () => {
+    setSchemeModalError(null);
+    setSwitchDate(new Date().toISOString().split('T')[0]);
+    setSwitchCategory(profile.compositionCategory || DEFAULT_COMPOSITION_CATEGORY);
+    setShowSchemeModal(true);
+  };
+
+  // Append the scheme change and persist immediately (scheme history is
+  // audit-relevant, so it should not sit unsaved in the form).
+  const handleSchemeChange = async () => {
+    setSchemeModalError(null);
+    const targetScheme: GSTScheme = currentScheme() === 'composition' ? 'regular' : 'composition';
+    try {
+      const entry: SchemePeriod = {
+        scheme: targetScheme,
+        effectiveFrom: switchDate,
+        ...(targetScheme === 'composition' ? { compositionCategory: switchCategory } : {}),
+      };
+      const newHistory = appendSchemeChange(profile, entry);
+      const updated: BusinessProfile = {
+        ...profile,
+        schemeHistory: newHistory,
+        gstScheme: targetScheme,
+        ...(targetScheme === 'composition' ? { compositionCategory: switchCategory } : {}),
+      };
+      setSwitchSaving(true);
+      await saveBusinessProfile(userId, updated);
+      setProfile(updated);
+      setShowSchemeModal(false);
+    } catch (err: any) {
+      setSchemeModalError(err?.message ?? 'Could not change the GST scheme.');
+    } finally {
+      setSwitchSaving(false);
+    }
+  };
+
+  // Remove the most recent scheme change (correction mechanism)
+  const handleUndoLastChange = async () => {
+    const history = getSchemeHistory(profile);
+    if (history.length < 2) return;
+    if (!window.confirm(`Remove the scheme change effective ${displayDate(history[history.length - 1].effectiveFrom)}? Documents keep their saved treatment.`)) return;
+    const newHistory = history.slice(0, -1);
+    const last = newHistory[newHistory.length - 1];
+    const updated: BusinessProfile = {
+      ...profile,
+      schemeHistory: newHistory,
+      gstScheme: last.scheme,
+      ...(last.scheme === 'composition' && last.compositionCategory ? { compositionCategory: last.compositionCategory } : {}),
+    };
+    await saveBusinessProfile(userId, updated);
+    setProfile(updated);
   };
 
   useEffect(() => {
@@ -397,6 +478,73 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
                 </label>
               </div>
             </div>
+
+            {/* ── GST Scheme (Regular / Composition) ── */}
+            {profile.gstEnabled && (
+              <div className="pt-2 border-t border-slate-50 font-poppins">
+                <p className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
+                  <ArrowLeftRight size={16} className="text-indigo-500" /> GST Scheme
+                </p>
+                <p className="text-xs text-slate-400 mb-4">
+                  Composition dealers issue Bills of Supply (no GST charged, no ITC) and file CMP-08 / GSTR-4 instead of GSTR-1 / GSTR-3B.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide ${currentScheme() === 'composition' ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}`}>
+                    {currentScheme() === 'composition' ? 'Composition Scheme' : 'Regular Scheme'}
+                  </span>
+                  {currentScheme() === 'composition' && (
+                    <span className="text-xs font-bold text-slate-500">
+                      {COMPOSITION_CATEGORIES[currentSchemeEntry().compositionCategory || DEFAULT_COMPOSITION_CATEGORY].shortLabel}
+                    </span>
+                  )}
+                  {currentSchemeEntry().effectiveFrom !== GST_EPOCH && (
+                    <span className="text-xs font-medium text-slate-400">since {displayDate(currentSchemeEntry().effectiveFrom)}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={openSchemeModal}
+                    className="ml-auto px-5 py-2.5 rounded-xl font-bold text-xs bg-indigo-600 text-white hover:bg-indigo-700 transition-all flex items-center gap-2"
+                  >
+                    <ArrowLeftRight size={13} />
+                    Switch to {currentScheme() === 'composition' ? 'Regular' : 'Composition'}
+                  </button>
+                </div>
+                {(profile.schemeHistory?.length ?? 0) > 1 && (
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowSchemeHistory(v => !v)}
+                      className="text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showSchemeHistory ? '▾ Hide' : '▸ Show'} scheme history ({profile.schemeHistory!.length} entries)
+                    </button>
+                    {showSchemeHistory && (
+                      <div className="mt-3 space-y-2">
+                        {getSchemeHistory(profile).map((entry, i, arr) => (
+                          <div key={`${entry.effectiveFrom}-${entry.scheme}`} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl text-xs">
+                            <span className={`font-black uppercase ${entry.scheme === 'composition' ? 'text-emerald-600' : 'text-indigo-600'}`}>{entry.scheme}</span>
+                            {entry.scheme === 'composition' && entry.compositionCategory && (
+                              <span className="text-slate-500 font-bold">{COMPOSITION_CATEGORIES[entry.compositionCategory].shortLabel}</span>
+                            )}
+                            <span className="text-slate-400 font-medium ml-auto">w.e.f. {entry.effectiveFrom === GST_EPOCH ? 'GST rollout' : displayDate(entry.effectiveFrom)}</span>
+                            {i === arr.length - 1 && arr.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={handleUndoLastChange}
+                                title="Remove this scheme change"
+                                className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 transition-colors"
+                              >
+                                <RotateCcw size={13} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ── Business Branding: Logo & Signature ── */}
@@ -728,7 +876,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
              <p className="text-sm opacity-80 font-poppins mb-6">Master switch for tax applicability across the business.</p>
              <div className="p-4 bg-white/10 rounded-2xl flex items-center gap-3">
                 <Zap size={18} className="text-amber-300" />
-                <span className="text-xs font-bold uppercase tracking-wider">{profile.gstEnabled ? 'GST Registered' : 'Non-GST / Composition'}</span>
+                <span className="text-xs font-bold uppercase tracking-wider">{profile.gstEnabled ? (currentScheme() === 'composition' ? 'GST — Composition Scheme' : 'GST Registered — Regular') : 'Not GST Registered'}</span>
              </div>
           </div>
 
@@ -764,6 +912,100 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
           </div>
         </div>
       </div>
+
+      {/* ── Change GST Scheme modal ── */}
+      {showSchemeModal && (() => {
+        const from = currentScheme();
+        const to: GSTScheme = from === 'composition' ? 'regular' : 'composition';
+        const fyStartMonthDay = '04-01';
+        const isMidYearToComposition = to === 'composition' && !switchDate.endsWith(fyStartMonthDay);
+        return (
+          <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/40 font-poppins">
+            <div className="bg-white rounded-t-[2rem] sm:rounded-3xl shadow-2xl w-full max-w-lg sm:mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <ArrowLeftRight size={18} className="text-indigo-500" />
+                  Switch to {to === 'composition' ? 'Composition' : 'Regular'} Scheme
+                </h2>
+                <button onClick={() => setShowSchemeModal(false)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"><X size={18} /></button>
+              </div>
+              <div className="px-7 py-6 space-y-5">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Change effective from</label>
+                  <input
+                    type="date"
+                    className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3.5 font-bold text-slate-700 focus:ring-2 ring-indigo-100"
+                    value={switchDate}
+                    onChange={e => { setSwitchDate(e.target.value); setSchemeModalError(null); }}
+                  />
+                  <p className="text-[11px] text-slate-400 font-medium">Documents dated on or after this date follow the {to} scheme. Documents before it keep their current treatment.</p>
+                </div>
+
+                {to === 'composition' && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Composition category</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(Object.keys(COMPOSITION_CATEGORIES) as CompositionCategory[]).map(cat => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setSwitchCategory(cat)}
+                          className={`px-3 py-2.5 rounded-xl border-2 text-left transition-all ${switchCategory === cat ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                        >
+                          <p className={`text-xs font-bold ${switchCategory === cat ? 'text-emerald-700' : 'text-slate-600'}`}>{COMPOSITION_CATEGORIES[cat].shortLabel}</p>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium">{COMPOSITION_CATEGORIES[switchCategory].label}</p>
+                  </div>
+                )}
+
+                {/* GST rule guidance (non-blocking — the portal is the source of truth) */}
+                <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-2xl space-y-2">
+                  <p className="text-xs font-bold text-indigo-700">GST rules for this switch</p>
+                  {to === 'composition' ? (
+                    <ul className="text-[11px] text-slate-600 font-medium space-y-1 list-disc pl-4">
+                      <li>Opting into composition normally takes effect from the <b>start of a financial year</b> — file <b>Form CMP-02</b> on the GST portal before the FY begins.</li>
+                      <li>ITC on stock and capital goods must be reversed via <b>Form ITC-03</b> within 60 days.</li>
+                      <li>Eligibility: turnover up to ₹1.5 Cr (₹75 lakh in special category states); ₹50 lakh for service providers u/s 10(2A). No inter-state outward supplies.</li>
+                    </ul>
+                  ) : (
+                    <ul className="text-[11px] text-slate-600 font-medium space-y-1 list-disc pl-4">
+                      <li>Withdrawal from composition is allowed <b>any day</b> — file <b>Form CMP-04</b> within 7 days of the event (or immediately if turnover crosses the limit).</li>
+                      <li>You may claim ITC on stock held via <b>Form ITC-01</b> within 30 days of switching.</li>
+                      <li>Issue <b>Tax Invoices</b> and charge GST from the effective date onward.</li>
+                    </ul>
+                  )}
+                </div>
+
+                {isMidYearToComposition && (
+                  <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                    <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-[11px] text-amber-800 font-semibold">
+                      The chosen date is not the start of a financial year (1 April). Per Rule 3, opting into composition mid-year is normally not permitted — record it here only if your GST portal status actually changed from this date.
+                    </p>
+                  </div>
+                )}
+
+                {schemeModalError && (
+                  <p className="text-xs text-rose-600 font-bold">{schemeModalError}</p>
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-3 px-7 py-5 border-t border-slate-100">
+                <button onClick={() => setShowSchemeModal(false)} className="px-6 py-3 rounded-xl font-bold text-sm text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
+                <button
+                  onClick={handleSchemeChange}
+                  disabled={switchSaving}
+                  className="px-7 py-3 rounded-xl font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center gap-2"
+                >
+                  {switchSaving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                  Confirm Switch
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

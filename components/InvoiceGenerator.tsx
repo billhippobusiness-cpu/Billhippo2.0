@@ -5,6 +5,7 @@ import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
 import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
+import { getSchemeOnDate, docScheme, COMPOSITION_DECLARATION } from '../lib/gstScheme';
 import { haptic } from '../lib/haptic';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
@@ -229,8 +230,13 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [selectedCustomer, profile.state]);
 
+  // GST scheme in force on the invoice date. A composition-period document is a
+  // Bill of Supply: no tax is charged, whatever the line items' gstRate says.
+  const invoiceScheme = useMemo(() => getSchemeOnDate(profile, invoiceDate), [profile, invoiceDate]);
+  const isComposition = profile.gstEnabled && invoiceScheme.scheme === 'composition';
+
   const subTotal  = r2(items.reduce((sum, item) => sum + r2(item.quantity * item.rate), 0));
-  const taxAmount = r2(items.reduce((sum, item) => sum + r2(r2(item.quantity * item.rate) * item.gstRate / 100), 0));
+  const taxAmount = isComposition ? 0 : r2(items.reduce((sum, item) => sum + r2(r2(item.quantity * item.rate) * item.gstRate / 100), 0));
   const grandTotal = r2(subTotal + taxAmount);
   const roundedTotal = Math.round(grandTotal);
   const roundOff = r2(roundedTotal - grandTotal);
@@ -250,12 +256,36 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
   const hsnMinDigits = profile.annualTurnover === 'above5cr' ? 6 : 4;
 
-  // HSN validation warning (non-blocking)
+  // HSN validation warning (non-blocking; GSTR-1 HSN digit rules don't apply
+  // to composition dealers, so skip it for Bill of Supply documents)
   const hsnWarning = useMemo(() => {
+    if (isComposition) return null;
     const shortHsn = items.filter(i => i.description && (i.hsnCode || '').trim().length < hsnMinDigits);
     if (shortHsn.length === 0) return null;
     return `${shortHsn.length} item(s) have HSN codes shorter than ${hsnMinDigits} digits (required for your turnover bracket).`;
-  }, [items, hsnMinDigits]);
+  }, [items, hsnMinDigits, isComposition]);
+
+  // Composition rule warnings (non-blocking — the user may proceed)
+  const interstateCompositionWarning = useMemo(() => {
+    if (!isComposition || !selectedCustomer) return null;
+    if (isExportSupply || isSEZSupply) {
+      return 'Export / SEZ supplies are not permitted under the composition scheme (Section 10(2), CGST Act).';
+    }
+    if (selectedCustomer.state !== profile.state) {
+      return `Inter-state outward supply is not permitted under the composition scheme (Section 10(2), CGST Act). The customer's state (${selectedCustomer.state}) differs from yours (${profile.state}) — verify before proceeding.`;
+    }
+    return null;
+  }, [isComposition, selectedCustomer, profile.state, isExportSupply, isSEZSupply]);
+
+  // Warn when editing moves a saved document across a scheme-switch boundary
+  const schemeBoundaryWarning = useMemo(() => {
+    if (!editingInvoice || !profile.gstEnabled) return null;
+    const savedScheme = docScheme(editingInvoice, profile);
+    if (savedScheme === invoiceScheme.scheme) return null;
+    return invoiceScheme.scheme === 'composition'
+      ? 'This date falls after your switch to the composition scheme — on save, this document will become a Bill of Supply with no GST.'
+      : 'This date falls in a regular-scheme period — on save, this document will become a Tax Invoice with GST.';
+  }, [editingInvoice, profile, invoiceScheme.scheme]);
 
   const handleHSNSelect = (itemId: string, code: string, _description: string, gstRate: number) => {
     setItems(prev => prev.map(item =>
@@ -511,13 +541,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     if (subTotal === 0) { setError('Invoice total cannot be zero'); return; }
     setSaving(true); setError(null);
     try {
-      const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-      const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-      const igst = gstType === GSTType.IGST ? taxAmount : 0;
+      const cgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const sgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const igst = !isComposition && gstType === GSTType.IGST ? taxAmount : 0;
+      // Bill of Supply: persist zero gstRate on line items so every downstream
+      // consumer that recomputes tax from rates (HSN summary, rate-wise
+      // breakdowns) stays consistent without extra gating.
+      const savedItems = isComposition ? items.map(i => ({ ...i, gstRate: 0 })) : items;
       // Omit optional fields when empty — Firestore rejects undefined values
       const invoicePayload = {
         invoiceNumber, date: invoiceDate, customerId: selectedCustomerId,
-        customerName: selectedCustomer?.name || '', items, gstType,
+        customerName: selectedCustomer?.name || '', items: savedItems, gstType,
+        scheme: invoiceScheme.scheme,
         totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: roundedTotal,
         status: (editingInvoice?.status || 'Unpaid') as 'Paid' | 'Unpaid' | 'Partial',
         stockApplied: true,
@@ -628,17 +663,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
   // Build a temporary Invoice object from current form state (used for PDF before or after save)
   const buildCurrentInvoice = (): Invoice => {
-    const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-    const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-    const igst = gstType === GSTType.IGST ? taxAmount : 0;
+    const cgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+    const sgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+    const igst = !isComposition && gstType === GSTType.IGST ? taxAmount : 0;
     return {
       id: 'preview',
       invoiceNumber,
       date: invoiceDate,
       customerId: selectedCustomerId,
       customerName: selectedCustomer?.name || '',
-      items,
+      items: isComposition ? items.map(i => ({ ...i, gstRate: 0 })) : items,
       gstType,
+      scheme: invoiceScheme.scheme,
       totalBeforeTax: subTotal,
       cgst, sgst, igst,
       totalAmount: roundedTotal,
@@ -719,7 +755,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     <div className="bg-white p-12 min-h-[1100px] flex flex-col space-y-12 w-full max-w-[850px] mx-auto print:shadow-none print:p-4 border border-slate-50 shadow-2xl rounded-[2.5rem]">
       <div className="flex justify-between items-start">
         <div className="space-y-6">
-           <h1 className="text-7xl font-black tracking-tighter uppercase leading-none font-montserrat" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
+           <h1 className="text-7xl font-black tracking-tighter uppercase leading-none font-montserrat" style={{ color: profile.theme.primaryColor }}>{isComposition ? 'Bill of Supply' : 'Invoice'}</h1>
            <div className="space-y-1 text-[11px] font-bold font-poppins text-slate-400 uppercase tracking-[0.2em]">
               <p>Invoice# <span className="text-slate-900 ml-4 font-black">{invoiceNumber}</span></p>
               <p>Invoice Date <span className="text-slate-900 ml-4 font-black">{invoiceDate}</span></p>
@@ -765,7 +801,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 </td>
                 <td className="px-4 py-6 text-center text-slate-400">{item.hsnCode || '---'}</td>
                 <td className="px-4 py-6 text-center font-black">{item.quantity}</td>
-                <td className="px-4 py-6 text-center text-slate-400">{item.gstRate}%</td>
+                <td className="px-4 py-6 text-center text-slate-400">{isComposition ? '—' : `${item.gstRate}%`}</td>
                 <td className="px-10 py-6 text-right font-black">₹{r2(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               </tr>
             ))}
@@ -795,11 +831,13 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
          <div className="space-y-10">
             <div className="space-y-4 text-sm font-bold text-slate-500 font-poppins px-6">
                <div className="flex justify-between"><span>Sub Total</span><span className="text-slate-900 font-black">₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+               {!isComposition && (<>
                <div className="flex justify-between text-emerald-500 font-black"><span>Tax (GST)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                {gstType === GSTType.CGST_SGST ? (<>
                  <div className="flex justify-between text-xs font-medium text-slate-400"><span>CGST ({items[0]?.gstRate/2}%)</span><span>₹{(taxAmount/2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                  <div className="flex justify-between text-xs font-medium text-slate-400"><span>SGST ({items[0]?.gstRate/2}%)</span><span>₹{(taxAmount/2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                </>) : (<div className="flex justify-between text-xs font-medium text-slate-400"><span>IGST ({items[0]?.gstRate}%)</span><span>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+               </>)}
                {roundOff !== 0 && (
                  <div className="flex justify-between text-xs font-medium text-slate-400">
                    <span>Round Off</span>
@@ -817,6 +855,11 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </div>
          </div>
       </div>
+      {isComposition && (
+        <div className="mt-4 p-4 border border-slate-200 rounded-2xl bg-slate-50 text-center">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{COMPOSITION_DECLARATION}</p>
+        </div>
+      )}
       <div className="pt-20 text-center border-t border-slate-50 mt-auto">
          <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.3em]">Bill generated via <span className="text-slate-900">BillHippo Smart OS</span> • {profile.email} • {profile.phone}</p>
       </div>
@@ -838,8 +881,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           </div>
           {/* Centre title */}
           <div className="text-center">
-            <h1 className="text-[52px] font-black tracking-tight leading-none font-montserrat" style={{ color: profile.theme.primaryColor }}>Invoice</h1>
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.22em] mt-1">GST Compliant Tax Invoice</p>
+            <h1 className="text-[52px] font-black tracking-tight leading-none font-montserrat" style={{ color: profile.theme.primaryColor }}>{isComposition ? 'Bill of Supply' : 'Invoice'}</h1>
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.22em] mt-1">{isComposition ? 'Composition Scheme — Section 10, CGST Act' : 'GST Compliant Tax Invoice'}</p>
           </div>
           {/* Right meta */}
           <div className="space-y-2 text-right">
@@ -903,23 +946,23 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 <th className="px-3 py-3">Item Description</th>
                 <th className="px-2 py-3 text-center">HSN/SAC</th>
                 <th className="px-2 py-3 text-center">Qty</th>
-                <th className="px-2 py-3 text-center">GST%</th>
-                <th className="px-3 py-3 text-right">Taxable Amt</th>
-                {gstType === GSTType.CGST_SGST ? (
+                {!isComposition && <th className="px-2 py-3 text-center">GST%</th>}
+                <th className="px-3 py-3 text-right">{isComposition ? 'Amount' : 'Taxable Amt'}</th>
+                {!isComposition && (gstType === GSTType.CGST_SGST ? (
                   <>
                     <th className="px-2 py-3 text-right">SGST</th>
                     <th className="px-2 py-3 text-right">CGST</th>
                   </>
                 ) : (
                   <th className="px-2 py-3 text-right" colSpan={2}>IGST</th>
-                )}
+                ))}
                 <th className="px-3 py-3 text-right">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map((item, idx) => {
                 const taxable = r2(item.quantity * item.rate);
-                const itemTax = r2(taxable * item.gstRate / 100);
+                const itemTax = isComposition ? 0 : r2(taxable * item.gstRate / 100);
                 const halfTax = r2(itemTax / 2);
                 return (
                   <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
@@ -927,16 +970,16 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                     <td className="px-3 py-3 font-semibold text-slate-800">{item.description || 'No description'}</td>
                     <td className="px-2 py-3 text-center text-slate-500">{item.hsnCode || '—'}</td>
                     <td className="px-2 py-3 text-center font-black text-slate-800">{item.quantity}</td>
-                    <td className="px-2 py-3 text-center text-slate-500">{item.gstRate}%</td>
+                    {!isComposition && <td className="px-2 py-3 text-center text-slate-500">{item.gstRate}%</td>}
                     <td className="px-3 py-3 text-right text-slate-700">₹{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    {gstType === GSTType.CGST_SGST ? (
+                    {!isComposition && (gstType === GSTType.CGST_SGST ? (
                       <>
                         <td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                       </>
                     ) : (
                       <td className="px-2 py-3 text-right text-slate-600" colSpan={2}>₹{itemTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    )}
+                    ))}
                     <td className="px-3 py-3 text-right font-black text-slate-900">₹{(taxable + itemTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                   </tr>
                 );
@@ -991,7 +1034,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               <span className="text-slate-400">Sub Total</span>
               <span className="text-slate-800">₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
             </div>
-            {gstType === GSTType.CGST_SGST ? (
+            {!isComposition && (gstType === GSTType.CGST_SGST ? (
               <>
                 <div className="flex justify-between py-2">
                   <span className="text-slate-400">CGST</span>
@@ -1007,7 +1050,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 <span className="text-slate-400">IGST</span>
                 <span className="text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
-            )}
+            ))}
             {roundOff !== 0 && (
               <div className="flex justify-between py-2">
                 <span className="text-slate-400">Round Off</span>
@@ -1024,6 +1067,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </div>
           </div>
         </div>
+
+        {isComposition && (
+          <div className="p-3 border border-slate-200 rounded-xl bg-slate-50 text-center">
+            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{COMPOSITION_DECLARATION}</p>
+          </div>
+        )}
 
         {/* ── Contact + Signature footer ── */}
         <div className="flex justify-between items-end pt-5 border-t border-slate-100">
@@ -1083,7 +1132,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           </div>
           <div className="flex flex-col items-end">
             <div className="relative">
-              <div className="px-6 py-2 text-white text-[26px] font-black tracking-tight" style={{ backgroundColor: geoNavy, clipPath: 'polygon(12% 0, 100% 0, 100% 100%, 0 100%)' }}>INVOICE</div>
+              <div className="px-6 py-2 text-white text-[26px] font-black tracking-tight" style={{ backgroundColor: geoNavy, clipPath: 'polygon(12% 0, 100% 0, 100% 100%, 0 100%)' }}>{isComposition ? 'BILL OF SUPPLY' : 'INVOICE'}</div>
               <div className="absolute left-3 -bottom-1 h-[3px] w-10" style={{ backgroundColor: geoTeal }}></div>
             </div>
             <div className="mt-4 space-y-1.5 text-right">
@@ -1149,16 +1198,16 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 <th className="px-3 py-3">Item Description</th>
                 <th className="px-2 py-3 text-center">HSN/SAC</th>
                 <th className="px-2 py-3 text-center">Qty</th>
-                <th className="px-2 py-3 text-center">GST%</th>
-                <th className="px-3 py-3 text-right">Taxable Amt</th>
-                {gstType === GSTType.CGST_SGST ? (<><th className="px-2 py-3 text-right">SGST</th><th className="px-2 py-3 text-right">CGST</th></>) : (<th className="px-2 py-3 text-right" colSpan={2}>IGST</th>)}
+                {!isComposition && <th className="px-2 py-3 text-center">GST%</th>}
+                <th className="px-3 py-3 text-right">{isComposition ? 'Amount' : 'Taxable Amt'}</th>
+                {!isComposition && (gstType === GSTType.CGST_SGST ? (<><th className="px-2 py-3 text-right">SGST</th><th className="px-2 py-3 text-right">CGST</th></>) : (<th className="px-2 py-3 text-right" colSpan={2}>IGST</th>))}
                 <th className="px-3 py-3 text-right">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map((item, idx) => {
                 const taxable = r2(item.quantity * item.rate);
-                const itemTax = r2(taxable * item.gstRate / 100);
+                const itemTax = isComposition ? 0 : r2(taxable * item.gstRate / 100);
                 const halfTax = r2(itemTax / 2);
                 return (
                   <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
@@ -1166,9 +1215,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                     <td className="px-3 py-3 font-semibold text-slate-800">{item.description || 'No description'}</td>
                     <td className="px-2 py-3 text-center text-slate-500">{item.hsnCode || '—'}</td>
                     <td className="px-2 py-3 text-center font-black text-slate-800">{item.quantity}</td>
-                    <td className="px-2 py-3 text-center text-slate-500">{item.gstRate}%</td>
+                    {!isComposition && <td className="px-2 py-3 text-center text-slate-500">{item.gstRate}%</td>}
                     <td className="px-3 py-3 text-right text-slate-700">₹{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    {gstType === GSTType.CGST_SGST ? (<><td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></>) : (<td className="px-2 py-3 text-right text-slate-600" colSpan={2}>₹{itemTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>)}
+                    {!isComposition && (gstType === GSTType.CGST_SGST ? (<><td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td className="px-2 py-3 text-right text-slate-600">₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></>) : (<td className="px-2 py-3 text-right text-slate-600" colSpan={2}>₹{itemTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>))}
                     <td className="px-3 py-3 text-right font-black text-slate-900">₹{(taxable + itemTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                   </tr>
                 );
@@ -1217,10 +1266,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             {geoLabel(<BarChart3 size={11} className="text-white" strokeWidth={2.5} />, 'Summary')}
             <div className="text-[11px] font-bold">
               <div className="flex justify-between py-2 border-b border-slate-100"><span className="text-slate-400">Sub Total</span><span className="text-slate-800">₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-              {gstType === GSTType.CGST_SGST ? (<>
+              {!isComposition && (gstType === GSTType.CGST_SGST ? (<>
                 <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">CGST</span><span className="text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                 <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">SGST</span><span className="text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-              </>) : (<div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">IGST</span><span className="text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+              </>) : (<div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">IGST</span><span className="text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>))}
               {roundOff !== 0 && (<div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-400">Round Off</span><span className="text-slate-700">{roundOff > 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
             </div>
             {/* Big angular TOTAL banner */}
@@ -1235,6 +1284,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </div>
           </div>
         </div>
+
+        {isComposition && (
+          <div className="p-3 border border-slate-200 rounded-xl bg-slate-50 text-center">
+            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{COMPOSITION_DECLARATION}</p>
+          </div>
+        )}
 
         {/* ── Contact + Signature ── */}
         <div className="flex justify-between items-end pt-4 border-t border-slate-100">
@@ -1290,7 +1345,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </div>
           </div>
           <div className="flex flex-col items-end">
-            <h2 className="text-[46px] font-black leading-none tracking-tight" style={{ color: pfNavy }}>INVOICE</h2>
+            <h2 className="text-[46px] font-black leading-none tracking-tight" style={{ color: pfNavy }}>{isComposition ? 'BILL OF SUPPLY' : 'INVOICE'}</h2>
             <p className="text-[9px] font-black tracking-wide mt-0.5 mb-2" style={{ color: pfTeal }}>PAYMENT-FIRST. FAST. SECURE. EASY.</p>
             <div className="space-y-1.5 text-right">
               <div className="flex items-center justify-end gap-3"><span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Invoice No.</span><span className="text-[12px] font-black text-slate-900 w-24 text-left">{invoiceNumber}</span></div>
@@ -1339,15 +1394,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               <table className="w-full text-left border-collapse text-[8px]">
                 <thead>
                   <tr className="text-white font-black uppercase" style={{ backgroundColor: pfNavy }}>
-                    <th className="px-1.5 py-2">#</th><th className="px-1.5 py-2">Item Description</th><th className="px-1 py-2 text-center">HSN</th><th className="px-1 py-2 text-center">Qty</th><th className="px-1 py-2 text-right">Rate</th><th className="px-1 py-2 text-center">GST%</th><th className="px-1 py-2 text-right">Taxable</th>
-                    {gstType === GSTType.CGST_SGST ? (<><th className="px-1 py-2 text-right">SGST</th><th className="px-1 py-2 text-right">CGST</th></>) : (<th className="px-1 py-2 text-right" colSpan={2}>IGST</th>)}
+                    <th className="px-1.5 py-2">#</th><th className="px-1.5 py-2">Item Description</th><th className="px-1 py-2 text-center">HSN</th><th className="px-1 py-2 text-center">Qty</th><th className="px-1 py-2 text-right">Rate</th>{!isComposition && <th className="px-1 py-2 text-center">GST%</th>}<th className="px-1 py-2 text-right">{isComposition ? 'Amount' : 'Taxable'}</th>
+                    {!isComposition && (gstType === GSTType.CGST_SGST ? (<><th className="px-1 py-2 text-right">SGST</th><th className="px-1 py-2 text-right">CGST</th></>) : (<th className="px-1 py-2 text-right" colSpan={2}>IGST</th>))}
                     <th className="px-1.5 py-2 text-right">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {items.map((item, idx) => {
                     const taxable = r2(item.quantity * item.rate);
-                    const itemTax = r2(taxable * item.gstRate / 100);
+                    const itemTax = isComposition ? 0 : r2(taxable * item.gstRate / 100);
                     const halfTax = r2(itemTax / 2);
                     return (
                       <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
@@ -1356,9 +1411,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                         <td className="px-1 py-2 text-center text-slate-500">{item.hsnCode || '—'}</td>
                         <td className="px-1 py-2 text-center font-black text-slate-800">{item.quantity}</td>
                         <td className="px-1 py-2 text-right text-slate-600">{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                        <td className="px-1 py-2 text-center text-slate-500">{item.gstRate}%</td>
+                        {!isComposition && <td className="px-1 py-2 text-center text-slate-500">{item.gstRate}%</td>}
                         <td className="px-1 py-2 text-right text-slate-700">{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                        {gstType === GSTType.CGST_SGST ? (<><td className="px-1 py-2 text-right text-slate-600">{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td className="px-1 py-2 text-right text-slate-600">{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></>) : (<td className="px-1 py-2 text-right text-slate-600" colSpan={2}>{itemTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>)}
+                        {!isComposition && (gstType === GSTType.CGST_SGST ? (<><td className="px-1 py-2 text-right text-slate-600">{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td><td className="px-1 py-2 text-right text-slate-600">{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></>) : (<td className="px-1 py-2 text-right text-slate-600" colSpan={2}>{itemTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>))}
                         <td className="px-1.5 py-2 text-right font-black text-slate-900">{(taxable + itemTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                       </tr>
                     );
@@ -1423,10 +1478,10 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide px-4 py-2.5 bg-slate-50" style={{ color: pfNavy }}><Receipt size={12} strokeWidth={2.5} />Invoice Summary</p>
               <div className="px-4 py-2 text-[10px]">
                 <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">Sub Total</span><span className="font-black text-slate-800">₹{subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-                {gstType === GSTType.CGST_SGST ? (<>
+                {!isComposition && (gstType === GSTType.CGST_SGST ? (<>
                   <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">CGST</span><span className="font-bold text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
                   <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">SGST</span><span className="font-bold text-slate-700">₹{r2(taxAmount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-                </>) : (<div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">IGST</span><span className="font-bold text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>)}
+                </>) : (<div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">IGST</span><span className="font-bold text-slate-700">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>))}
                 {roundOff !== 0 && <div className="flex justify-between py-1.5 border-b border-slate-100"><span className="text-slate-500">Round Off</span><span className="font-bold text-slate-700">{roundOff > 0 ? '+' : ''}₹{Math.abs(roundOff).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>}
               </div>
               <div className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: pfNavy }}>
@@ -1436,6 +1491,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
             </div>
           </div>
         </div>
+
+        {isComposition && (
+          <div className="mt-5 p-3 border border-slate-200 rounded-xl bg-slate-50 text-center">
+            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{COMPOSITION_DECLARATION}</p>
+          </div>
+        )}
 
         {/* ── Footer ── */}
         <div className="flex justify-between items-end pt-5 mt-5 border-t border-slate-100">
@@ -1550,7 +1611,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                     >
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <div className="min-w-0">
-                          <p className="text-sm font-black text-slate-900 font-poppins">{inv.invoiceNumber}</p>
+                          <p className="text-sm font-black text-slate-900 font-poppins">
+                            {inv.invoiceNumber}
+                            {docScheme(inv, profile) === 'composition' && (
+                              <span className="ml-2 inline-block text-[9px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wide" title="Bill of Supply (composition scheme)">BOS</span>
+                            )}
+                          </p>
                           <p className="text-sm font-medium text-slate-600 truncate">{inv.customerName}</p>
                           <p className="text-xs text-slate-400 mt-0.5">{formatDate(inv.date)}</p>
                         </div>
@@ -1625,6 +1691,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                           </td>
                           <td className="px-6 py-4 text-sm font-black text-slate-900 whitespace-nowrap">
                             {inv.invoiceNumber}
+                            {docScheme(inv, profile) === 'composition' && (
+                              <span className="ml-2 inline-block text-[9px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wide" title="Bill of Supply (composition scheme)">BOS</span>
+                            )}
                           </td>
                           <td className="px-6 py-4 text-sm font-medium text-slate-700 max-w-[180px] truncate">
                             {inv.customerName}
@@ -2265,13 +2334,31 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                     <Package size={14} /> Pick from Inventory
                   </button>
                 )}
-                <div className="px-5 py-2 rounded-xl bg-indigo-50 text-profee-blue text-[10px] font-black uppercase">Tax Logic: {gstType}</div>
+                <div className="px-5 py-2 rounded-xl bg-indigo-50 text-profee-blue text-[10px] font-black uppercase">{isComposition ? 'Bill of Supply — No GST' : `Tax Logic: ${gstType}`}</div>
               </div>
             </div>
             {hsnWarning && (
               <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-700 font-medium">
                 <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠</span>
                 <span>{hsnWarning}</span>
+              </div>
+            )}
+            {isComposition && (
+              <div className="flex items-start gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-600 font-medium">
+                <FileText size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
+                <span>This document will be saved as a <b>Bill of Supply</b> — under the composition scheme no GST is charged, and B2B buyers cannot claim ITC on it.</span>
+              </div>
+            )}
+            {interstateCompositionWarning && (
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-300 rounded-2xl text-sm text-amber-800 font-semibold">
+                <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠</span>
+                <span>{interstateCompositionWarning}</span>
+              </div>
+            )}
+            {schemeBoundaryWarning && (
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-700 font-medium">
+                <span className="text-amber-500 mt-0.5 flex-shrink-0">⚠</span>
+                <span>{schemeBoundaryWarning}</span>
               </div>
             )}
             <div className="space-y-4">
@@ -2338,7 +2425,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                       </div>
                       <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Qty</label><input type="number" inputMode="decimal" className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center shadow-sm" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
                       <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Rate (₹)</label><input type="number" inputMode="decimal" className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center text-profee-blue shadow-sm" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
-                      <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">GST %</label><select className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-bold text-center appearance-none shadow-sm" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
+                      {isComposition
+                        ? <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">GST %</label><div className="w-full bg-white rounded-xl px-3 py-3 text-sm font-bold text-center text-slate-300 shadow-sm">N/A</div></div>
+                        : <div className="space-y-1"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">GST %</label><select className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-bold text-center appearance-none shadow-sm" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>}
                     </div>
                     <div className="flex justify-between items-center pt-1 border-t border-slate-100">
                       <span className="text-xs text-slate-400 font-medium">Amount</span>
@@ -2402,7 +2491,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                     </div>
                     <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">Qty</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-black text-center" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
                     <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label><input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center text-profee-blue" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
-                    <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label><select className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-center appearance-none" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>
+                    {isComposition
+                      ? <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label><div className="w-full bg-slate-50 rounded-2xl px-4 py-3 text-sm font-bold text-center text-slate-300">N/A</div></div>
+                      : <div className="col-span-2 space-y-2"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">GST %</label><select className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-bold text-center appearance-none" value={item.gstRate} onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}>{[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}</select></div>}
                     <div className="col-span-1 pb-2 flex justify-center"><button onClick={() => handleRemoveItem(item.id)} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18} /></button></div>
                   </div>
                 </div>
@@ -2516,7 +2607,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-8">Summary Preview</p>
               <div className="space-y-4 mb-10">
                  <div className="flex justify-between items-center opacity-80"><span className="text-sm font-medium">Sub Total</span><span className="text-base font-bold">₹{subTotal.toLocaleString()}</span></div>
-                 <div className="flex justify-between items-center text-emerald-400"><span className="text-sm font-medium">Tax Amount</span><span className="text-base font-bold">+ ₹{taxAmount.toLocaleString()}</span></div>
+                 {isComposition
+                   ? <div className="flex justify-between items-center text-slate-400"><span className="text-sm font-medium">Tax (Composition)</span><span className="text-base font-bold">Not charged</span></div>
+                   : <div className="flex justify-between items-center text-emerald-400"><span className="text-sm font-medium">Tax Amount</span><span className="text-base font-bold">+ ₹{taxAmount.toLocaleString()}</span></div>}
               </div>
               <div className="pt-8 border-t border-white/10 space-y-2"><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">Grand Total</p><h3 className="text-4xl font-black">₹{roundedTotal.toLocaleString()}</h3></div>
            </div>
@@ -2524,7 +2617,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               <h4 className="text-sm font-black uppercase tracking-widest text-slate-800 flex items-center gap-2"><Globe size={18} className="text-profee-blue" /> Quick Info</h4>
               <div className="space-y-3 text-xs font-bold text-slate-500">
                 <div className="p-4 bg-slate-50 rounded-2xl flex justify-between"><span>Template</span><span className="text-slate-800">{profile.theme.templateId}</span></div>
-                <div className="p-4 bg-slate-50 rounded-2xl flex justify-between"><span>GST Type</span><span className="text-slate-800">{gstType}</span></div>
+                <div className="p-4 bg-slate-50 rounded-2xl flex justify-between"><span>GST Type</span><span className="text-slate-800">{isComposition ? 'Composition' : gstType}</span></div>
                 <div className="p-4 bg-slate-50 rounded-2xl flex justify-between"><span>Items</span><span className="text-slate-800">{items.length}</span></div>
               </div>
            </div>

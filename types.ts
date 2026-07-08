@@ -100,6 +100,23 @@ export enum GSTType {
   IGST = 'IGST'
 }
 
+// ── GST Scheme (Regular vs Composition, Section 10 CGST Act) ───────────────
+// A composition dealer cannot collect GST (issues a Bill of Supply instead of
+// a Tax Invoice), pays a fixed rate on turnover, and files CMP-08 quarterly +
+// GSTR-4 annually instead of GSTR-1/GSTR-3B.
+
+export type GSTScheme = 'regular' | 'composition';
+
+// Composition rate categories: trader/manufacturer 1% (0.5+0.5),
+// restaurant 5% (2.5+2.5), service provider u/s 10(2A) 6% (3+3).
+export type CompositionCategory = 'trader' | 'manufacturer' | 'restaurant' | 'service';
+
+export interface SchemePeriod {
+  scheme: GSTScheme;
+  effectiveFrom: string;                      // YYYY-MM-DD, inclusive
+  compositionCategory?: CompositionCategory;  // required when scheme === 'composition'
+}
+
 export interface BusinessTheme {
   templateId: 'modern-1' | 'modern-2' | 'geometric' | 'payment-first';
   primaryColor: string;
@@ -145,17 +162,12 @@ export interface BusinessProfile {
   // GST Portal credentials (for fetching GSTR-2B/3B/1)
   gstPortalUsername?: string;
   gstPortalPassword?: string;
-  gstRegistrationType?: string;   // e.g. "Regular", "Composition Dealer"
-}
-
-export interface ServiceItem {
-  id: string;
-  name: string;
-  description?: string;
-  sacCode: string;
-  unit: string;
-  rate: number;
-  gstRate: number;
+  gstRegistrationType?: string;   // e.g. "Regular", "Composition Dealer" (raw portal taxpayerType)
+  // ── GST scheme (all optional for backward compat; legacy profiles with
+  //    gstEnabled=true and no schemeHistory are treated as regular-since-2017) ──
+  gstScheme?: GSTScheme;                     // denormalized current scheme (= last history entry)
+  compositionCategory?: CompositionCategory; // current category when composition
+  schemeHistory?: SchemePeriod[];            // ascending by effectiveFrom, append-only
 }
 
 export interface ServiceItem {
@@ -230,6 +242,10 @@ export interface Invoice {
   igst: number;
   totalAmount: number;
   status: 'Paid' | 'Unpaid' | 'Partial';
+  // GST scheme snapshot at save time. Absent on legacy docs → derived from the
+  // document date via the profile's schemeHistory (see lib/gstScheme.ts).
+  // 'composition' docs are Bills of Supply with zero tax.
+  scheme?: GSTScheme;
   deleted?: boolean;
   deletedAt?: string;
   // Set true once stock has been decremented for this invoice's line items;
@@ -282,6 +298,8 @@ export interface CreditNote {
   sgst: number;
   igst: number;
   totalAmount: number;
+  // GST scheme snapshot at save time (see Invoice.scheme).
+  scheme?: GSTScheme;
 }
 
 export interface DebitNote {
@@ -300,6 +318,8 @@ export interface DebitNote {
   sgst: number;
   igst: number;
   totalAmount: number;
+  // GST scheme snapshot at save time (see Invoice.scheme).
+  scheme?: GSTScheme;
 }
 
 // ── Purchases ──────────────────────────────────────────────────────────────
@@ -360,6 +380,8 @@ export interface Quotation {
   igst: number;
   totalAmount: number;
   status: QuotationStatus;
+  // GST scheme snapshot at save time (see Invoice.scheme).
+  scheme?: GSTScheme;
   notes?: string;                // Free-text note for the customer
   convertedInvoiceId?: string;     // Firestore doc ID of the created invoice
   convertedInvoiceNumber?: string; // Human-readable number, e.g. "INV/2026/005"
