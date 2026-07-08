@@ -20,6 +20,7 @@ import {
   Image,
 } from '@react-pdf/renderer';
 import { CreditNote, DebitNote, BusinessProfile, Customer, GSTType } from '../../types';
+import { docScheme, COMPOSITION_DECLARATION } from '../../lib/gstScheme';
 
 Font.register({
   family: 'Poppins',
@@ -136,6 +137,8 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
   const accentColor = isCredit ? '#10b981' : '#f59e0b';
   const noteLabel = isCredit ? 'CREDIT NOTE' : 'DEBIT NOTE';
   const taxAmount = note.cgst + note.sgst + note.igst;
+  // Notes dated in a composition period adjust Bills of Supply — no tax columns
+  const isComposition = business.gstEnabled && docScheme(note, business) === 'composition';
 
   return (
     <Document>
@@ -201,7 +204,7 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
           </View>
           <View style={s.refItem}>
             <Text style={s.refLabel}>GST Treatment</Text>
-            <Text style={s.refValue}>{note.gstType === GSTType.CGST_SGST ? 'CGST + SGST (Intra-state)' : 'IGST (Inter-state)'}</Text>
+            <Text style={s.refValue}>{isComposition ? 'Composition — no GST' : note.gstType === GSTType.CGST_SGST ? 'CGST + SGST (Intra-state)' : 'IGST (Inter-state)'}</Text>
           </View>
           <View style={s.refItem}>
             <Text style={s.refLabel}>Note Type</Text>
@@ -225,9 +228,9 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
             <Text style={[s.tableHeadCell, { width: 50, textAlign: 'center' }]}>HSN/SAC</Text>
             <Text style={[s.tableHeadCell, { width: 30, textAlign: 'center' }]}>Qty</Text>
             <Text style={[s.tableHeadCell, { width: 50, textAlign: 'right' }]}>Rate</Text>
-            <Text style={[s.tableHeadCell, { width: 35, textAlign: 'center' }]}>GST%</Text>
-            <Text style={[s.tableHeadCell, { width: 60, textAlign: 'right' }]}>Taxable</Text>
-            {note.gstType === GSTType.CGST_SGST ? (
+            {!isComposition && <Text style={[s.tableHeadCell, { width: 35, textAlign: 'center' }]}>GST%</Text>}
+            <Text style={[s.tableHeadCell, { width: 60, textAlign: 'right' }]}>{isComposition ? 'Amount' : 'Taxable'}</Text>
+            {isComposition ? null : note.gstType === GSTType.CGST_SGST ? (
               <>
                 <Text style={[s.tableHeadCell, { width: 50, textAlign: 'right' }]}>CGST</Text>
                 <Text style={[s.tableHeadCell, { width: 50, textAlign: 'right' }]}>SGST</Text>
@@ -239,7 +242,7 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
           </View>
           {note.items.map((item, idx) => {
             const taxable = r2(item.quantity * item.rate);
-            const itemTax = r2(taxable * item.gstRate / 100);
+            const itemTax = isComposition ? 0 : r2(taxable * item.gstRate / 100);
             const halfTax = r2(itemTax / 2);
             return (
               <View key={item.id} wrap={false} style={[s.tableRow, idx % 2 === 0 ? {} : { backgroundColor: ALT }]}>
@@ -248,9 +251,9 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
                 <Text style={[s.tableCell, { width: 50, textAlign: 'center' }]}>{item.hsnCode || '—'}</Text>
                 <Text style={[s.tableCellBold, { width: 30, textAlign: 'center' }]}>{item.quantity}</Text>
                 <Text style={[s.tableCell, { width: 50, textAlign: 'right' }]}>₹{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                <Text style={[s.tableCell, { width: 35, textAlign: 'center' }]}>{item.gstRate}%</Text>
+                {!isComposition && <Text style={[s.tableCell, { width: 35, textAlign: 'center' }]}>{item.gstRate}%</Text>}
                 <Text style={[s.tableCell, { width: 60, textAlign: 'right' }]}>₹{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                {note.gstType === GSTType.CGST_SGST ? (
+                {isComposition ? null : note.gstType === GSTType.CGST_SGST ? (
                   <>
                     <Text style={[s.tableCell, { width: 50, textAlign: 'right' }]}>₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
                     <Text style={[s.tableCell, { width: 50, textAlign: 'right' }]}>₹{halfTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
@@ -270,7 +273,7 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
             <Text style={s.totalsLabel}>Sub Total</Text>
             <Text style={s.totalsValue}>₹{note.totalBeforeTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
           </View>
-          {note.gstType === GSTType.CGST_SGST ? (
+          {isComposition ? null : note.gstType === GSTType.CGST_SGST ? (
             <>
               <View style={s.totalsRow}>
                 <Text style={s.totalsLabel}>CGST</Text>
@@ -311,9 +314,11 @@ const CreditDebitNotePDF: React.FC<CreditDebitNotePDFProps> = ({ note, noteType,
 
         {/* ── GST Note ── */}
         <Text style={s.gstNote}>
-          {isCredit
-            ? 'This Credit Note is issued under Section 34 of the CGST Act, 2017. The tax credit noted herein shall reduce the output tax liability of the supplier.'
-            : 'This Debit Note is issued under Section 34 of the CGST Act, 2017. The tax noted herein shall increase the output tax liability of the supplier.'}
+          {isComposition
+            ? `This ${isCredit ? 'Credit' : 'Debit'} Note is issued under Section 34 of the CGST Act, 2017 against a Bill of Supply. ${COMPOSITION_DECLARATION}.`
+            : isCredit
+              ? 'This Credit Note is issued under Section 34 of the CGST Act, 2017. The tax credit noted herein shall reduce the output tax liability of the supplier.'
+              : 'This Debit Note is issued under Section 34 of the CGST Act, 2017. The tax noted herein shall increase the output tax liability of the supplier.'}
         </Text>
 
         {/* ── Footer ── */}

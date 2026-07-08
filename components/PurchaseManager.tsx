@@ -19,6 +19,7 @@ import {
   addPurchase, updatePurchase, deletePurchase, applyStockAdjustments,
   addInventoryItem, updateInventoryItem,
 } from '../lib/firestore';
+import { isCompositionOnDate } from '../lib/gstScheme';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 const currentYear = new Date().getFullYear();
@@ -126,6 +127,13 @@ const PurchaseManager: React.FC<Props> = ({ userId }) => {
   const gstType = useMemo<GSTType>(() => {
     return supplierState === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [supplierState, profile.state]);
+
+  // Purchases keep recording GST under composition (it's a cost, not credit) —
+  // this only drives an informational banner.
+  const isCompositionToday = useMemo(
+    () => isCompositionOnDate(profile, new Date().toISOString().split('T')[0]),
+    [profile],
+  );
 
   const subTotal  = r2(items.reduce((s, i) => s + r2(i.quantity * i.rate), 0));
   const taxAmount = r2(items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * i.gstRate / 100), 0));
@@ -595,6 +603,12 @@ const PurchaseManager: React.FC<Props> = ({ userId }) => {
       {error && (
         <div className="mb-4 px-4 py-2 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-xl">
           {error}
+        </div>
+      )}
+
+      {isCompositionToday && (
+        <div className="mb-4 px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 text-sm rounded-xl">
+          Composition scheme: you pay GST on purchases but cannot claim ITC. GST recorded here is a cost and feeds GSTR-4 (inward supplies).
         </div>
       )}
 

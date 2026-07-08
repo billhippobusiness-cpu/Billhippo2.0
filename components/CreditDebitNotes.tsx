@@ -30,6 +30,7 @@ import {
   getDebitNotes, addDebitNote, updateDebitNote,
   addLedgerEntry, updateCustomer, getInventoryItems,
 } from '../lib/firestore';
+import { getSchemeOnDate, docScheme } from '../lib/gstScheme';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
 
@@ -170,8 +171,12 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [selectedCustomer, profile.state]);
 
+  // Notes dated in a composition period carry no GST (they adjust Bills of Supply)
+  const noteScheme = useMemo(() => getSchemeOnDate(profile, noteDate), [profile, noteDate]);
+  const isComposition = profile.gstEnabled && noteScheme.scheme === 'composition';
+
   const subTotal  = r2(items.reduce((s, i) => s + r2(i.quantity * i.rate), 0));
-  const taxAmount = r2(items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * i.gstRate / 100), 0));
+  const taxAmount = isComposition ? 0 : r2(items.reduce((s, i) => s + r2(r2(i.quantity * i.rate) * i.gstRate / 100), 0));
   const grandTotal = r2(subTotal + taxAmount);
   const roundedTotal = Math.round(grandTotal);
   const roundOff = r2(roundedTotal - grandTotal);
@@ -274,16 +279,18 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
 
     setSaving(true); setError(null);
     try {
-      const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-      const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-      const igst = gstType === GSTType.IGST ? taxAmount : 0;
+      const cgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const sgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const igst = !isComposition && gstType === GSTType.IGST ? taxAmount : 0;
 
       const payload = {
         noteNumber, date: noteDate, customerId: selectedCustomerId,
         customerName: selectedCustomer?.name || '',
         ...(originalInvoiceNumber.trim() ? { originalInvoiceNumber: originalInvoiceNumber.trim() } : {}),
         reason: reason.trim(),
-        items, gstType,
+        items: isComposition ? items.map(i => ({ ...i, gstRate: 0 })) : items,
+        gstType,
+        scheme: noteScheme.scheme,
         totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: roundedTotal,
       };
 
@@ -339,15 +346,18 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
 
   // ── Build current note for preview ──
   const buildCurrentNote = (): CreditNote | DebitNote => {
-    const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-    const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-    const igst = gstType === GSTType.IGST ? taxAmount : 0;
+    const cgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+    const sgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+    const igst = !isComposition && gstType === GSTType.IGST ? taxAmount : 0;
     return {
       id: 'preview',
       noteNumber, date: noteDate, customerId: selectedCustomerId,
       customerName: selectedCustomer?.name || '',
       originalInvoiceNumber: originalInvoiceNumber || undefined,
-      reason, items, gstType,
+      reason,
+      items: isComposition ? items.map(i => ({ ...i, gstRate: 0 })) : items,
+      gstType,
+      scheme: noteScheme.scheme,
       totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: roundedTotal,
     };
   };
@@ -450,9 +460,9 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                     <td className="px-4 py-4 text-sm text-slate-400 text-center">{item.hsnCode || '—'}</td>
                     <td className="px-4 py-4 text-sm font-bold text-slate-800 text-center">{item.quantity}</td>
                     <td className="px-4 py-4 text-sm text-slate-700 text-right">{inr(item.rate)}</td>
-                    <td className="px-4 py-4 text-sm text-slate-400 text-center">{item.gstRate}%</td>
+                    <td className="px-4 py-4 text-sm text-slate-400 text-center">{isComposition ? '—' : `${item.gstRate}%`}</td>
                     <td className="px-6 py-4 text-sm font-black text-slate-900 text-right">
-                      {inr(r2(r2(item.quantity * item.rate) * (1 + item.gstRate / 100)))}
+                      {inr(isComposition ? r2(item.quantity * item.rate) : r2(r2(item.quantity * item.rate) * (1 + item.gstRate / 100)))}
                     </td>
                   </tr>
                 ))}
@@ -464,7 +474,11 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
               <div className="flex justify-between text-sm font-bold text-slate-500">
                 <span>Sub Total</span><span className="text-slate-900">{inr(subTotal)}</span>
               </div>
-              {gstType === GSTType.CGST_SGST ? (
+              {isComposition ? (
+                <div className="flex justify-between text-sm text-slate-400">
+                  <span>GST (Composition)</span><span>Not charged</span>
+                </div>
+              ) : gstType === GSTType.CGST_SGST ? (
                 <>
                   <div className="flex justify-between text-sm text-slate-400">
                     <span>CGST</span><span>{inr(r2(taxAmount / 2))}</span>
@@ -739,13 +753,17 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                     </div>
                     <div className="col-span-1 space-y-2">
                       <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">GST%</label>
-                      <select
-                        className="w-full bg-slate-50 border-none rounded-2xl px-2 py-3 text-sm font-bold text-center appearance-none"
-                        value={item.gstRate}
-                        onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
-                      >
-                        {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
-                      </select>
+                      {isComposition ? (
+                        <div className="w-full bg-slate-50 rounded-2xl px-2 py-3 text-sm font-bold text-center text-slate-300">N/A</div>
+                      ) : (
+                        <select
+                          className="w-full bg-slate-50 border-none rounded-2xl px-2 py-3 text-sm font-bold text-center appearance-none"
+                          value={item.gstRate}
+                          onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
+                        >
+                          {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                        </select>
+                      )}
                     </div>
                     <div className="col-span-1 pb-2 flex justify-center">
                       <button onClick={() => handleRemoveItem(item.id)} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all">
