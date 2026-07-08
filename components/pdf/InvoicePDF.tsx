@@ -40,6 +40,7 @@ import {
   Line,
 } from '@react-pdf/renderer';
 import { Invoice, BusinessProfile, Customer, GSTType } from '../../types';
+import { docScheme, COMPOSITION_DECLARATION } from '../../lib/gstScheme';
 
 // ─── Register Poppins (all weights) from local TTF files ──────────────────────
 // woff2 causes "RangeError: Offset is outside the bounds of the DataView" in
@@ -415,12 +416,16 @@ interface InvoicePDFProps {
 const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) => {
   const PRIMARY    = business.theme?.primaryColor || '#4c2de0';
   const templateId = business.theme?.templateId   || 'modern-2';
-  const hasGst     = business.gstEnabled;
+  // Composition-scheme documents are Bills of Supply: no tax columns, a
+  // different title, and the mandatory Rule 5(1)(f) declaration.
+  const isBos      = business.gstEnabled && docScheme(invoice, business) === 'composition';
+  const hasGst     = business.gstEnabled && !isBos;
+  const docTitle   = isBos ? 'Bill of Supply' : 'Invoice';
   const isCgst     = invoice.gstType === GSTType.CGST_SGST;
 
   const itemsWithTax = invoice.items.map(item => {
     const lineTotal = r2(item.quantity * item.rate);
-    const taxAmt    = r2(lineTotal * (item.gstRate / 100));
+    const taxAmt    = isBos ? 0 : r2(lineTotal * (item.gstRate / 100));
     const halfTax   = r2(taxAmt / 2);
     return { ...item, lineTotal, taxAmt, halfTax, grandLine: r2(lineTotal + taxAmt) };
   });
@@ -595,8 +600,16 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
     </View>
   );
 
-  // ── Shared: contact + signature strip ─────────────────────────────────────
+  // ── Shared: contact + signature strip (+ Bill of Supply declaration) ──────
   const contactSignature = (
+    <>
+    {isBos && (
+      <View wrap={false} style={{ marginTop: 10, padding: 7, borderWidth: 0.75, borderColor: '#cbd5e1', borderStyle: 'solid', borderRadius: 6, backgroundColor: '#f8fafc' }}>
+        <Text style={{ fontSize: 7.5, color: '#475569', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: 'Poppins', fontWeight: 600 }}>
+          {COMPOSITION_DECLARATION}
+        </Text>
+      </View>
+    )}
     <View style={S.m1ContactStrip} wrap={false}>
       <View>
         {business.email ? <Text style={S.m1ContactText}>✉  {business.email}</Text> : null}
@@ -615,6 +628,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
         <Text style={S.m1SignName}>{business.name}</Text>
       </View>
     </View>
+    </>
   );
 
   // ── Shared: tinted Billed By / Billed To cards ────────────────────────────
@@ -824,7 +838,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
     const dueBig    = `₹${invoice.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
     return (
-      <Document title={`Invoice ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
+      <Document title={`${docTitle} ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
         <Page size="A4" style={[S.page, { paddingTop: 26, paddingBottom: 30 }]} wrap>
 
           {/* ── Header ── */}
@@ -863,7 +877,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
 
             {/* RIGHT */}
             <View style={S.pfHdrRight}>
-              <Text style={[S.pfInvTitle, { color: NAVY }]}>INVOICE</Text>
+              <Text style={[S.pfInvTitle, { color: NAVY }]}>{docTitle.toUpperCase()}</Text>
               <Text style={[S.pfTagline, { color: TEAL }]}>PAYMENT-FIRST. FAST. SECURE. EASY.</Text>
               <View style={S.pfMetaRow}>
                 <Text style={S.pfMetaLabel}>Invoice No.</Text>
@@ -1197,7 +1211,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
     const roundOffG = r2(invoice.totalAmount - rawTotalG);
 
     return (
-      <Document title={`Invoice ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
+      <Document title={`${docTitle} ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
         <Page size="A4" style={S.page} wrap>
 
           {/* ── Header (fixed — repeats on every page) ── */}
@@ -1230,7 +1244,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                     <Polygon points="16,0 176,0 176,40 0,40" fill={NAVY} />
                     <Polygon points="0,40 16,0 30,0 14,40" fill={TEAL} />
                   </Svg>
-                  <Text style={S.gInvBannerTxt}>INVOICE</Text>
+                  <Text style={S.gInvBannerTxt}>{docTitle.toUpperCase()}</Text>
                 </View>
                 <View style={[{ height: 3, width: 42, marginBottom: 8 }, { backgroundColor: TEAL }]} />
                 <View style={S.gMetaRow}>
@@ -1419,7 +1433,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
   // ════════════════════════════════════════════════════════════════
   if (templateId === 'modern-1') {
     return (
-      <Document title={`Invoice ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
+      <Document title={`${docTitle} ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
         <Page size="A4" style={S.page} wrap>
 
           {/* ── Header (fixed — repeats on every page) ── */}
@@ -1441,8 +1455,8 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
 
               {/* "Invoice" centred */}
               <View style={S.m1TitleWrap}>
-                <Text style={[S.m1Title, { color: PRIMARY }]}>Invoice</Text>
-                <Text style={S.m1TitleSub}>GST Compliant Tax Invoice</Text>
+                <Text style={[S.m1Title, { color: PRIMARY }]}>{docTitle}</Text>
+                <Text style={S.m1TitleSub}>{isBos ? 'Composition Scheme — Section 10, CGST Act' : 'GST Compliant Tax Invoice'}</Text>
               </View>
 
               {/* Invoice # / Date / Status (right) */}
@@ -1487,7 +1501,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
   //  Terms · Notes · Contact + Signature
   // ════════════════════════════════════════════════════════════════
   return (
-    <Document title={`Invoice ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
+    <Document title={`${docTitle} ${invoice.invoiceNumber}`} author={business.name} creator="BillHippo">
       <Page size="A4" style={S.page} wrap>
 
         {/* ── Header (fixed — repeats on every page) ── */}
@@ -1521,7 +1535,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
 
             {/* RIGHT: "Invoice" large + invoice metadata */}
             <View style={S.m2InvRight}>
-              <Text style={[S.m2InvTitle, { color: PRIMARY }]}>Invoice</Text>
+              <Text style={[S.m2InvTitle, { color: PRIMARY }]}>{docTitle}</Text>
               <View style={S.m2InvMeta}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text style={S.m2InvLabel}>Invoice #</Text>

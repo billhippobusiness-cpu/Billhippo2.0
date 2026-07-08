@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Building2, MapPin, CreditCard, ArrowRight, ArrowLeft, CheckCircle, Loader2, Rocket, Briefcase, ShoppingCart, Search } from 'lucide-react';
-import { BusinessProfile } from '../types';
+import { BusinessProfile, CompositionCategory, GSTScheme } from '../types';
 import { saveBusinessProfile } from '../lib/firestore';
 import { lookupGSTIN } from '../lib/whitebooksApi';
+import { COMPOSITION_CATEGORIES, DEFAULT_COMPOSITION_CATEGORY } from '../lib/gstScheme';
+import { getFYLabel, getFYDateRange } from '../lib/financialYear';
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -30,6 +32,10 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
   const [gstinFetching, setGstinFetching] = useState(false);
   const [gstinFetchResult, setGstinFetchResult] = useState<any>(null);
   const [gstinFetchError, setGstinFetchError] = useState<string | null>(null);
+
+  // GST scheme selection (only relevant when gstEnabled)
+  const [gstScheme, setGstScheme] = useState<GSTScheme>('regular');
+  const [compositionCategory, setCompositionCategory] = useState<CompositionCategory>(DEFAULT_COMPOSITION_CATEGORY);
 
   const [profile, setProfile] = useState<BusinessProfile>({
     name: userName || '',
@@ -77,6 +83,9 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
         pincode:             result.pincode || prev.pincode,
         gstRegistrationType: result.taxpayerType || '',
       }));
+      // Auto-select the scheme from the portal's taxpayer type (user can change it)
+      if (/composition/i.test(result.taxpayerType || '')) setGstScheme('composition');
+      else if (result.taxpayerType) setGstScheme('regular');
     } catch (err: any) {
       setGstinFetchError(err?.message ?? 'Could not fetch GSTIN details. Please check and try again.');
     } finally {
@@ -122,7 +131,21 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
     setSaving(true);
     setError(null);
     try {
-      await saveBusinessProfile(userId, profile);
+      // Seed the scheme history from the onboarding selection. Effective from
+      // the current FY start; getSchemeOnDate() clamps earlier dates to the
+      // first entry, so one entry is enough.
+      const finalProfile: BusinessProfile = { ...profile };
+      if (profile.gstEnabled) {
+        const fyStart = getFYDateRange(getFYLabel()).start;
+        finalProfile.gstScheme = gstScheme;
+        finalProfile.schemeHistory = [{
+          scheme: gstScheme,
+          effectiveFrom: fyStart,
+          ...(gstScheme === 'composition' ? { compositionCategory } : {}),
+        }];
+        if (gstScheme === 'composition') finalProfile.compositionCategory = compositionCategory;
+      }
+      await saveBusinessProfile(userId, finalProfile);
       onComplete();
     } catch (err: any) {
       setError('Failed to save profile. Please try again.');
@@ -297,6 +320,50 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
                   {gstinFetchError && (
                     <p className="text-xs text-rose-600 font-medium px-2">{gstinFetchError}</p>
                   )}
+
+                  {/* GST Scheme selection */}
+                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 font-poppins">GST Scheme</p>
+                      <p className="text-xs text-slate-400 font-medium mt-0.5">Composition dealers issue Bills of Supply (no GST charged) and file CMP-08 / GSTR-4 instead of GSTR-1 / GSTR-3B</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setGstScheme('regular')}
+                        className={`p-4 rounded-2xl border-2 text-left transition-all ${gstScheme === 'regular' ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                      >
+                        <p className={`text-sm font-bold ${gstScheme === 'regular' ? 'text-indigo-700' : 'text-slate-700'}`}>Regular</p>
+                        <p className="text-[11px] text-slate-400 font-medium mt-1">Charge GST on invoices, claim ITC, file GSTR-1 & GSTR-3B</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGstScheme('composition')}
+                        className={`p-4 rounded-2xl border-2 text-left transition-all ${gstScheme === 'composition' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                      >
+                        <p className={`text-sm font-bold ${gstScheme === 'composition' ? 'text-emerald-700' : 'text-slate-700'}`}>Composition</p>
+                        <p className="text-[11px] text-slate-400 font-medium mt-1">Fixed tax on turnover, no GST on bills, no ITC, file CMP-08 & GSTR-4</p>
+                      </button>
+                    </div>
+                    {gstScheme === 'composition' && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Composition Category</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(Object.keys(COMPOSITION_CATEGORIES) as CompositionCategory[]).map(cat => (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setCompositionCategory(cat)}
+                              className={`px-3 py-2.5 rounded-xl border-2 text-left transition-all ${compositionCategory === cat ? 'border-emerald-500 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                            >
+                              <p className={`text-xs font-bold ${compositionCategory === cat ? 'text-emerald-700' : 'text-slate-600'}`}>{COMPOSITION_CATEGORIES[cat].shortLabel}</p>
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-medium">{COMPOSITION_CATEGORIES[compositionCategory].label} — used to compute your CMP-08 quarterly tax</p>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Success card */}
                   {gstinFetchResult && (

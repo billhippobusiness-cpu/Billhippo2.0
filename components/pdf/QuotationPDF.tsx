@@ -16,6 +16,7 @@ import {
   Font,
 } from '@react-pdf/renderer';
 import { type Quotation, type BusinessProfile, type Customer, GSTType } from '../../types';
+import { docScheme } from '../../lib/gstScheme';
 
 // ── Register Poppins ──────────────────────────────────────────────────────────
 Font.register({
@@ -226,6 +227,8 @@ interface QuotationPDFProps {
 const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, customer }) => {
   const validItems = q.items.filter(i => i.description.trim());
   const isCGST = q.gstType === GSTType.CGST_SGST;
+  // Composition-period quotations carry no GST — hide the tax column/rows
+  const isComposition = business.gstEnabled && docScheme(q, business) === 'composition';
 
   return (
     <Document title={`Quotation - ${q.quotationNumber}`} author={business.name}>
@@ -294,13 +297,13 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
             <Text style={[S.tableHeaderCell, S.colHsn]}>HSN/SAC</Text>
             <Text style={[S.tableHeaderCell, S.colQty]}>Qty</Text>
             <Text style={[S.tableHeaderCell, S.colRate]}>Rate</Text>
-            <Text style={[S.tableHeaderCell, S.colGst]}>GST</Text>
+            {!isComposition && <Text style={[S.tableHeaderCell, S.colGst]}>GST</Text>}
             <Text style={[S.tableHeaderCell, S.colAmt]}>Amount</Text>
           </View>
 
           {validItems.map((item, idx) => {
             const lineAmt = r2(item.quantity * item.rate);
-            const lineTax = r2(lineAmt * item.gstRate / 100);
+            const lineTax = isComposition ? 0 : r2(lineAmt * item.gstRate / 100);
             const lineTotal = r2(lineAmt + lineTax);
             return (
               <View key={item.id} style={[S.tableRow, idx % 2 !== 0 ? S.tableRowAlt : {}]} wrap={false}>
@@ -309,7 +312,7 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
                 <Text style={[S.tableCellLight, S.colHsn]}>{item.hsnCode || '—'}</Text>
                 <Text style={[S.tableCellLight, S.colQty]}>{item.quantity}</Text>
                 <Text style={[S.tableCellLight, S.colRate]}>{fmt(item.rate)}</Text>
-                <Text style={[S.tableCellLight, S.colGst]}>{item.gstRate}%</Text>
+                {!isComposition && <Text style={[S.tableCellLight, S.colGst]}>{item.gstRate}%</Text>}
                 <Text style={[S.tableCell, S.colAmt, { fontWeight: 600 }]}>{fmt(lineTotal)}</Text>
               </View>
             );
@@ -322,7 +325,7 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
                 <Text style={S.totalLabel}>Taxable Amount</Text>
                 <Text style={S.totalValue}>{fmt(q.totalBeforeTax)}</Text>
               </View>
-              {isCGST ? (
+              {isComposition ? null : isCGST ? (
                 <>
                   <View style={S.totalLine}>
                     <Text style={S.totalLabel}>CGST</Text>
@@ -360,6 +363,13 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
           <View style={S.wordsBox}>
             <Text style={S.wordsText}>Total (in words): {toWords(q.totalAmount)}</Text>
           </View>
+
+          {/* Composition note */}
+          {isComposition ? (
+            <View style={S.wordsBox}>
+              <Text style={S.wordsText}>Prices are final — no GST will be charged (composition scheme).</Text>
+            </View>
+          ) : null}
 
           {/* Notes */}
           {q.notes ? (

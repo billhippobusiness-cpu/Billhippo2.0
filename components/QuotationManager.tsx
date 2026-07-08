@@ -6,6 +6,7 @@ import {
   MessageCircle, Printer, Lock, ClipboardCheck, XCircle, Package,
 } from 'lucide-react';
 import { GSTType, type InvoiceItem, type InventoryItem, type Customer, type BusinessProfile, type Quotation, type QuotationStatus, type Invoice } from '../types';
+import { getSchemeOnDate, docScheme } from '../lib/gstScheme';
 import {
   getCustomers, getBusinessProfile, addCustomer, getInventoryItems,
   getQuotations, addQuotation, updateQuotation, deleteQuotation, getTotalQuotationCount,
@@ -222,8 +223,12 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
   }, [selectedCustomer, profile.state]);
 
+  // Composition-period quotations carry no GST (they will convert into Bills of Supply)
+  const quoteScheme = useMemo(() => getSchemeOnDate(profile, quotationDate), [profile, quotationDate]);
+  const isComposition = profile.gstEnabled && quoteScheme.scheme === 'composition';
+
   const subTotal  = r2(items.reduce((sum, item) => sum + r2(item.quantity * item.rate), 0));
-  const taxAmount = r2(items.reduce((sum, item) => sum + r2(r2(item.quantity * item.rate) * item.gstRate / 100), 0));
+  const taxAmount = isComposition ? 0 : r2(items.reduce((sum, item) => sum + r2(r2(item.quantity * item.rate) * item.gstRate / 100), 0));
   const grandTotal = r2(subTotal + taxAmount);
   const roundedTotal = Math.round(grandTotal);
   const roundOff = r2(roundedTotal - grandTotal);
@@ -317,17 +322,18 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
     if (subTotal === 0) { setError('Quotation total cannot be zero'); return; }
     setSaving(true); setError(null);
     try {
-      const cgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-      const sgst = gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
-      const igst = gstType === GSTType.IGST ? taxAmount : 0;
+      const cgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const sgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
+      const igst = !isComposition && gstType === GSTType.IGST ? taxAmount : 0;
       // Build payload without undefined fields — Firestore rejects undefined values
       const payload: Omit<Quotation, 'id'> = {
         quotationNumber,
         date: quotationDate,
         customerId: selectedCustomerId,
         customerName: selectedCustomer?.name || '',
-        items,
+        items: isComposition ? items.map(i => ({ ...i, gstRate: 0 })) : items,
         gstType,
+        scheme: quoteScheme.scheme,
         totalBeforeTax: subTotal,
         cgst, sgst, igst,
         totalAmount: roundedTotal,
@@ -591,7 +597,11 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                       <span>Taxable Amount</span>
                       <span className="font-semibold">{inr(q.totalBeforeTax)}</span>
                     </div>
-                    {q.gstType === GSTType.CGST_SGST ? (
+                    {docScheme(q, profile) === 'composition' ? (
+                      <div className="flex justify-between text-sm text-slate-400 font-poppins">
+                        <span>GST (Composition)</span><span>Not charged</span>
+                      </div>
+                    ) : q.gstType === GSTType.CGST_SGST ? (
                       <>
                         <div className="flex justify-between text-sm text-slate-500 font-poppins">
                           <span>CGST</span><span>{inr(q.cgst)}</span>
@@ -920,7 +930,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                     <tbody>
                       {items.map((item, idx) => {
                         const lineTotal = r2(item.quantity * item.rate);
-                        const lineTax = r2(lineTotal * item.gstRate / 100);
+                        const lineTax = isComposition ? 0 : r2(lineTotal * item.gstRate / 100);
                         return (
                           <tr key={item.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
                             <td className="px-3 py-2">
@@ -960,13 +970,17 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                               />
                             </td>
                             <td className="px-3 py-2">
-                              <select
-                                value={item.gstRate}
-                                onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
-                                className="w-full bg-transparent border-none focus:bg-amber-50 focus:ring-1 ring-amber-200 rounded-lg px-2 py-1 text-sm text-right text-slate-700"
-                              >
-                                {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
-                              </select>
+                              {isComposition ? (
+                                <p className="px-2 py-1 text-sm text-right text-slate-300 font-bold">N/A</p>
+                              ) : (
+                                <select
+                                  value={item.gstRate}
+                                  onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
+                                  className="w-full bg-transparent border-none focus:bg-amber-50 focus:ring-1 ring-amber-200 rounded-lg px-2 py-1 text-sm text-right text-slate-700"
+                                >
+                                  {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                                </select>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-right text-sm font-bold text-slate-800">
                               {inr(lineTotal + lineTax)}
@@ -1017,7 +1031,11 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                   <span>Taxable Amount</span>
                   <span className="font-bold">{inr(subTotal)}</span>
                 </div>
-                {gstType === GSTType.CGST_SGST ? (
+                {isComposition ? (
+                  <div className="flex justify-between text-sm text-slate-400">
+                    <span>GST (Composition)</span><span>Not charged</span>
+                  </div>
+                ) : gstType === GSTType.CGST_SGST ? (
                   <>
                     <div className="flex justify-between text-sm text-slate-500">
                       <span>CGST</span><span>{inr(r2(taxAmount / 2))}</span>
@@ -1047,7 +1065,7 @@ const QuotationManager: React.FC<QuotationManagerProps> = ({ userId, onConvertTo
                 <div className="bg-amber-50 rounded-2xl p-4 space-y-1 text-xs">
                   <p className="font-black text-amber-600 uppercase tracking-widest">GST Type</p>
                   <p className="font-bold text-slate-700">
-                    {gstType === GSTType.CGST_SGST ? 'CGST + SGST (Intra-state)' : 'IGST (Inter-state)'}
+                    {isComposition ? 'Composition — no GST charged' : gstType === GSTType.CGST_SGST ? 'CGST + SGST (Intra-state)' : 'IGST (Inter-state)'}
                   </p>
                   <p className="text-slate-400 text-[10px]">Based on customer state vs. your state</p>
                   <p className="text-amber-600 font-bold text-[10px] mt-2 pt-2 border-t border-amber-100">

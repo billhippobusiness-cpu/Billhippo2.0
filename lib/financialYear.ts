@@ -44,6 +44,42 @@ export function getFYQuarters(fyLabel: string): string[] {
   return [`${startYear}-Q4`, `${startYear}-Q3`, `${startYear}-Q2`, `${startYear}-Q1`];
 }
 
+/** Returns YYYY-MM strings for all months of a FY quarter (1=Apr-Jun … 4=Jan-Mar). */
+export function getQuarterMonths(q: 1 | 2 | 3 | 4, year: number): string[] {
+  if (q === 1) return [`${year}-04`, `${year}-05`, `${year}-06`];
+  if (q === 2) return [`${year}-07`, `${year}-08`, `${year}-09`];
+  if (q === 3) return [`${year}-10`, `${year}-11`, `${year}-12`];
+  // Q4: Jan-Mar of year+1
+  return [`${year + 1}-01`, `${year + 1}-02`, `${year + 1}-03`];
+}
+
+/** Quarter key ("YYYY-Q1"…"YYYY-Q4", year = FY start year) → inclusive date range. */
+export function quarterToDateRange(qKey: string): { start: string; end: string } {
+  const [yearStr, qPart] = qKey.split('-');
+  const year = parseInt(yearStr, 10);
+  const q = parseInt(qPart.replace('Q', ''), 10) as 1 | 2 | 3 | 4;
+  if (q === 1) return { start: `${year}-04-01`, end: `${year}-06-30` };
+  if (q === 2) return { start: `${year}-07-01`, end: `${year}-09-30` };
+  if (q === 3) return { start: `${year}-10-01`, end: `${year}-12-31` };
+  // Q4: Jan-Mar of year+1
+  return { start: `${year + 1}-01-01`, end: `${year + 1}-03-31` };
+}
+
+/** Human label for a quarter key, e.g. "Q1 FY 2026-27 (Apr – Jun)". */
+export function quarterLabel(qKey: string): string {
+  const [yearStr, qPart] = qKey.split('-');
+  const year = parseInt(yearStr, 10);
+  const q = parseInt(qPart.replace('Q', ''), 10);
+  const fyLabel = `FY ${year}-${String(year + 1).slice(2)}`;
+  const monthRanges: Record<number, string> = {
+    1: 'Apr – Jun',
+    2: 'Jul – Sep',
+    3: 'Oct – Dec',
+    4: 'Jan – Mar',
+  };
+  return `Q${q} ${fyLabel} (${monthRanges[q]})`;
+}
+
 /** Generate FY options from 3 years ago to 1 year ahead of the current FY. */
 export function generateFYOptions(): string[] {
   const currentStartYear = fyStartYear(getFYLabel());
