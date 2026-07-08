@@ -465,8 +465,8 @@ const InvoiceTheme: React.FC<InvoiceThemeProps> = ({ userId }) => {
                           </div>
                           <div className="bg-white px-1 py-1.5">
                              <p className="text-center text-[5px] font-black uppercase tracking-widest mb-1" style={{ color: teal }}>We Accept</p>
-                             <div className="flex justify-center gap-1 text-[5px] font-black text-slate-400">
-                                <span>UPI</span><span>GPay</span><span>PhonePe</span><span>Paytm</span>
+                             <div className="flex justify-center gap-1.5 text-[5px] font-black text-slate-400">
+                                <span>UPI</span><span>PhonePe</span><span>GPay</span>
                              </div>
                           </div>
                        </div>

@@ -384,7 +384,7 @@ const S = StyleSheet.create({
   pfDueWords:    { fontSize: 7.5, fontFamily: 'Poppins', fontWeight: 500, color: WHITE, textAlign: 'center', marginTop: 4, lineHeight: 1.4 },
   pfAcceptWrap:  { backgroundColor: WHITE, paddingVertical: 6, paddingHorizontal: 8, alignItems: 'center' },
   pfAcceptLabel: { fontSize: 7, fontFamily: 'Poppins', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
-  pfAcceptRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', alignSelf: 'stretch', paddingHorizontal: 4 },
+  pfAcceptRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', alignSelf: 'stretch', paddingHorizontal: 4 },
 
   // Bottom: payment details + summary
   pfBottomRow:   { flexDirection: 'row', gap: 16, marginTop: 10 },
@@ -800,43 +800,10 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
       </Svg>
     );
 
-    // ── "We Accept" UPI-app marks (brand-coloured functional representations) ──
-    const upiMark = (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-        <Svg width={14} height={9} viewBox="0 0 22 14">
-          <Polygon points="0,0 11,0 17,7 6,7" fill="#E97A26" />
-          <Polygon points="4,7 15,7 21,14 10,14" fill="#5CA632" />
-        </Svg>
-        <Text style={{ fontSize: 8.5, fontFamily: 'Poppins', fontWeight: 800, color: '#0B3D7A' }}>UPI</Text>
-      </View>
-    );
-    const gpayMark = (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-        <Svg width={13} height={13} viewBox="0 0 26 26">
-          <Path d="M4.6 8.4 A9.5 9.5 0 0 1 21 6.6" stroke="#EA4335" strokeWidth={5} fill="none" />
-          <Path d="M4.6 8.4 A9.5 9.5 0 0 0 5.2 18.6" stroke="#FBBC04" strokeWidth={5} fill="none" />
-          <Path d="M5.2 18.6 A9.5 9.5 0 0 0 20.4 18.9" stroke="#34A853" strokeWidth={5} fill="none" />
-          <Path d="M20.4 18.9 A9.5 9.5 0 0 0 21 6.6" stroke="#4285F4" strokeWidth={5} fill="none" />
-          <Rect x={13} y={10.6} width={9.7} height={4.8} fill="#4285F4" />
-          <Rect x={12.5} y={5} width={2} height={5.6} fill={WHITE} />
-        </Svg>
-        <Text style={{ fontSize: 9, fontFamily: 'Poppins', fontWeight: 600, color: '#5F6368' }}>Pay</Text>
-      </View>
-    );
-    const phonepeMark = (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-        <View style={{ width: 13, height: 13, borderRadius: 3.5, backgroundColor: '#5F259F', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: 6.5, fontFamily: 'Poppins', fontWeight: 700, color: WHITE }}>Pe</Text>
-        </View>
-        <Text style={{ fontSize: 8, fontFamily: 'Poppins', fontWeight: 700, color: '#5F259F' }}>PhonePe</Text>
-      </View>
-    );
-    const paytmMark = (
-      <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-        <Text style={{ fontSize: 9.5, fontFamily: 'Poppins', fontWeight: 800, color: '#002970' }}>Pay</Text>
-        <Text style={{ fontSize: 9.5, fontFamily: 'Poppins', fontWeight: 800, color: '#00B9F1' }}>tm</Text>
-      </View>
-    );
+    // ── "We Accept" logos (uploaded PNGs in /public, scaled to a common height) ──
+    const upiMark     = <Image src="/UPI.png"      style={{ height: 14, width: 40 }} />;  // 2000×707
+    const phonepeMark = <Image src="/Phonepay.png" style={{ height: 13, width: 48 }} />;  // 2000×544
+    const gpayMark    = <Image src="/Gpay.png"     style={{ height: 14, width: 35 }} />;  // 2000×793
 
     // Compact table columns
     const c = {
@@ -1043,9 +1010,8 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                   <Text style={[S.pfAcceptLabel, { color: TEAL }]}>We Accept</Text>
                   <View style={S.pfAcceptRow}>
                     {upiMark}
-                    {gpayMark}
                     {phonepeMark}
-                    {paytmMark}
+                    {gpayMark}
                   </View>
                 </View>
               </View>

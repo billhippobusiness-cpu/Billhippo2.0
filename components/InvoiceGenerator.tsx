@@ -1260,32 +1260,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const pfTeal = mixHex(profile.theme.primaryColor, '#0FB5C4', 0.78);
   const pfTealDark = mixHex(pfTeal, '#04222b', 0.28);
 
-  // Simplified UPI-app marks for the "We Accept" row (functional payment indicators)
+  // "We Accept" logos — uploaded PNGs in /public (UPI, PhonePe, GPay)
   const upiAppMarks = (
-    <div className="flex items-center justify-between w-full px-1">
-      <span className="flex items-center gap-1">
-        <svg width="15" height="10" viewBox="0 0 22 14"><polygon points="0,0 11,0 17,7 6,7" fill="#E97A26" /><polygon points="4,7 15,7 21,14 10,14" fill="#5CA632" /></svg>
-        <span className="text-[10px] font-black" style={{ color: '#0B3D7A' }}>UPI</span>
-      </span>
-      <span className="flex items-center gap-1">
-        <svg width="14" height="14" viewBox="0 0 26 26">
-          <path d="M4.6 8.4 A9.5 9.5 0 0 1 21 6.6" stroke="#EA4335" strokeWidth="5" fill="none" />
-          <path d="M4.6 8.4 A9.5 9.5 0 0 0 5.2 18.6" stroke="#FBBC04" strokeWidth="5" fill="none" />
-          <path d="M5.2 18.6 A9.5 9.5 0 0 0 20.4 18.9" stroke="#34A853" strokeWidth="5" fill="none" />
-          <path d="M20.4 18.9 A9.5 9.5 0 0 0 21 6.6" stroke="#4285F4" strokeWidth="5" fill="none" />
-          <rect x="13" y="10.6" width="9.7" height="4.8" fill="#4285F4" />
-          <rect x="12.5" y="5" width="2" height="5.6" fill="#fff" />
-        </svg>
-        <span className="text-[10px] font-semibold" style={{ color: '#5F6368' }}>Pay</span>
-      </span>
-      <span className="flex items-center gap-1">
-        <span className="inline-flex items-center justify-center rounded" style={{ width: 14, height: 14, backgroundColor: '#5F259F' }}><span className="text-[7px] font-black text-white leading-none">Pe</span></span>
-        <span className="text-[9px] font-black" style={{ color: '#5F259F' }}>PhonePe</span>
-      </span>
-      <span className="flex items-baseline">
-        <span className="text-[11px] font-black" style={{ color: '#002970' }}>Pay</span>
-        <span className="text-[11px] font-black" style={{ color: '#00B9F1' }}>tm</span>
-      </span>
+    <div className="flex items-center justify-around w-full px-1 gap-3">
+      <img src="/UPI.png" alt="UPI" className="h-3.5 w-auto object-contain" />
+      <img src="/Phonepay.png" alt="PhonePe" className="h-3 w-auto object-contain" />
+      <img src="/Gpay.png" alt="Google Pay" className="h-3.5 w-auto object-contain" />
     </div>
   );
 
