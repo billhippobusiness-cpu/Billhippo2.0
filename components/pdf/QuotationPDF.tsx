@@ -1,7 +1,8 @@
 /**
  * QuotationPDF — A4 Quotation template for @react-pdf/renderer
  *
- * Design: Amber/Orange header ("QUOTATION"), clean item table, GST breakdown.
+ * Design: Themed header ("QUOTATION") — colour follows business.theme.primaryColor
+ * (amber fallback) — clean item table, GST breakdown.
  * Explicitly labelled as NOT a Tax Invoice.
  * Follows the same font/style conventions as InvoicePDF.tsx.
  */
@@ -56,6 +57,14 @@ const fmt = (n: number) =>
   `\u20B9${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+// Blend two hex colours: t=0 \u2192 a, t=1 \u2192 b (same helper as InvoicePDF)
+function mixHex(a: string, b: string, t: number): string {
+  const pa = a.replace('#', ''), pb = b.replace('#', '');
+  const ca = [0, 2, 4].map(i => parseInt(pa.substring(i, i + 2), 16));
+  const cb = [0, 2, 4].map(i => parseInt(pb.substring(i, i + 2), 16));
+  return '#' + ca.map((v, i) => Math.round(v + (cb[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
 
 function toWords(amount: number): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven',
@@ -230,12 +239,18 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
   // Composition-period quotations carry no GST — hide the tax column/rows
   const isComposition = business.gstEnabled && docScheme(q, business) === 'composition';
 
+  // Header/accent colour follows the user's theme (Settings → Invoice Theme)
+  const PRIMARY      = business.theme?.primaryColor || AMBER;
+  const PRIMARY_DARK = mixHex(PRIMARY, '#000000', 0.25);
+  const PRIMARY_BG   = mixHex(PRIMARY, '#ffffff', 0.93);
+  const PRIMARY_MID  = mixHex(PRIMARY, '#ffffff', 0.55);
+
   return (
     <Document title={`Quotation - ${q.quotationNumber}`} author={business.name}>
       <Page size="A4" style={S.page}>
 
-        {/* ── Amber header ── */}
-        <View style={S.header} fixed>
+        {/* ── Themed header ── */}
+        <View style={[S.header, { backgroundColor: PRIMARY }]} fixed>
           <View style={S.headerLeft}>
             <Text style={S.headerBusinessName}>{business.name}</Text>
             {business.gstin ? <Text style={S.headerSubText}>GSTIN: {business.gstin}</Text> : null}
@@ -269,13 +284,13 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
 
           {/* Billed by / Billed to */}
           <View style={S.infoRow}>
-            <View style={S.infoBox}>
-              <Text style={S.infoBoxLabel}>Prepared By</Text>
+            <View style={[S.infoBox, { backgroundColor: PRIMARY_BG, borderColor: PRIMARY_MID }]}>
+              <Text style={[S.infoBoxLabel, { color: PRIMARY_DARK }]}>Prepared By</Text>
               <Text style={S.infoName}>{business.name}</Text>
               {business.pan ? <Text style={S.infoSm}>PAN: {business.pan}</Text> : null}
             </View>
-            <View style={S.infoBox}>
-              <Text style={S.infoBoxLabel}>Prepared For</Text>
+            <View style={[S.infoBox, { backgroundColor: PRIMARY_BG, borderColor: PRIMARY_MID }]}>
+              <Text style={[S.infoBoxLabel, { color: PRIMARY_DARK }]}>Prepared For</Text>
               <Text style={S.infoName}>{q.customerName}</Text>
               {customer.gstin ? <Text style={S.infoSm}>GSTIN: {customer.gstin}</Text> : null}
               {customer.address ? <Text style={S.infoSm}>{customer.address}</Text> : null}
@@ -287,8 +302,8 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
             </View>
           </View>
 
-          {/* Amber divider */}
-          <View style={S.divider} />
+          {/* Themed divider */}
+          <View style={[S.divider, { backgroundColor: PRIMARY }]} />
 
           {/* Items table */}
           <View style={S.tableHeader} fixed>
@@ -352,21 +367,21 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
                   </View>
                 ) : null;
               })()}
-              <View style={S.grandLine}>
+              <View style={[S.grandLine, { borderTopColor: PRIMARY }]}>
                 <Text style={S.grandLabel}>Total</Text>
-                <Text style={S.grandValue}>₹{q.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</Text>
+                <Text style={[S.grandValue, { color: PRIMARY_DARK }]}>₹{q.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</Text>
               </View>
             </View>
           </View>
 
           {/* Amount in words */}
-          <View style={S.wordsBox}>
+          <View style={[S.wordsBox, { backgroundColor: PRIMARY_BG, borderColor: PRIMARY_MID }]}>
             <Text style={S.wordsText}>Total (in words): {toWords(q.totalAmount)}</Text>
           </View>
 
           {/* Composition note */}
           {isComposition ? (
-            <View style={S.wordsBox}>
+            <View style={[S.wordsBox, { backgroundColor: PRIMARY_BG, borderColor: PRIMARY_MID }]}>
               <Text style={S.wordsText}>Prices are final — no GST will be charged (composition scheme).</Text>
             </View>
           ) : null}
@@ -384,7 +399,7 @@ const QuotationPDF: React.FC<QuotationPDFProps> = ({ quotation: q, business, cus
         {/* ── Footer disclaimer ── */}
         <View style={S.footer} fixed>
           <View style={S.footerLine}>
-            <Text style={S.footerAmber}>This is a Quotation / Estimate only — NOT a Tax Invoice</Text>
+            <Text style={[S.footerAmber, { color: PRIMARY_DARK }]}>This is a Quotation / Estimate only — NOT a Tax Invoice</Text>
             <Text style={S.footerText}>
               Prices are indicative and subject to change • Subject to acceptance • Generated by BillHippo
             </Text>
