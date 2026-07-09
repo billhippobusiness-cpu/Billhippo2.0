@@ -550,37 +550,39 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     const accentBg = isCredit ? 'bg-emerald-50' : 'bg-amber-50';
 
     return (
-      <div className="max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 pb-20">
-        <div className="flex justify-between items-end mb-4">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins">
+      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-10 animate-in fade-in slide-in-from-bottom-4 pb-20">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-4">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <button onClick={() => setMode('list')} className="flex items-center gap-2 text-slate-500 font-bold text-sm hover:text-slate-700 transition-colors font-poppins shrink-0">
               <ArrowLeft size={18} />
             </button>
-            <div>
-              <h1 className="text-4xl font-bold font-poppins text-slate-900 tracking-tight">
+            <div className="min-w-0">
+              <h1 className="text-2xl sm:text-4xl font-bold font-poppins text-slate-900 tracking-tight">
                 {editingNote ? 'Edit' : 'New'} {isCredit ? 'Credit Note' : 'Debit Note'}
               </h1>
-              <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest font-poppins">
+              <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest font-poppins break-words">
                 {editingNote ? `Editing ${editingNote.noteNumber}` : `New Note · ${noteNumber}`}
               </p>
             </div>
           </div>
-          <div className="flex gap-4 items-center">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center">
             {error && <span className="text-sm font-bold text-rose-500 font-poppins">{error}</span>}
-            <button
-              onClick={() => setMode('preview')}
-              className="bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-slate-50 transition-all font-poppins"
-            >
-              <Eye size={20} /> Preview
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className={`text-white px-12 py-4 rounded-2xl font-bold flex items-center gap-3 shadow-xl transition-all font-poppins disabled:opacity-50 ${accentClass}`}
-            >
-              {saving ? <><Loader2 size={20} className="animate-spin" /> Saving...</> :
-               editingNote ? <><Save size={20} /> Update Note</> : <><Save size={20} /> Save Note</>}
-            </button>
+            <div className="flex gap-3 sm:gap-4">
+              <button
+                onClick={() => setMode('preview')}
+                className="flex-1 sm:flex-none bg-white border border-slate-200 text-slate-700 px-5 sm:px-10 py-3.5 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all font-poppins"
+              >
+                <Eye size={20} /> Preview
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className={`flex-1 sm:flex-none text-white px-5 sm:px-12 py-3.5 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl transition-all font-poppins disabled:opacity-50 ${accentClass}`}
+              >
+                {saving ? <><Loader2 size={20} className="animate-spin" /> Saving...</> :
+                 editingNote ? <><Save size={20} /> Update Note</> : <><Save size={20} /> Save Note</>}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -588,8 +590,8 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
           <div className="lg:col-span-8 space-y-8">
 
             {/* Note details card */}
-            <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 font-poppins">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 space-y-6 sm:space-y-8 font-poppins">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-8">
 
                 {/* Customer */}
                 <div className="space-y-3 relative">
@@ -666,7 +668,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8">
                 {/* Original Invoice Reference (optional) */}
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">
@@ -694,12 +696,12 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
             </div>
 
             {/* Items card */}
-            <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-8 font-poppins">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold flex items-center gap-3">
+            <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 space-y-6 sm:space-y-8 font-poppins">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
+                <h3 className="text-lg sm:text-xl font-bold flex items-center gap-3">
                   <Plus className={accentText} size={22} /> Particulars
                 </h3>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <button
                     type="button"
                     onClick={openInventoryPicker}
@@ -707,68 +709,138 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                   >
                     <Package size={14} /> Pick from Inventory
                   </button>
-                  <div className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase ${accentBg} ${accentText}`}>
+                  <div className={`px-4 sm:px-5 py-2 rounded-xl text-[10px] font-black uppercase ${accentBg} ${accentText}`}>
                     GST Logic: {gstType}
                   </div>
                 </div>
               </div>
               <div className="space-y-4">
-                {items.map((item) => (
-                  <div key={item.id} className="grid grid-cols-12 gap-4 items-end animate-in fade-in duration-300">
-                    <div className="col-span-5 space-y-2">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
-                      <input
-                        placeholder="Product or service"
-                        className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
-                        value={item.description}
-                        onChange={e => handleItemChange(item.id, 'description', e.target.value)}
-                      />
+                {items.map((item, idx) => (
+                  <div key={item.id} className="animate-in fade-in duration-300">
+                    {/* Mobile layout: stacked card */}
+                    <div className="sm:hidden bg-slate-50/60 rounded-2xl p-4 space-y-3 border border-slate-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Item {idx + 1}</span>
+                        <button onClick={() => handleRemoveItem(item.id)} className="p-2 text-rose-400 active:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Description</label>
+                        <input
+                          placeholder="Product or service"
+                          autoComplete="off"
+                          className="w-full bg-white border-none rounded-xl px-4 py-3 text-sm font-medium shadow-sm placeholder-slate-300"
+                          value={item.description}
+                          onChange={e => handleItemChange(item.id, 'description', e.target.value)}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">HSN/SAC</label>
+                          <input
+                            placeholder="HSN"
+                            className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-medium shadow-sm placeholder-slate-300"
+                            value={item.hsnCode}
+                            onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Qty</label>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center shadow-sm"
+                            value={item.quantity}
+                            onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Rate (₹)</label>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            className={`w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-black text-center shadow-sm ${accentText}`}
+                            value={item.rate}
+                            onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">GST %</label>
+                          {isComposition ? (
+                            <div className="w-full bg-white rounded-xl px-3 py-3 text-sm font-bold text-center text-slate-300 shadow-sm">N/A</div>
+                          ) : (
+                            <select
+                              className="w-full bg-white border-none rounded-xl px-3 py-3 text-sm font-bold text-center appearance-none shadow-sm"
+                              value={item.gstRate}
+                              onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
+                            >
+                              {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                        <span className="text-xs text-slate-400 font-medium">Amount</span>
+                        <span className="text-base font-black text-slate-900">₹{(item.quantity * item.rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
                     </div>
-                    <div className="col-span-1 space-y-2">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">HSN</label>
-                      <input
-                        placeholder="HSN"
-                        className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium text-center"
-                        value={item.hsnCode}
-                        onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)}
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-2">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Qty</label>
-                      <input
-                        type="number"
-                        className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center"
-                        value={item.quantity}
-                        onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-2">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label>
-                      <input
-                        type="number"
-                        className={`w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center ${accentText}`}
-                        value={item.rate}
-                        onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="col-span-1 space-y-2">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">GST%</label>
-                      {isComposition ? (
-                        <div className="w-full bg-slate-50 rounded-2xl px-2 py-3 text-sm font-bold text-center text-slate-300">N/A</div>
-                      ) : (
-                        <select
-                          className="w-full bg-slate-50 border-none rounded-2xl px-2 py-3 text-sm font-bold text-center appearance-none"
-                          value={item.gstRate}
-                          onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
-                        >
-                          {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
-                        </select>
-                      )}
-                    </div>
-                    <div className="col-span-1 pb-2 flex justify-center">
-                      <button onClick={() => handleRemoveItem(item.id)} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all">
-                        <Trash2 size={18} />
-                      </button>
+
+                    {/* Desktop layout: 12-col grid */}
+                    <div className="hidden sm:grid grid-cols-12 gap-4 items-end">
+                      <div className="col-span-5 space-y-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Description</label>
+                        <input
+                          placeholder="Product or service"
+                          className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3 text-sm font-medium"
+                          value={item.description}
+                          onChange={e => handleItemChange(item.id, 'description', e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-1 space-y-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">HSN</label>
+                        <input
+                          placeholder="HSN"
+                          className="w-full bg-slate-50 border-none rounded-2xl px-3 py-3 text-sm font-medium text-center"
+                          value={item.hsnCode}
+                          onChange={e => handleItemChange(item.id, 'hsnCode', e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Qty</label>
+                        <input
+                          type="number"
+                          className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center"
+                          value={item.quantity}
+                          onChange={e => handleItemChange(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-4">Rate (₹)</label>
+                        <input
+                          type="number"
+                          className={`w-full bg-slate-50 border-none rounded-2xl px-4 py-3 text-sm font-black text-center ${accentText}`}
+                          value={item.rate}
+                          onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="col-span-1 space-y-2">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-2">GST%</label>
+                        {isComposition ? (
+                          <div className="w-full bg-slate-50 rounded-2xl px-2 py-3 text-sm font-bold text-center text-slate-300">N/A</div>
+                        ) : (
+                          <select
+                            className="w-full bg-slate-50 border-none rounded-2xl px-2 py-3 text-sm font-bold text-center appearance-none"
+                            value={item.gstRate}
+                            onChange={e => handleItemChange(item.id, 'gstRate', parseFloat(e.target.value))}
+                          >
+                            {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                          </select>
+                        )}
+                      </div>
+                      <div className="col-span-1 pb-2 flex justify-center">
+                        <button onClick={() => handleRemoveItem(item.id)} className="p-3 text-rose-400 hover:bg-rose-50 rounded-xl transition-all">
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -784,7 +856,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
 
           {/* Summary sidebar */}
           <div className="lg:col-span-4 space-y-8 font-poppins">
-            <div className={`rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden ${isCredit ? 'bg-emerald-600' : 'bg-amber-500'}`}>
+            <div className={`rounded-[2rem] sm:rounded-[3rem] p-6 sm:p-10 text-white shadow-2xl relative overflow-hidden ${isCredit ? 'bg-emerald-600' : 'bg-amber-500'}`}>
               <div className="absolute top-0 right-0 p-8 opacity-10">
                 {isCredit ? <TrendingDown size={100} /> : <TrendingUp size={100} />}
               </div>
@@ -807,7 +879,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
               </div>
             </div>
 
-            <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-5">
+            <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 premium-shadow border border-slate-50 space-y-5">
               <h4 className="text-sm font-black uppercase tracking-widest text-slate-800">Quick Info</h4>
               <div className="space-y-3 text-xs font-bold text-slate-500">
                 <div className={`p-4 rounded-2xl flex justify-between ${isCredit ? 'bg-emerald-50' : 'bg-amber-50'}`}>
