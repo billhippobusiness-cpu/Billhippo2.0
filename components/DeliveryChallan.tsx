@@ -21,6 +21,7 @@ import {
 import {
   DeliveryChallan as DeliveryChallanType,
   InvoiceItem,
+  InventoryItem,
   Customer,
   BusinessProfile,
   Invoice,
@@ -32,6 +33,7 @@ import {
   addDeliveryChallan,
   updateDeliveryChallan,
   deleteDeliveryChallan,
+  getInventoryItems,
 } from '../lib/firestore';
 import { pdf } from '@react-pdf/renderer';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
@@ -158,6 +160,12 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
 
+  // ── Inventory / stock picker ──
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  const [invPickerItemId, setInvPickerItemId] = useState<string | null>(null); // which line's stock picker is open
+  const [invSearch, setInvSearch] = useState('');
+
   // ── PDF / Download state ──
   const [pdfModal, setPdfModal] = useState<{
     open: boolean;
@@ -282,6 +290,53 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
     ));
     setHsnModalItemId(null);
   };
+
+  // ─── Inventory / stock picker handlers ──────────────────────────────────────
+  const ensureInventoryLoaded = async () => {
+    if (inventoryLoaded) return;
+    try {
+      const data = await getInventoryItems(userId);
+      setInventoryItems(data);
+    } catch {
+      /* silent — picker simply shows no items */
+    } finally {
+      setInventoryLoaded(true);
+    }
+  };
+
+  const openStockPicker = (itemId: string) => {
+    haptic('light');
+    setInvSearch('');
+    setInvPickerItemId(prev => (prev === itemId ? null : itemId));
+    ensureInventoryLoaded();
+  };
+
+  const handlePickStockItem = (itemId: string, inv: InventoryItem) => {
+    haptic('light');
+    setItems(prev => prev.map(i =>
+      i.id === itemId
+        ? {
+            ...i,
+            description: inv.name,
+            hsnCode: inv.hsnCode || i.hsnCode,
+            unit: inv.unit || i.unit,
+            rate: inv.sellingPrice,
+            gstRate: inv.gstRate,
+          }
+        : i
+    ));
+    setInvPickerItemId(null);
+    setInvSearch('');
+  };
+
+  const filteredInventory = useMemo(() => {
+    const q = invSearch.toLowerCase().trim();
+    if (!q) return inventoryItems;
+    return inventoryItems.filter(it =>
+      it.name.toLowerCase().includes(q) ||
+      (it.hsnCode || '').toLowerCase().includes(q)
+    );
+  }, [inventoryItems, invSearch]);
 
   // ─── Challan form builders ─────────────────────────────────────────────────
   const resetForm = () => {
@@ -1020,16 +1075,76 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
                       )}
                     </div>
 
-                    {/* Description */}
-                    <div>
+                    {/* Description + stock picker */}
+                    <div className="relative">
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Description</label>
-                      <input
-                        type="text"
-                        value={item.description}
-                        onChange={e => handleItemChange(item.id, 'description', e.target.value)}
-                        placeholder="Item description"
-                        className="w-full bg-white border-none rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:ring-2 ring-indigo-100"
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={item.description}
+                          onChange={e => handleItemChange(item.id, 'description', e.target.value)}
+                          placeholder="Item description"
+                          className="w-full bg-white border-none rounded-xl pl-4 pr-11 py-2.5 text-sm font-medium text-slate-800 focus:ring-2 ring-indigo-100"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => openStockPicker(item.id)}
+                          title="Pick from stock list"
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                          style={invPickerItemId === item.id ? { color: primaryColor, backgroundColor: `${primaryColor}15` } : undefined}
+                        >
+                          <Package size={16} />
+                        </button>
+                      </div>
+
+                      {invPickerItemId === item.id && (
+                        <div className="absolute z-30 left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
+                          <div className="p-3 border-b border-slate-50">
+                            <div className="relative">
+                              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                              <input
+                                type="text"
+                                placeholder="Search stock items…"
+                                value={invSearch}
+                                onChange={e => setInvSearch(e.target.value)}
+                                autoFocus
+                                className="w-full bg-slate-50 rounded-xl pl-8 pr-3 py-2.5 text-sm font-medium border-none focus:ring-2 ring-indigo-100"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-56 overflow-y-auto">
+                            {!inventoryLoaded ? (
+                              <p className="px-4 py-6 text-sm text-slate-400 text-center flex items-center justify-center gap-2">
+                                <Loader2 size={14} className="animate-spin" /> Loading stock…
+                              </p>
+                            ) : filteredInventory.length === 0 ? (
+                              <p className="px-4 py-6 text-sm text-slate-400 text-center">
+                                {inventoryItems.length === 0 ? 'No stock items yet. Add items on the Inventory page.' : 'No items match your search'}
+                              </p>
+                            ) : (
+                              filteredInventory.map(inv => (
+                                <button
+                                  key={inv.id}
+                                  type="button"
+                                  onClick={() => handlePickStockItem(item.id, inv)}
+                                  className="w-full flex items-center justify-between gap-3 text-left px-4 py-3 hover:bg-indigo-50 transition-colors border-b border-slate-50 last:border-0"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-bold text-slate-800 truncate">{inv.name}</p>
+                                    <p className="text-xs text-slate-400">HSN: {inv.hsnCode || '—'} · {inv.unit} · GST {inv.gstRate}%</p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-sm font-black text-slate-900">₹{inv.sellingPrice.toLocaleString('en-IN')}</p>
+                                    {(inv.stock ?? 0) > 0
+                                      ? <p className="text-xs text-emerald-600">Stock: {inv.stock}</p>
+                                      : <p className="text-xs text-rose-400">Out of stock</p>}
+                                  </div>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Notes */}
@@ -1275,6 +1390,11 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
           </div>
         </div>
 
+        {/* Click-outside overlay for stock picker dropdown */}
+        {invPickerItemId !== null && (
+          <div className="fixed inset-0 z-20" onClick={() => { setInvPickerItemId(null); setInvSearch(''); }} />
+        )}
+
         {/* HSN Search Modal */}
         {hsnModalItemId !== null && (
           <HSNSearchModal
@@ -1342,7 +1462,7 @@ const DeliveryChallan: React.FC<DeliveryChallanProps> = ({
         <div className="bg-white rounded-[2.5rem] premium-shadow border border-slate-50 overflow-hidden">
 
           {/* ── Search bar ── */}
-          <div className="px-8 pt-8 pb-5 border-b border-slate-50">
+          <div className="px-5 sm:px-8 pt-6 sm:pt-8 pb-5 border-b border-slate-50">
             <div className="relative max-w-md">
               <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
               <input
