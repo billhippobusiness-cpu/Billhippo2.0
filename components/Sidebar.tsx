@@ -15,13 +15,16 @@ interface SidebarProps {
   setIsOpen: (open: boolean) => void;
   user?: User | null;
   onLogout?: () => void;
+  /** Business legal name from the profile — shown in the sidebar in preference
+   *  to the account display name, and editable via Settings → Legal Name. */
+  businessName?: string;
   showInventory?: boolean;
   showServices?: boolean;
   /** Passed from App.tsx; used to show the role-switcher for 'both' accounts */
   role?: UserRole | null;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setIsOpen, user, onLogout, showInventory, showServices, role }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setIsOpen, user, onLogout, businessName, showInventory, showServices, role }) => {
   const baseItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Overview' },
     { id: 'customers', icon: UserCircle, label: 'Customers' },
@@ -52,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, isOpen, setI
       ]
     : baseItems;
 
-  const displayName = user?.displayName || user?.email?.split('@')[0] || 'Admin User';
+  const displayName = businessName?.trim() || user?.displayName || user?.email?.split('@')[0] || 'Admin User';
   const displayEmail = user?.email || 'billing@billhippo.in';
   const initials = displayName.charAt(0).toUpperCase();
 
