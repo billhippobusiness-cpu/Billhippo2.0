@@ -30,7 +30,6 @@ import ProRegister from './components/pro/ProRegister';
 import InviteAccept from './components/pro/InviteAccept';
 import BusinessInviteNotice from './components/BusinessInviteNotice';
 import PWAInstallBanner from './components/PWAInstallBanner';
-import MediaStudio from './components/MediaStudio';
 import Accounts from './components/Accounts';
 
 const App: React.FC = () => {
@@ -353,7 +352,6 @@ const App: React.FC = () => {
       case 'inventory':   return <InventoryManager userId={userId} />;
       case 'purchases':   return <PurchaseManager userId={userId} />;
       case 'services':    return <ServicesManager userId={userId} />;
-      case 'ai-studio':   return <MediaStudio />;
       default:            return <Dashboard userId={userId} onNavigate={setActiveTab} />;
     }
   };
