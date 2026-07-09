@@ -421,6 +421,10 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
   const isBos      = business.gstEnabled && docScheme(invoice, business) === 'composition';
   const hasGst     = business.gstEnabled && !isBos;
   const docTitle   = isBos ? 'Bill of Supply' : 'Invoice';
+  // "Bill of Supply" is roughly twice the width of "Invoice", so the large
+  // header titles (tuned for the short word) must shrink to stay inside their
+  // right-hand column and not overlap the business details / banner.
+  const titleFontSize = isBos ? 22 : 38;   // modern-1 / modern-2 / payment-first
   const isCgst     = invoice.gstType === GSTType.CGST_SGST;
 
   const itemsWithTax = invoice.items.map(item => {
@@ -877,7 +881,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
 
             {/* RIGHT */}
             <View style={S.pfHdrRight}>
-              <Text style={[S.pfInvTitle, { color: NAVY }]}>{docTitle.toUpperCase()}</Text>
+              <Text style={[S.pfInvTitle, { color: NAVY, fontSize: titleFontSize, letterSpacing: isBos ? 0.5 : 1 }]}>{docTitle.toUpperCase()}</Text>
               <Text style={[S.pfTagline, { color: TEAL }]}>PAYMENT-FIRST. FAST. SECURE. EASY.</Text>
               <View style={S.pfMetaRow}>
                 <Text style={S.pfMetaLabel}>Invoice No.</Text>
@@ -1244,7 +1248,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                     <Polygon points="16,0 176,0 176,40 0,40" fill={NAVY} />
                     <Polygon points="0,40 16,0 30,0 14,40" fill={TEAL} />
                   </Svg>
-                  <Text style={S.gInvBannerTxt}>{docTitle.toUpperCase()}</Text>
+                  <Text style={[S.gInvBannerTxt, isBos ? { fontSize: 13, paddingTop: 12, letterSpacing: 0.5 } : {}]}>{docTitle.toUpperCase()}</Text>
                 </View>
                 <View style={[{ height: 3, width: 42, marginBottom: 8 }, { backgroundColor: TEAL }]} />
                 <View style={S.gMetaRow}>
@@ -1455,7 +1459,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
 
               {/* "Invoice" centred */}
               <View style={S.m1TitleWrap}>
-                <Text style={[S.m1Title, { color: PRIMARY }]}>{docTitle}</Text>
+                <Text style={[S.m1Title, { color: PRIMARY, fontSize: titleFontSize }]}>{docTitle}</Text>
                 <Text style={S.m1TitleSub}>{isBos ? 'Composition Scheme — Section 10, CGST Act' : 'GST Compliant Tax Invoice'}</Text>
               </View>
 
@@ -1535,7 +1539,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
 
             {/* RIGHT: "Invoice" large + invoice metadata */}
             <View style={S.m2InvRight}>
-              <Text style={[S.m2InvTitle, { color: PRIMARY }]}>{docTitle}</Text>
+              <Text style={[S.m2InvTitle, { color: PRIMARY, fontSize: titleFontSize }]}>{docTitle}</Text>
               <View style={S.m2InvMeta}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text style={S.m2InvLabel}>Invoice #</Text>
