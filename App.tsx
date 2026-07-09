@@ -375,6 +375,7 @@ const App: React.FC = () => {
         setIsOpen={setIsSidebarOpen}
         user={user}
         onLogout={handleLogout}
+        businessName={businessProfile?.name}
         showInventory={businessProfile?.businessType === 'trading'}
         showServices={businessProfile?.businessType === 'service'}
         role={role}
