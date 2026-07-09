@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, MapPin, CreditCard, ArrowRight, ArrowLeft, CheckCircle, Loader2, Rocket, Briefcase, ShoppingCart, Search } from 'lucide-react';
+import { Building2, CreditCard, ArrowRight, ArrowLeft, CheckCircle, Loader2, Rocket, Briefcase, ShoppingCart, Search, ShieldCheck } from 'lucide-react';
 import { BusinessProfile, CompositionCategory, GSTScheme } from '../types';
 import { saveBusinessProfile } from '../lib/firestore';
 import { lookupGSTIN } from '../lib/whitebooksApi';
@@ -93,24 +93,29 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
     }
   };
 
-  // Step 0 = business type; steps 1-3 = original wizard steps
+  // Step 0 = GST registration (with GSTIN auto-fetch); step 1 = business type;
+  // step 2 = business details + address (pre-filled from GSTIN); step 3 = bank.
   const steps = [
+    { title: 'GST Registration', subtitle: 'Are you registered under GST?', icon: ShieldCheck },
     { title: 'Business Type', subtitle: 'Tell us what kind of business you run', icon: Briefcase },
-    { title: 'Business Details', subtitle: 'Tell us about your business', icon: Building2 },
-    { title: 'Address & GST', subtitle: 'Your place of supply', icon: MapPin },
+    { title: 'Business Details', subtitle: 'Your business & place of supply', icon: Building2 },
     { title: 'Bank & UPI', subtitle: 'Payment details for invoices', icon: CreditCard },
   ];
 
   const validateStep = (): boolean => {
     setError(null);
     if (step === 0) {
-      if (!profile.businessType) { setError('Please select your business type to continue'); return false; }
+      if (profile.gstEnabled && profile.gstin.trim().length !== 15) {
+        setError('Enter your 15-digit GSTIN, or turn off "Registered under GST" to continue');
+        return false;
+      }
     }
     if (step === 1) {
-      if (!profile.name.trim()) { setError('Business name is required'); return false; }
-      if (!profile.phone.trim()) { setError('Contact number is required'); return false; }
+      if (!profile.businessType) { setError('Please select your business type to continue'); return false; }
     }
     if (step === 2) {
+      if (!profile.name.trim()) { setError('Business name is required'); return false; }
+      if (!profile.phone.trim()) { setError('Contact number is required'); return false; }
       if (!profile.city.trim()) { setError('City is required'); return false; }
       if (!profile.state.trim()) { setError('State is required'); return false; }
     }
@@ -202,80 +207,18 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
             </div>
           )}
 
-          {/* Step 0: Business Type */}
+          {/* Step 0: GST Registration */}
           {step === 0 && (
-            <div className="space-y-5 animate-in fade-in duration-300">
-              <p className="text-sm text-slate-500 font-medium font-poppins -mt-2 mb-6">
-                This helps BillHippo personalise features for you — inventory management is available for Trading businesses only.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Service */}
-                <button
-                  onClick={() => setProfile({ ...profile, businessType: 'service' })}
-                  className={`p-8 rounded-3xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${
-                    profile.businessType === 'service'
-                      ? 'border-profee-blue bg-indigo-50 shadow-lg shadow-indigo-100'
-                      : 'border-slate-100 bg-slate-50 hover:border-slate-200'
-                  }`}
-                >
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${profile.businessType === 'service' ? 'bg-profee-blue' : 'bg-slate-200'}`}>
-                    <Briefcase size={22} className={profile.businessType === 'service' ? 'text-white' : 'text-slate-500'} />
-                  </div>
-                  <div className={`text-xs font-bold uppercase tracking-widest mb-2 ${profile.businessType === 'service' ? 'text-profee-blue' : 'text-slate-400'}`}>Service</div>
-                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-1">Service Business</h3>
-                  <p className="text-xs text-slate-400 font-medium leading-relaxed">Consultants, lawyers, agencies, freelancers, IT services, architects, doctors</p>
-                  {profile.businessType === 'service' && (
-                    <div className="mt-4 flex items-center gap-1.5 text-profee-blue font-bold text-xs">
-                      <CheckCircle size={14} /> Selected
-                    </div>
-                  )}
-                </button>
-                {/* Trading */}
-                <button
-                  onClick={() => setProfile({ ...profile, businessType: 'trading' })}
-                  className={`p-8 rounded-3xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${
-                    profile.businessType === 'trading'
-                      ? 'border-amber-500 bg-amber-50 shadow-lg shadow-amber-100'
-                      : 'border-slate-100 bg-slate-50 hover:border-slate-200'
-                  }`}
-                >
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${profile.businessType === 'trading' ? 'bg-amber-500' : 'bg-slate-200'}`}>
-                    <ShoppingCart size={22} className={profile.businessType === 'trading' ? 'text-white' : 'text-slate-500'} />
-                  </div>
-                  <div className={`text-xs font-bold uppercase tracking-widest mb-2 ${profile.businessType === 'trading' ? 'text-amber-600' : 'text-slate-400'}`}>Trading</div>
-                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-1">Trading Business</h3>
-                  <p className="text-xs text-slate-400 font-medium leading-relaxed">Retailers, wholesalers, manufacturers, distributors (includes inventory management)</p>
-                  {profile.businessType === 'trading' && (
-                    <div className="mt-4 flex items-center gap-1.5 text-amber-600 font-bold text-xs">
-                      <CheckCircle size={14} /> Selected
-                    </div>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 1: Business Details */}
-          {step === 1 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-poppins animate-in fade-in duration-300">
-              <div className="md:col-span-2">
-                <Input label="Business / Legal Name *" value={profile.name} onChange={v => setProfile({...profile, name: v})} placeholder="e.g. Sharma Electronics Pvt Ltd" />
-              </div>
-              <Input label="Email Address" value={profile.email} onChange={v => setProfile({...profile, email: v})} placeholder="business@email.com" />
-              <Input label="Contact Number *" value={profile.phone} onChange={v => setProfile({...profile, phone: v})} placeholder="+91 98765 43210" />
-              <Input label="Business Tagline" value={profile.tagline || ''} onChange={v => setProfile({...profile, tagline: v})} placeholder="Your business tagline" />
-              <Input label="PAN Number" value={profile.pan} onChange={v => setProfile({...profile, pan: v})} placeholder="ABCDE1234F" />
-            </div>
-          )}
-
-          {/* Step 2: Address & GST */}
-          {step === 2 && (
             <div className="space-y-6 font-poppins animate-in fade-in duration-300">
 
-              {/* GST Toggle — first */}
+              <p className="text-sm text-slate-500 font-medium -mt-2">
+                If your business is registered under GST, enter your GSTIN and we'll auto-fill your legal name and address in the next steps — no manual typing needed.
+              </p>
+
+              {/* GST Toggle */}
               <div className="p-6 bg-indigo-50 rounded-2xl flex items-center justify-between border border-indigo-100">
                 <div>
-                  <p className="text-sm font-bold text-slate-800 font-poppins">GST Registered?</p>
+                  <p className="text-sm font-bold text-slate-800 font-poppins">Registered under GST?</p>
                   <p className="text-xs text-slate-400 font-medium mt-1">Enable if your business has a GSTIN</p>
                 </div>
                 <button
@@ -368,7 +311,7 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
                   {/* Success card */}
                   {gstinFetchResult && (
                     <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
-                      <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-3">✓ Details Fetched — Address auto-filled below</p>
+                      <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-3">✓ Details fetched — your name &amp; address will be pre-filled in the next steps</p>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                         <div>
                           <span className="text-slate-400 font-medium">Legal Name</span>
@@ -408,7 +351,87 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
                 </div>
               )}
 
-              {/* Address fields */}
+              {!profile.gstEnabled && (
+                <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl">
+                  <p className="text-sm text-slate-500 font-medium">No problem — you can enter your business details manually in the next steps, and add a GSTIN anytime later from Settings.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 1: Business Type */}
+          {step === 1 && (
+            <div className="space-y-5 animate-in fade-in duration-300">
+              <p className="text-sm text-slate-500 font-medium font-poppins -mt-2 mb-6">
+                This helps BillHippo personalise features for you — inventory management is available for Trading businesses only.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Service */}
+                <button
+                  onClick={() => setProfile({ ...profile, businessType: 'service' })}
+                  className={`p-8 rounded-3xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${
+                    profile.businessType === 'service'
+                      ? 'border-profee-blue bg-indigo-50 shadow-lg shadow-indigo-100'
+                      : 'border-slate-100 bg-slate-50 hover:border-slate-200'
+                  }`}
+                >
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${profile.businessType === 'service' ? 'bg-profee-blue' : 'bg-slate-200'}`}>
+                    <Briefcase size={22} className={profile.businessType === 'service' ? 'text-white' : 'text-slate-500'} />
+                  </div>
+                  <div className={`text-xs font-bold uppercase tracking-widest mb-2 ${profile.businessType === 'service' ? 'text-profee-blue' : 'text-slate-400'}`}>Service</div>
+                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-1">Service Business</h3>
+                  <p className="text-xs text-slate-400 font-medium leading-relaxed">Consultants, lawyers, agencies, freelancers, IT services, architects, doctors</p>
+                  {profile.businessType === 'service' && (
+                    <div className="mt-4 flex items-center gap-1.5 text-profee-blue font-bold text-xs">
+                      <CheckCircle size={14} /> Selected
+                    </div>
+                  )}
+                </button>
+                {/* Trading */}
+                <button
+                  onClick={() => setProfile({ ...profile, businessType: 'trading' })}
+                  className={`p-8 rounded-3xl border-2 text-left transition-all duration-200 hover:scale-[1.02] ${
+                    profile.businessType === 'trading'
+                      ? 'border-amber-500 bg-amber-50 shadow-lg shadow-amber-100'
+                      : 'border-slate-100 bg-slate-50 hover:border-slate-200'
+                  }`}
+                >
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${profile.businessType === 'trading' ? 'bg-amber-500' : 'bg-slate-200'}`}>
+                    <ShoppingCart size={22} className={profile.businessType === 'trading' ? 'text-white' : 'text-slate-500'} />
+                  </div>
+                  <div className={`text-xs font-bold uppercase tracking-widest mb-2 ${profile.businessType === 'trading' ? 'text-amber-600' : 'text-slate-400'}`}>Trading</div>
+                  <h3 className="text-lg font-bold font-poppins text-slate-900 mb-1">Trading Business</h3>
+                  <p className="text-xs text-slate-400 font-medium leading-relaxed">Retailers, wholesalers, manufacturers, distributors (includes inventory management)</p>
+                  {profile.businessType === 'trading' && (
+                    <div className="mt-4 flex items-center gap-1.5 text-amber-600 font-bold text-xs">
+                      <CheckCircle size={14} /> Selected
+                    </div>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Business Details & Address (pre-filled from GSTIN when available) */}
+          {step === 2 && (
+            <div className="space-y-6 font-poppins animate-in fade-in duration-300">
+              {profile.gstEnabled && gstinFetchResult && (
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3">
+                  <CheckCircle className="text-emerald-500 shrink-0" size={18} />
+                  <p className="text-xs font-semibold text-emerald-700">Auto-filled from your GSTIN — review and edit anything if needed.</p>
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="md:col-span-2">
+                  <Input label="Business / Legal Name *" value={profile.name} onChange={v => setProfile({...profile, name: v})} placeholder="e.g. Sharma Electronics Pvt Ltd" />
+                </div>
+                <Input label="Email Address" value={profile.email} onChange={v => setProfile({...profile, email: v})} placeholder="business@email.com" />
+                <Input label="Contact Number *" value={profile.phone} onChange={v => setProfile({...profile, phone: v})} placeholder="+91 98765 43210" />
+                <Input label="Business Tagline" value={profile.tagline || ''} onChange={v => setProfile({...profile, tagline: v})} placeholder="Your business tagline" />
+                <Input label="PAN Number" value={profile.pan} onChange={v => setProfile({...profile, pan: v})} placeholder="ABCDE1234F" />
+              </div>
+
+              {/* Address / place of supply */}
               <Input label="Street Address" value={profile.address} onChange={v => setProfile({...profile, address: v})} placeholder="Shop no. 5, MG Road" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Input label="City *" value={profile.city} onChange={v => setProfile({...profile, city: v})} placeholder="Mumbai" />
