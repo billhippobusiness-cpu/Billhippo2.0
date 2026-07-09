@@ -76,7 +76,9 @@ const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ userId, userName, u
       setGstinFetchResult(result);
       setProfile(prev => ({
         ...prev,
-        name:                prev.name    || result.tradeName || result.legalName,
+        // Adopt the fetched business name over the sign-up name so the user
+        // doesn't have to retype it (they can still edit it afterwards).
+        name:                result.tradeName || result.legalName || prev.name,
         address:             result.address || prev.address,
         city:                result.city    || prev.city,
         state:               result.state   || prev.state,
