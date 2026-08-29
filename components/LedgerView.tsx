@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, Download, Search, Plus, Eye, Printer, Edit3, Loader2, Save, X, Receipt, MessageCircle } from 'lucide-react';
 import { Customer, LedgerEntry } from '../types';
-import { getCustomers, getLedgerEntries, addLedgerEntry, deleteLedgerEntry, updateCustomer, getDeletedInvoices, getBusinessProfile } from '../lib/firestore';
+import { getCustomers, getLedgerEntries, addLedgerEntry, deleteLedgerEntry, getInvoices, getDeletedInvoices, getBusinessProfile, reconcileLedgerWithInvoices, repairCustomerBalances } from '../lib/firestore';
 import { pdf } from '@react-pdf/renderer';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import LedgerPDF from './pdf/LedgerPDF';
@@ -50,24 +50,29 @@ const LedgerView: React.FC<LedgerViewProps> = ({ userId }) => {
 
   const loadEntries = async (customerId: string) => {
     try {
-      const [data, deletedInvoices] = await Promise.all([
+      const [data, invoices, deletedInvoices] = await Promise.all([
         getLedgerEntries(userId, customerId),
+        getInvoices(userId),
         getDeletedInvoices(userId),
       ]);
       const deletedInvoiceIds = new Set(deletedInvoices.map(inv => inv.id));
       // Auto-clean stale ledger entries whose invoice was deleted before the fix was deployed
       const staleEntries = data.filter(e => e.invoiceId && deletedInvoiceIds.has(e.invoiceId));
       if (staleEntries.length > 0) {
-        const staleTotal = staleEntries.reduce((sum, e) => sum + e.amount, 0);
         await Promise.all(staleEntries.map(e => deleteLedgerEntry(userId, e.id)));
-        const custList = await getCustomers(userId);
-        const cust = custList.find(c => c.id === customerId);
-        if (cust) {
-          await updateCustomer(userId, customerId, { balance: (cust.balance || 0) - staleTotal });
-          setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, balance: (c.balance || 0) - staleTotal } : c));
-        }
       }
-      setEntries(data.filter(e => !e.invoiceId || !deletedInvoiceIds.has(e.invoiceId)));
+      const liveEntries = data.filter(e => !e.invoiceId || !deletedInvoiceIds.has(e.invoiceId));
+      // Invoices can be edited after their ledger entry was raised — renumbered,
+      // redated, re-priced — so pull the entries back in line with the invoices
+      // they came from before showing the statement.
+      const reconciled = await reconcileLedgerWithInvoices(userId, liveEntries, invoices);
+      const customerEntries = reconciled.filter(e => e.customerId === customerId);
+      setEntries(customerEntries);
+      const balances = await repairCustomerBalances(userId, [customerId], customerEntries);
+      const balance = balances.get(customerId);
+      if (balance !== undefined) {
+        setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, balance } : c));
+      }
     } catch (err) { console.error(err); }
   };
 

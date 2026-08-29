@@ -10,6 +10,7 @@ import { Customer, LedgerEntry, Invoice, BusinessProfile, CreditNote, DebitNote 
 import {
   getCustomers, addCustomer, updateCustomer, deleteCustomer,
   getLedgerEntries, getInvoices, getDeletedInvoices, getBusinessProfile,
+  reconcileLedgerWithInvoices, repairCustomerBalances,
   getCreditNotes, getDebitNotes, addLedgerEntry,
   deleteLedgerEntry, updateLedgerEntry,
 } from '../lib/firestore';
@@ -258,7 +259,22 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
         setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, balance: newBalance } : c));
         liveEntries = entries.filter(e => !e.invoiceId || !deletedInvoiceIds.has(e.invoiceId));
       }
-      setLedgerEntries(liveEntries);
+      // An invoice can be edited after its ledger entry was raised — renumbered
+      // to 013A, redated, re-priced. The entry snapshots those values, so pull
+      // it back in line before showing the statement, otherwise the ledger
+      // disagrees with the invoice list.
+      const reconciled = await reconcileLedgerWithInvoices(
+        userId, liveEntries, [...allInvoices, ...deletedInvoices],
+      );
+      const customerEntries = reconciled.filter(e => e.customerId === customer.id);
+      setLedgerEntries(customerEntries);
+      const balances = await repairCustomerBalances(userId, [customer.id], customerEntries);
+      const balance = balances.get(customer.id);
+      if (balance !== undefined && balance !== customer.balance) {
+        setSelectedCustomer(prev => prev && prev.id === customer.id ? { ...prev, balance } : prev);
+        setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, balance } : c));
+        setCustomerBalanceMap(prev => new Map(prev).set(customer.id, balance));
+      }
       const map: Record<string, Invoice> = {};
       allInvoices.forEach(inv => { map[inv.id] = inv; });
       setInvoicesMap(map);

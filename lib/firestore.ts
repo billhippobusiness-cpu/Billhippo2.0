@@ -197,9 +197,23 @@ export async function deleteLedgerEntry(userId: string, entryId: string) {
   await deleteDoc(userDoc(userId, 'ledger', entryId));
 }
 
-export async function getLedgerEntryByInvoiceId(userId: string, invoiceId: string): Promise<LedgerEntry | null> {
+/**
+ * Look up a ledger entry raised against an invoice.
+ *
+ * An invoice can have several linked entries — the Debit raised when it was
+ * saved plus a Credit for every payment collected against it — so callers that
+ * mean the sale entry must ask for `'Debit'` explicitly.
+ */
+export async function getLedgerEntryByInvoiceId(
+  userId: string,
+  invoiceId: string,
+  type?: LedgerEntry['type'],
+): Promise<LedgerEntry | null> {
   const snap = await getDocs(userCollection(userId, 'ledger'));
-  const entry = snap.docs.find(d => d.data().invoiceId === invoiceId);
+  const entry = snap.docs.find(d => {
+    const data = d.data();
+    return data.invoiceId === invoiceId && (!type || data.type === type);
+  });
   return entry ? { id: entry.id, ...entry.data() } as LedgerEntry : null;
 }
 
@@ -208,6 +222,162 @@ export async function updateLedgerEntry(userId: string, entryId: string, data: P
     ...data,
     updatedAt: serverTimestamp(),
   });
+}
+
+// ═══════════════════════════════════════════
+//  LEDGER ↔ INVOICE SYNC
+// ═══════════════════════════════════════════
+//
+//  A ledger entry snapshots the invoice it was raised from — its number in the
+//  description, plus the invoice date and total. Editing the invoice afterwards
+//  (renumbering INV/2026-27/013 to INV/2026-27/013A, moving its date, changing
+//  line items) left that snapshot behind, so the customer statement showed a
+//  different invoice number and amount than the invoice list. The helpers below
+//  re-point linked entries at the invoice's current values.
+
+/** Description a sale (Debit) entry carries for an invoice. */
+export const saleEntryDescription = (invoiceNumber: string) => `Sale - ${invoiceNumber}`;
+
+/** Default description a payment (Credit) entry carries for an invoice. */
+export const paymentEntryDescription = (invoiceNumber: string) => `Payment for Invoice ${invoiceNumber}`;
+
+// Matches only the default payment description — a single-token invoice number
+// and nothing else — so a note the user typed by hand is never rewritten.
+const DEFAULT_PAYMENT_DESCRIPTION = /^Payment for Invoice (\S+)$/;
+
+/**
+ * Fields of `entry` that no longer agree with `invoice`, or null when it is
+ * already in step.
+ *
+ * A sale entry mirrors the invoice's number, date, total and customer. A
+ * payment entry keeps its own date and amount — the money moved when it moved —
+ * and follows the invoice only for the customer it sits under and the number in
+ * its default description.
+ */
+export function invoiceLedgerDrift(
+  entry: LedgerEntry,
+  invoice: Invoice,
+): Partial<Omit<LedgerEntry, 'id'>> | null {
+  if (entry.creditNoteId || entry.debitNoteId) return null;
+
+  const drift: Partial<Omit<LedgerEntry, 'id'>> = {};
+  if (invoice.customerId && entry.customerId !== invoice.customerId) {
+    drift.customerId = invoice.customerId;
+  }
+
+  if (entry.type === 'Debit') {
+    if (entry.date !== invoice.date) drift.date = invoice.date;
+    if (entry.amount !== invoice.totalAmount) drift.amount = invoice.totalAmount;
+    const description = saleEntryDescription(invoice.invoiceNumber);
+    if (entry.description !== description) drift.description = description;
+  } else {
+    const match = DEFAULT_PAYMENT_DESCRIPTION.exec(entry.description || '');
+    if (match && match[1] !== invoice.invoiceNumber) {
+      drift.description = paymentEntryDescription(invoice.invoiceNumber);
+    }
+  }
+
+  return Object.keys(drift).length > 0 ? drift : null;
+}
+
+/** Outstanding balance a customer's ledger entries add up to. */
+export function balanceFromEntries(entries: LedgerEntry[]): number {
+  return entries.reduce((sum, e) => sum + (e.type === 'Debit' ? e.amount : -e.amount), 0);
+}
+
+/**
+ * Rewrite `customer.balance` from the ledger, which is the source of truth for
+ * what a customer owes. Only the named customers are touched, and only when
+ * their stored balance actually disagrees.
+ */
+export async function repairCustomerBalances(
+  userId: string,
+  customerIds: string[],
+  entries: LedgerEntry[],
+): Promise<Map<string, number>> {
+  const balances = new Map<string, number>();
+  const customers = await getCustomers(userId);
+  await Promise.all(customerIds.map(async customerId => {
+    const balance = balanceFromEntries(entries.filter(e => e.customerId === customerId));
+    balances.set(customerId, balance);
+    const customer = customers.find(c => c.id === customerId);
+    if (customer && customer.balance !== balance) {
+      await updateCustomer(userId, customerId, { balance });
+    }
+  }));
+  return balances;
+}
+
+/**
+ * Write back every linked entry that has drifted from the invoice it belongs
+ * to, and return the corrected entries so the caller can render them without a
+ * second read. `invoices` should include soft-deleted ones; entries pointing at
+ * an invoice that is not in the list are left untouched.
+ */
+export async function reconcileLedgerWithInvoices(
+  userId: string,
+  entries: LedgerEntry[],
+  invoices: Invoice[],
+): Promise<LedgerEntry[]> {
+  const byId = new Map(invoices.map(inv => [inv.id, inv]));
+  const writes: Promise<unknown>[] = [];
+  const corrected = entries.map(entry => {
+    const invoice = entry.invoiceId ? byId.get(entry.invoiceId) : undefined;
+    if (!invoice) return entry;
+    const drift = invoiceLedgerDrift(entry, invoice);
+    if (!drift) return entry;
+    writes.push(updateLedgerEntry(userId, entry.id, drift));
+    return { ...entry, ...drift };
+  });
+  if (writes.length > 0) await Promise.all(writes);
+  return corrected;
+}
+
+/**
+ * Keep one invoice's ledger entries in step after it was saved or edited, and
+ * repair the balance of every customer that touches. Recreates the sale entry
+ * when it is missing — an invoice saved before the ledger existed, or one whose
+ * entry was removed.
+ *
+ * Returns the fresh balances, keyed by customer id, so callers can update their
+ * own state without re-reading.
+ */
+export async function syncInvoiceLedgerEntries(
+  userId: string,
+  invoice: Invoice,
+): Promise<Map<string, number>> {
+  const all = await getLedgerEntries(userId);
+  const linked = all.filter(e => e.invoiceId === invoice.id);
+  const affected = new Set(
+    [invoice.customerId, ...linked.map(e => e.customerId)].filter(Boolean) as string[],
+  );
+
+  let synced = all;
+  const sale = linked.find(e => e.type === 'Debit');
+  if (!sale) {
+    if (!invoice.customerId || !invoice.totalAmount) return new Map();
+    const id = await addLedgerEntry(userId, {
+      date: invoice.date,
+      type: 'Debit',
+      amount: invoice.totalAmount,
+      description: saleEntryDescription(invoice.invoiceNumber),
+      invoiceId: invoice.id,
+      customerId: invoice.customerId,
+    });
+    synced = [...all, {
+      id,
+      date: invoice.date,
+      type: 'Debit' as const,
+      amount: invoice.totalAmount,
+      description: saleEntryDescription(invoice.invoiceNumber),
+      invoiceId: invoice.id,
+      customerId: invoice.customerId,
+    }];
+  } else {
+    synced = await reconcileLedgerWithInvoices(userId, all, [invoice]);
+  }
+
+  return repairCustomerBalances(userId, [...affected], synced);
 }
 
 // ═══════════════════════════════════════════
