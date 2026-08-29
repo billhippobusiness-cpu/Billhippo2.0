@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, Briefcase, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle, User, Building2, MapPin, Landmark, BarChart3, ShieldCheck, StickyNote, Phone, Mail, Lock, Smartphone, CreditCard } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, ServiceItem, SupplyType, type Quotation } from '../types';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
+import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, syncInvoiceLedgerEntries, saleEntryDescription, paymentEntryDescription, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import { getSchemeOnDate, docScheme, COMPOSITION_DECLARATION } from '../lib/gstScheme';
 import { haptic } from '../lib/haptic';
@@ -356,7 +356,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         await applyStockAdjustments(userId, inv.items, 'inward');
       }
       // Remove the ledger entry created when this invoice was saved, and reverse the customer balance
-      const ledgerEntry = await getLedgerEntryByInvoiceId(userId, inv.id);
+      const ledgerEntry = await getLedgerEntryByInvoiceId(userId, inv.id, 'Debit');
       if (ledgerEntry) {
         await deleteLedgerEntry(userId, ledgerEntry.id);
         if (inv.customerId) {
@@ -381,17 +381,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       await applyStockAdjustments(userId, inv.items, 'outward');
     }
     // Re-create the ledger entry that was removed when the invoice was deleted, and restore the customer balance
-    const existing = await getLedgerEntryByInvoiceId(userId, inv.id);
-    if (!existing && inv.customerId && inv.total) {
-      await addLedgerEntry(userId, {
-        date: inv.date, type: 'Debit', amount: inv.total,
-        description: `Sale - ${inv.invoiceNumber}`, invoiceId: inv.id, customerId: inv.customerId,
-      });
-      const cust = customers.find(c => c.id === inv.customerId);
-      if (cust) {
-        await updateCustomer(userId, inv.customerId, { balance: (cust.balance || 0) + inv.total });
-        setCustomers(prev => prev.map(c => c.id === inv.customerId ? { ...c, balance: (c.balance || 0) + inv.total } : c));
-      }
+    const balances = await syncInvoiceLedgerEntries(userId, { ...inv, deleted: false });
+    if (balances.size > 0) {
+      setCustomers(prev => prev.map(c => balances.has(c.id) ? { ...c, balance: balances.get(c.id)! } : c));
     }
     setDeletedInvoices(prev => prev.filter(i => i.id !== inv.id));
     setAllInvoices(prev => [{ ...inv, deleted: false, deletedAt: undefined }, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
@@ -571,9 +563,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           await applyStockAdjustments(userId, editingInvoice.items, 'inward');
         }
         await applyStockAdjustments(userId, items, 'outward');
+        const updatedInvoice = { ...editingInvoice, ...invoicePayload } as Invoice;
         setAllInvoices(prev =>
-          prev.map(inv => inv.id === editingInvoice.id ? { ...inv, ...invoicePayload } : inv)
+          prev.map(inv => inv.id === editingInvoice.id ? updatedInvoice : inv)
         );
+        // The sale entry snapshots the invoice number, date and total, so an
+        // edit — a renumber to 013A, a new line item — has to be carried into
+        // the ledger, otherwise the statement disagrees with this list.
+        const balances = await syncInvoiceLedgerEntries(userId, updatedInvoice);
+        if (balances.size > 0) {
+          setCustomers(prev => prev.map(c => balances.has(c.id) ? { ...c, balance: balances.get(c.id)! } : c));
+        }
+        setEditingInvoice(updatedInvoice);
       } else {
         const invoiceId = await addInvoice(userId, invoicePayload);
         await applyStockAdjustments(userId, items, 'outward');
@@ -587,7 +588,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         setEditingInvoice(newInvoice);
         await addLedgerEntry(userId, {
           date: invoiceDate, type: 'Debit', amount: roundedTotal,
-          description: `Sale - ${invoiceNumber}`, invoiceId, customerId: selectedCustomerId
+          description: saleEntryDescription(invoiceNumber), invoiceId, customerId: selectedCustomerId
         });
         if (selectedCustomer) {
           await updateCustomer(userId, selectedCustomerId, { balance: (selectedCustomer.balance || 0) + roundedTotal });
@@ -617,7 +618,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     try {
       const amount        = parseFloat(collectAmount);
       const date          = new Date().toISOString().split('T')[0];
-      const description   = collectDesc || `Payment for Invoice ${inv.invoiceNumber}`;
+      const description   = collectDesc || paymentEntryDescription(inv.invoiceNumber);
       const custObj       = customers.find(c => c.id === inv.customerId);
       const newStatus: 'Paid' | 'Partial' = amount >= inv.totalAmount ? 'Paid' : 'Partial';
       const currentBalance    = custObj?.balance ?? inv.totalAmount;
@@ -654,7 +655,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     const receiptEntry: ReceiptEntry = {
       id: inv.id, date: inv.date, type: 'Credit',
       amount: inv.totalAmount,
-      description: `Payment for Invoice ${inv.invoiceNumber}`,
+      description: paymentEntryDescription(inv.invoiceNumber),
       customerId: inv.customerId, invoiceId: inv.id,
       runningBalance: custObj?.balance ?? 0,
     };
