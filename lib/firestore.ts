@@ -540,6 +540,108 @@ export async function deleteDebitNote(userId: string, noteId: string) {
   await deleteDoc(userDoc(userId, 'debitNotes', noteId));
 }
 
+// ── Note ↔ ledger sync ──
+//
+//  Like an invoice's sale entry, the ledger entry a note raises snapshots the
+//  note's number, date, total and customer. These helpers carry an edit to the
+//  note into that entry.
+
+type NoteKind = 'credit' | 'debit';
+
+/** Description the ledger entry raised by a credit or debit note carries. */
+export const noteEntryDescription = (
+  kind: NoteKind,
+  note: Pick<CreditNote, 'noteNumber' | 'originalInvoiceNumber'>,
+) =>
+  `${kind === 'credit' ? 'Credit' : 'Debit'} Note - ${note.noteNumber}` +
+  (note.originalInvoiceNumber ? ` (Ref: ${note.originalInvoiceNumber})` : '');
+
+/** Fields of a note's ledger entry that no longer agree with the note, or null. */
+export function noteLedgerDrift(
+  entry: LedgerEntry,
+  kind: NoteKind,
+  note: CreditNote | DebitNote,
+): Partial<Omit<LedgerEntry, 'id'>> | null {
+  const drift: Partial<Omit<LedgerEntry, 'id'>> = {};
+  if (entry.date !== note.date) drift.date = note.date;
+  if (entry.amount !== note.totalAmount) drift.amount = note.totalAmount;
+  const description = noteEntryDescription(kind, note);
+  if (entry.description !== description) drift.description = description;
+  if (note.customerId && entry.customerId !== note.customerId) drift.customerId = note.customerId;
+  return Object.keys(drift).length > 0 ? drift : null;
+}
+
+/**
+ * Write back every note entry that has drifted from its note and return the
+ * corrected entries. Entries whose note is not in the lists are left untouched.
+ */
+export async function reconcileLedgerWithNotes(
+  userId: string,
+  entries: LedgerEntry[],
+  creditNotes: CreditNote[],
+  debitNotes: DebitNote[],
+): Promise<LedgerEntry[]> {
+  const credits = new Map(creditNotes.map(n => [n.id, n]));
+  const debits = new Map(debitNotes.map(n => [n.id, n]));
+  const writes: Promise<unknown>[] = [];
+  const corrected = entries.map(entry => {
+    const drift = entry.creditNoteId && credits.has(entry.creditNoteId)
+      ? noteLedgerDrift(entry, 'credit', credits.get(entry.creditNoteId)!)
+      : entry.debitNoteId && debits.has(entry.debitNoteId)
+        ? noteLedgerDrift(entry, 'debit', debits.get(entry.debitNoteId)!)
+        : null;
+    if (!drift) return entry;
+    writes.push(updateLedgerEntry(userId, entry.id, drift));
+    return { ...entry, ...drift };
+  });
+  if (writes.length > 0) await Promise.all(writes);
+  return corrected;
+}
+
+/**
+ * Keep a note's ledger entry in step after the note was saved or edited,
+ * raising the entry when it does not exist yet, and repair the balance of
+ * every customer that touches. A credit note's entry is a Credit (reduces what
+ * the customer owes); a debit note's is a Debit.
+ *
+ * Returns the fresh balances, keyed by customer id.
+ */
+export async function syncNoteLedgerEntry(
+  userId: string,
+  kind: NoteKind,
+  note: CreditNote | DebitNote,
+): Promise<Map<string, number>> {
+  const all = await getLedgerEntries(userId);
+  const linked = all.filter(e =>
+    kind === 'credit' ? e.creditNoteId === note.id : e.debitNoteId === note.id,
+  );
+  const affected = new Set(
+    [note.customerId, ...linked.map(e => e.customerId)].filter(Boolean) as string[],
+  );
+
+  let synced: LedgerEntry[];
+  if (linked.length === 0) {
+    const entry: Omit<LedgerEntry, 'id'> = {
+      date: note.date,
+      type: kind === 'credit' ? 'Credit' : 'Debit',
+      amount: note.totalAmount,
+      description: noteEntryDescription(kind, note),
+      customerId: note.customerId,
+      ...(kind === 'credit' ? { creditNoteId: note.id } : { debitNoteId: note.id }),
+    };
+    const id = await addLedgerEntry(userId, entry);
+    synced = [...all, { id, ...entry }];
+  } else {
+    synced = await reconcileLedgerWithNotes(
+      userId, all,
+      kind === 'credit' ? [note as CreditNote] : [],
+      kind === 'debit' ? [note as DebitNote] : [],
+    );
+  }
+
+  return repairCustomerBalances(userId, [...affected], synced);
+}
+
 /**
  * Delete a credit or debit note together with the ledger entry it raised, then
  * rewrite the customer's balance from what is left in the ledger.

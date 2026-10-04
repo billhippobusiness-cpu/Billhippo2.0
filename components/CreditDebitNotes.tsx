@@ -28,7 +28,7 @@ import {
   getCustomers, getBusinessProfile,
   getCreditNotes, addCreditNote, updateCreditNote,
   getDebitNotes, addDebitNote, updateDebitNote,
-  addLedgerEntry, updateCustomer, getInventoryItems, deleteNoteWithLedger,
+  getInventoryItems, deleteNoteWithLedger, syncNoteLedgerEntry,
 } from '../lib/firestore';
 import { getSchemeOnDate, docScheme } from '../lib/gstScheme';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
@@ -303,44 +303,39 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
         totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: roundedTotal,
       };
 
+      let saved: CreditNote | DebitNote;
       if (activeTab === 'credit') {
         if (editingNote) {
           await updateCreditNote(userId, editingNote.id, payload);
-          setCreditNotes(prev => prev.map(n => n.id === editingNote.id ? { ...n, ...payload } : n));
+          saved = { ...editingNote, ...payload } as CreditNote;
+          setCreditNotes(prev => prev.map(n => n.id === saved.id ? saved : n));
         } else {
           const noteId = await addCreditNote(userId, payload as Omit<CreditNote, 'id'>);
-          // Ledger: Credit entry → reduces customer balance
-          await addLedgerEntry(userId, {
-            date: noteDate, type: 'Credit', amount: roundedTotal,
-            description: `Credit Note - ${noteNumber}${originalInvoiceNumber ? ` (Ref: ${originalInvoiceNumber})` : ''}`,
-            creditNoteId: noteId, customerId: selectedCustomerId,
-          });
-          if (selectedCustomer) {
-            await updateCustomer(userId, selectedCustomerId, {
-              balance: (selectedCustomer.balance || 0) - roundedTotal,
-            });
-          }
-          await loadData();
+          saved = { id: noteId, ...payload } as CreditNote;
+          setCreditNotes(prev => [saved, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
         }
       } else {
         if (editingNote) {
           await updateDebitNote(userId, editingNote.id, payload);
-          setDebitNotes(prev => prev.map(n => n.id === editingNote.id ? { ...n, ...payload } : n));
+          saved = { ...editingNote, ...payload } as DebitNote;
+          setDebitNotes(prev => prev.map(n => n.id === saved.id ? saved : n));
         } else {
           const noteId = await addDebitNote(userId, payload as Omit<DebitNote, 'id'>);
-          // Ledger: Debit entry → increases customer balance
-          await addLedgerEntry(userId, {
-            date: noteDate, type: 'Debit', amount: roundedTotal,
-            description: `Debit Note - ${noteNumber}${originalInvoiceNumber ? ` (Ref: ${originalInvoiceNumber})` : ''}`,
-            debitNoteId: noteId, customerId: selectedCustomerId,
-          });
-          if (selectedCustomer) {
-            await updateCustomer(userId, selectedCustomerId, {
-              balance: (selectedCustomer.balance || 0) + roundedTotal,
-            });
-          }
-          await loadData();
+          saved = { id: noteId, ...payload } as DebitNote;
+          setDebitNotes(prev => [saved, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
         }
+      }
+      // From here on the form edits this note, so going back to "Edit Note"
+      // from the preview and saving again updates it instead of raising a
+      // second note.
+      setEditingNote(saved);
+
+      // Ledger: a credit note raises a Credit entry (reduces what the customer
+      // owes), a debit note a Debit entry. Raised on create, and kept in step
+      // with the note's number, date, total and customer on every edit.
+      const balances = await syncNoteLedgerEntry(userId, activeTab, saved);
+      if (balances.size > 0) {
+        setCustomers(prev => prev.map(c => balances.has(c.id) ? { ...c, balance: balances.get(c.id)! } : c));
       }
 
       setSaveSuccess(true);
