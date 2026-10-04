@@ -133,9 +133,10 @@ export async function getDeletedInvoices(userId: string): Promise<Invoice[]> {
   return docs.filter(inv => !!inv.deleted).sort((a, b) => b.date.localeCompare(a.date));
 }
 
-export async function getTotalInvoiceCount(userId: string): Promise<number> {
+/** Every invoice, soft-deleted ones included — for numbering and uniqueness checks. */
+export async function getAllInvoices(userId: string): Promise<Invoice[]> {
   const snap = await getDocs(userCollection(userId, 'invoices'));
-  return snap.docs.length;
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Invoice));
 }
 
 export async function addInvoice(userId: string, invoice: Omit<Invoice, 'id'>) {

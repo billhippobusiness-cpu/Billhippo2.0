@@ -3,9 +3,10 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, Briefcase, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle, User, Building2, MapPin, Landmark, BarChart3, ShieldCheck, StickyNote, Phone, Mail, Lock, Smartphone, CreditCard } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, ServiceItem, SupplyType, type Quotation } from '../types';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
-import { getCustomers, getBusinessProfile, addInvoice, getInvoices, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, syncInvoiceLedgerEntries, saleEntryDescription, paymentEntryDescription, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getDeletedInvoices, getTotalInvoiceCount, updateQuotation, applyStockAdjustments } from '../lib/firestore';
+import { getCustomers, getBusinessProfile, addInvoice, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, syncInvoiceLedgerEntries, saleEntryDescription, paymentEntryDescription, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getAllInvoices, updateQuotation, applyStockAdjustments } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import { getSchemeOnDate, docScheme, COMPOSITION_DECLARATION } from '../lib/gstScheme';
+import { nextInvoiceNumber, findInvoiceNumberClash, describeInvoiceNumberClash, normalizeInvoiceNumber } from '../lib/invoiceNumbering';
 import { haptic } from '../lib/haptic';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
@@ -64,6 +65,9 @@ const formatDate = (d: string) => {
 };
 // INR formatter
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Invoice series prefix from the business profile, e.g. "INV/2026-27/".
+const invoicePrefixOf = (p?: BusinessProfile | null) => p?.theme?.invoicePrefix || 'INV/2026/';
 
 interface InvoiceGeneratorProps {
   userId: string;
@@ -152,6 +156,8 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
 
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
+  // Next free number offered after a save was refused for a duplicate
+  const [numberSuggestion, setNumberSuggestion] = useState<string | null>(null);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState<InvoiceItem[]>([
     { id: '1', description: '', hsnCode: '', quantity: 1, rate: 0, gstRate: 18 }
@@ -208,23 +214,31 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const loadData = async () => {
     try {
       setLoading(true);
-      const [profileData, customerData, invoiceData, deletedData, totalCount] = await Promise.all([
-        getBusinessProfile(userId), getCustomers(userId), getInvoices(userId),
-        getDeletedInvoices(userId), getTotalInvoiceCount(userId),
+      const [profileData, customerData, everyInvoice] = await Promise.all([
+        getBusinessProfile(userId), getCustomers(userId), getAllInvoices(userId),
       ]);
       if (profileData) setProfile(profileData);
       setCustomers(customerData);
-      setAllInvoices(invoiceData);
-      setDeletedInvoices(deletedData);
-      const prefix = profileData?.theme?.invoicePrefix || 'INV/2026/';
-      // Use total count (including deleted) so deleted invoice numbers are never reused
-      setInvoiceNumber(`${prefix}${String(totalCount + 1).padStart(3, '0')}`);
+      const byDateDesc = (a: Invoice, b: Invoice) => b.date.localeCompare(a.date);
+      setAllInvoices(everyInvoice.filter(inv => !inv.deleted).sort(byDateDesc));
+      setDeletedInvoices(everyInvoice.filter(inv => !!inv.deleted).sort(byDateDesc));
+      // Read fresh on every "Create Invoice": the number after the last one
+      // used in this series — deleted invoices included, so their numbers are
+      // never handed out again.
+      setInvoiceNumber(nextInvoiceNumber(invoicePrefixOf(profileData), everyInvoice));
     } catch (err) {
       setError('Failed to load data. Please refresh.');
     } finally { setLoading(false); }
   };
 
   const selectedCustomer = useMemo(() => customers.find(c => c.id === selectedCustomerId), [selectedCustomerId, customers]);
+
+  // Warn while typing when the number is already on another invoice, deleted
+  // ones included. The save re-checks against Firestore before writing.
+  const liveNumberClash = useMemo(
+    () => findInvoiceNumberClash(invoiceNumber, [...allInvoices, ...deletedInvoices], editingInvoice?.id),
+    [invoiceNumber, allInvoices, deletedInvoices, editingInvoice],
+  );
   const gstType = useMemo(() => {
     if (!selectedCustomer) return GSTType.CGST_SGST;
     return selectedCustomer.state === profile.state ? GSTType.CGST_SGST : GSTType.IGST;
@@ -531,8 +545,20 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
     if (!selectedCustomerId) { setError('Please select a customer'); return; }
     if (items.every(i => !i.description.trim())) { setError('Add at least one item with a description'); return; }
     if (subTotal === 0) { setError('Invoice total cannot be zero'); return; }
-    setSaving(true); setError(null);
+    const number = invoiceNumber.trim();
+    if (!number) { setError('Please enter an invoice number'); return; }
+    setSaving(true); setError(null); setNumberSuggestion(null);
     try {
+      // Check against Firestore, not the list loaded when the form opened —
+      // another device or tab may have used the number since.
+      const everyInvoice = await getAllInvoices(userId);
+      const clash = findInvoiceNumberClash(number, everyInvoice, editingInvoice?.id);
+      if (clash) {
+        const next = nextInvoiceNumber(invoicePrefixOf(profile), everyInvoice);
+        setError(`${number} is already used by invoice ${describeInvoiceNumberClash(clash)}. Each invoice needs its own number.`);
+        setNumberSuggestion(normalizeInvoiceNumber(next) === normalizeInvoiceNumber(number) ? null : next);
+        return;
+      }
       const cgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
       const sgst = !isComposition && gstType === GSTType.CGST_SGST ? r2(taxAmount / 2) : 0;
       const igst = !isComposition && gstType === GSTType.IGST ? taxAmount : 0;
@@ -542,7 +568,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       const savedItems = isComposition ? items.map(i => ({ ...i, gstRate: 0 })) : items;
       // Omit optional fields when empty — Firestore rejects undefined values
       const invoicePayload = {
-        invoiceNumber, date: invoiceDate, customerId: selectedCustomerId,
+        invoiceNumber: number, date: invoiceDate, customerId: selectedCustomerId,
         customerName: selectedCustomer?.name || '', items: savedItems, gstType,
         scheme: invoiceScheme.scheme,
         totalBeforeTax: subTotal, cgst, sgst, igst, totalAmount: roundedTotal,
@@ -588,7 +614,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         setEditingInvoice(newInvoice);
         await addLedgerEntry(userId, {
           date: invoiceDate, type: 'Debit', amount: roundedTotal,
-          description: saleEntryDescription(invoiceNumber), invoiceId, customerId: selectedCustomerId
+          description: saleEntryDescription(number), invoiceId, customerId: selectedCustomerId
         });
         if (selectedCustomer) {
           await updateCustomer(userId, selectedCustomerId, { balance: (selectedCustomer.balance || 0) + roundedTotal });
@@ -598,7 +624,7 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
           await updateQuotation(userId, sourceQuotationId, {
             status: 'Converted',
             convertedInvoiceId: invoiceId,
-            convertedInvoiceNumber: invoiceNumber,
+            convertedInvoiceNumber: number,
           });
           setSourceQuotationId(null);
         }
@@ -2231,6 +2257,14 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         </div>
         <div className="flex gap-2 sm:gap-4 items-center flex-wrap">
            {error && <span className="text-sm font-bold text-rose-500 font-poppins w-full sm:w-auto">{error}</span>}
+           {error && numberSuggestion && (
+             <button
+               onClick={() => { setInvoiceNumber(numberSuggestion); setNumberSuggestion(null); setError(null); }}
+               className="text-sm font-bold text-profee-blue hover:underline font-poppins"
+             >
+               Use {numberSuggestion}
+             </button>
+           )}
            <button onClick={() => { haptic('light'); setMode('preview'); }} className="flex-1 sm:flex-none bg-white border border-slate-200 text-slate-700 px-5 sm:px-10 py-3 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all font-poppins"><Eye size={18} /> Preview</button>
            <button onClick={() => { haptic('heavy'); handleFinalize(); }} disabled={saving} className="flex-1 sm:flex-none bg-profee-blue text-white px-6 sm:px-12 py-3 sm:py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-xl shadow-indigo-100 active:scale-95 transition-all font-poppins disabled:opacity-50">
              {saving ? <><Loader2 size={18} className="animate-spin" /> Saving...</> : editingInvoice ? <><Save size={18} /> Update</> : <><Save size={18} /> Finalize</>}
@@ -2305,7 +2339,12 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               </div>
               <div className="space-y-3">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Invoice Number</label>
-                 <input className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} />
+                 <input className={`w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ${liveNumberClash ? 'ring-2 ring-rose-200' : 'ring-indigo-50'}`} value={invoiceNumber} onChange={e => { setInvoiceNumber(e.target.value); setNumberSuggestion(null); }} />
+                 {liveNumberClash && (
+                   <p className="text-xs font-bold text-rose-500 ml-4">
+                     Already used by invoice {describeInvoiceNumberClash(liveNumberClash)}
+                   </p>
+                 )}
               </div>
               <div className="space-y-3">
                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Invoice Date</label>
