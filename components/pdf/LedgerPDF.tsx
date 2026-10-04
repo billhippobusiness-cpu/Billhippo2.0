@@ -17,6 +17,7 @@ import {
   Font,
 } from '@react-pdf/renderer';
 import { Customer, LedgerEntry } from '../../types';
+import { buildStatement, type StatementPeriod } from '../../lib/statement';
 
 // ─── Register Poppins from local TTF files ────────────────────────────────────
 Font.register({
@@ -181,16 +182,6 @@ const todayDMY = (): string => {
   return `${dd}-${mm}-${yy}`;
 };
 
-interface EntryWithBalance extends LedgerEntry { runningBalance: number; }
-
-function computeRunning(entries: LedgerEntry[]): EntryWithBalance[] {
-  let bal = 0;
-  return entries.map(e => {
-    bal += e.type === 'Debit' ? e.amount : -e.amount;
-    return { ...e, runningBalance: bal };
-  });
-}
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface LedgerPDFProps {
   customer:      Customer;
@@ -200,17 +191,21 @@ interface LedgerPDFProps {
   logoUrl?:      string;
   signatureUrl?: string;
   statementDate?: string;
+  /** Limit the statement to this period; omitted means the entire history. */
+  period?:       StatementPeriod;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const LedgerPDF: React.FC<LedgerPDFProps> = ({
-  customer, entries, businessName, businessInfo, logoUrl, signatureUrl, statementDate,
+  customer, entries, businessName, businessInfo, logoUrl, signatureUrl, statementDate, period,
 }) => {
   const today   = statementDate ?? todayDMY();
-  const running = computeRunning(entries);
-  const totalDr = entries.filter(e => e.type === 'Debit').reduce((s, e) => s + e.amount, 0);
-  const totalCr = entries.filter(e => e.type === 'Credit').reduce((s, e) => s + e.amount, 0);
-  const closing = totalDr - totalCr;
+  const { opening, rows: running, totalDebit: totalDr, totalCredit: totalCr, closing } =
+    buildStatement(entries, period);
+  const hasPeriod = !!(period?.from || period?.to);
+  const subtitle  = hasPeriod
+    ? `Period: ${period?.from ? fmtDate(period.from) : 'Beginning'} to ${period?.to ? fmtDate(period.to) : today}`
+    : `As of ${today}`;
 
   return (
     <Document title={`Statement – ${customer.name}`} author={businessName} creator="BillHippo">
@@ -244,7 +239,7 @@ const LedgerPDF: React.FC<LedgerPDFProps> = ({
           {/* Doc title + date */}
           <View style={S.titleStrip}>
             <Text style={S.docTitle}>ACCOUNT STATEMENT</Text>
-            <Text style={S.docSubtitle}>As of {today}</Text>
+            <Text style={S.docSubtitle}>{subtitle}</Text>
           </View>
         </View>
 
@@ -277,11 +272,26 @@ const LedgerPDF: React.FC<LedgerPDFProps> = ({
           <Text style={[S.tableHeaderText, S.cBalance]}>Balance</Text>
         </View>
 
+        {/* ── Opening balance brought forward (period statements) ── */}
+        {period?.from ? (
+          <View style={[S.tableRow, S.tableRowAlt]} wrap={false}>
+            <Text style={[S.tableCell, S.cDate]}>{fmtDate(period.from)}</Text>
+            <Text style={[S.tableCell, S.cType, { fontWeight: 600 }]}>—</Text>
+            <Text style={[S.tableCell, S.cDesc, { fontWeight: 600 }]}>Opening Balance</Text>
+            <Text style={[S.tableCell, S.cDebit]}> </Text>
+            <Text style={[S.tableCell, S.cCredit]}> </Text>
+            <View style={[S.cBalance, { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }]}>
+              <Text style={S.cellBalance}>{fmt(Math.abs(opening))}</Text>
+              <Text style={S.cellDrCr}>{opening >= 0 ? 'Dr' : 'Cr'}</Text>
+            </View>
+          </View>
+        ) : null}
+
         {/* ── Rows ── */}
         {running.length === 0 ? (
           <View style={[S.tableRow, { justifyContent: 'center', paddingVertical: 24 }]}>
             <Text style={[S.tableCell, { textAlign: 'center', flex: 1, color: LIGHT }]}>
-              No transactions found.
+              {hasPeriod ? 'No transactions in this period.' : 'No transactions found.'}
             </Text>
           </View>
         ) : (
