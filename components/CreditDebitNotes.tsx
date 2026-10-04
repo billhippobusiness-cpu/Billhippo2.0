@@ -28,11 +28,12 @@ import {
   getCustomers, getBusinessProfile,
   getCreditNotes, addCreditNote, updateCreditNote,
   getDebitNotes, addDebitNote, updateDebitNote,
-  addLedgerEntry, updateCustomer, getInventoryItems,
+  addLedgerEntry, updateCustomer, getInventoryItems, deleteNoteWithLedger,
 } from '../lib/firestore';
 import { getSchemeOnDate, docScheme } from '../lib/gstScheme';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const inr = (n: number) =>
@@ -45,6 +46,19 @@ const formatDate = (d: string) => {
 };
 
 const currentYear = new Date().getFullYear();
+
+// Next number in a note series. Never lower than the highest number this year's
+// series already uses, so deleting a note cannot hand out a number another
+// note still carries.
+const nextNoteNumber = (notes: { noteNumber: string }[], prefix: 'CN' | 'DN') => {
+  const series = `${prefix}/${currentYear}/`;
+  const highest = notes.reduce((max, n) => {
+    if (!n.noteNumber.startsWith(series)) return max;
+    const seq = parseInt(n.noteNumber.slice(series.length), 10);
+    return Number.isFinite(seq) ? Math.max(max, seq) : max;
+  }, 0);
+  return `${series}${String(Math.max(notes.length, highest) + 1).padStart(3, '0')}`;
+};
 
 const DEFAULT_PROFILE: BusinessProfile = {
   name: 'Your Business', gstin: '', address: '', city: '', state: 'Maharashtra', pincode: '',
@@ -121,6 +135,11 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     customer: Customer | null;
   } | null>(null);
 
+  // Note awaiting delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<{ note: CreditNote | DebitNote; noteType: NoteTab } | null>(null);
+  const [deletingNote, setDeletingNote] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   useEffect(() => { loadData(); }, [userId]);
 
   const loadData = async () => {
@@ -138,13 +157,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
       setDebitNotes(dnData);
 
       // Auto-number for new note
-      const cnCount = cnData.length + 1;
-      const dnCount = dnData.length + 1;
-      setNoteNumber(
-        activeTab === 'credit'
-          ? `CN/${currentYear}/${String(cnCount).padStart(3, '0')}`
-          : `DN/${currentYear}/${String(dnCount).padStart(3, '0')}`
-      );
+      setNoteNumber(activeTab === 'credit' ? nextNoteNumber(cnData, 'CN') : nextNoteNumber(dnData, 'DN'));
     } catch {
       setError('Failed to load data. Please refresh.');
     } finally {
@@ -155,11 +168,9 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
   // Recalculate auto-number when tab changes (for new notes)
   useEffect(() => {
     if (!editingNote) {
-      const count = activeTab === 'credit' ? creditNotes.length + 1 : debitNotes.length + 1;
-      const prefix = activeTab === 'credit' ? 'CN' : 'DN';
-      setNoteNumber(`${prefix}/${currentYear}/${String(count).padStart(3, '0')}`);
+      setNoteNumber(activeTab === 'credit' ? nextNoteNumber(creditNotes, 'CN') : nextNoteNumber(debitNotes, 'DN'));
     }
-  }, [activeTab, creditNotes.length, debitNotes.length, editingNote]);
+  }, [activeTab, creditNotes, debitNotes, editingNote]);
 
   const selectedCustomer = useMemo(
     () => customers.find(c => c.id === selectedCustomerId),
@@ -258,9 +269,7 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
     setActiveTab(t);
     setEditingNote(null);
     setSelectedCustomerId('');
-    const count = (t === 'credit' ? creditNotes.length : debitNotes.length) + 1;
-    const prefix = t === 'credit' ? 'CN' : 'DN';
-    setNoteNumber(`${prefix}/${currentYear}/${String(count).padStart(3, '0')}`);
+    setNoteNumber(t === 'credit' ? nextNoteNumber(creditNotes, 'CN') : nextNoteNumber(debitNotes, 'DN'));
     setNoteDate(new Date().toISOString().split('T')[0]);
     setOriginalInvoiceNumber('');
     setReason('');
@@ -341,6 +350,33 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
       setError('Failed to save. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── Delete note ──
+  // Removes the note and its ledger entry, so the customer's outstanding
+  // balance moves back by the note amount and the note drops out of GSTR-1.
+  const handleDeleteNoteConfirmed = async () => {
+    if (!deleteTarget) return;
+    const { note, noteType } = deleteTarget;
+    setDeletingNote(true);
+    setDeleteError(null);
+    try {
+      const balances = await deleteNoteWithLedger(userId, noteType, note);
+      if (noteType === 'credit') {
+        setCreditNotes(prev => prev.filter(n => n.id !== note.id));
+      } else {
+        setDebitNotes(prev => prev.filter(n => n.id !== note.id));
+      }
+      if (balances.size > 0) {
+        setCustomers(prev => prev.map(c => balances.has(c.id) ? { ...c, balance: balances.get(c.id)! } : c));
+      }
+      setDeleteTarget(null);
+    } catch {
+      setDeleteError(`Failed to delete ${note.noteNumber}. Please try again.`);
+      setDeleteTarget(null);
+    } finally {
+      setDeletingNote(false);
     }
   };
 
@@ -1119,6 +1155,9 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
         <div className="bg-white rounded-[2.5rem] premium-shadow border border-slate-50 overflow-hidden">
           {/* Search */}
           <div className="px-8 pt-8 pb-5 border-b border-slate-50">
+            {deleteError && (
+              <p className="mb-4 text-sm font-bold text-rose-500 font-poppins">{deleteError}</p>
+            )}
             <div className="relative max-w-md">
               <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
               <input
@@ -1213,6 +1252,14 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
                             >
                               <Download size={15} />
                             </button>
+                            {/* Delete */}
+                            <button
+                              onClick={() => setDeleteTarget({ note, noteType: activeTab })}
+                              title={`Delete ${activeTab === 'credit' ? 'Credit' : 'Debit'} Note`}
+                              className="p-2 rounded-xl bg-rose-50 text-rose-400 hover:bg-rose-500 hover:text-white transition-all"
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1264,6 +1311,16 @@ const CreditDebitNotes: React.FC<CreditDebitNotesProps> = ({ userId }) => {
           whatsappMessage={`Dear ${pdfModal.note.customerName},\n\nPlease find your ${pdfModal.noteType === 'credit' ? 'Credit' : 'Debit'} Note *${pdfModal.note.noteNumber}* for ₹${pdfModal.note.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.\n\nRegards,\n${profile.name}`}
         />
       )}
+
+      {/* Delete confirmation */}
+      <DeleteConfirmationModal
+        isOpen={deleteTarget !== null}
+        title={`Delete ${deleteTarget?.noteType === 'debit' ? 'Debit' : 'Credit'} Note ${deleteTarget?.note.noteNumber ?? ''}?`}
+        message={`This permanently deletes the note and its entry in ${deleteTarget?.note.customerName || 'the customer'}'s ledger, so their outstanding balance moves back by ${deleteTarget ? inr(deleteTarget.note.totalAmount) : ''}. This cannot be undone.`}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteNoteConfirmed}
+        isDeleting={deletingNote}
+      />
 
       {/* Direct-download (headless) */}
       {downloadTarget && (

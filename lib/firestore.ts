@@ -21,6 +21,7 @@ import {
   updateDoc,
   deleteDoc,
   runTransaction,
+  writeBatch,
   query,
   where,
   orderBy,
@@ -537,6 +538,39 @@ export async function updateDebitNote(userId: string, noteId: string, data: Part
 
 export async function deleteDebitNote(userId: string, noteId: string) {
   await deleteDoc(userDoc(userId, 'debitNotes', noteId));
+}
+
+/**
+ * Delete a credit or debit note together with the ledger entry it raised, then
+ * rewrite the customer's balance from what is left in the ledger.
+ *
+ * The note and its entries go in one batch so a failure can never leave a
+ * statement crediting (or debiting) a note that no longer exists. The balance
+ * is recomputed rather than adjusted by the note total because a note edited
+ * after it was saved may have left its entry at a different amount.
+ *
+ * Returns the fresh balances, keyed by customer id.
+ */
+export async function deleteNoteWithLedger(
+  userId: string,
+  kind: 'credit' | 'debit',
+  note: CreditNote | DebitNote,
+): Promise<Map<string, number>> {
+  const all = await getLedgerEntries(userId);
+  const linked = all.filter(e =>
+    kind === 'credit' ? e.creditNoteId === note.id : e.debitNoteId === note.id,
+  );
+
+  const batch = writeBatch(db);
+  batch.delete(userDoc(userId, kind === 'credit' ? 'creditNotes' : 'debitNotes', note.id));
+  linked.forEach(e => batch.delete(userDoc(userId, 'ledger', e.id)));
+  await batch.commit();
+
+  const removed = new Set(linked.map(e => e.id));
+  const affected = new Set(
+    [note.customerId, ...linked.map(e => e.customerId)].filter(Boolean) as string[],
+  );
+  return repairCustomerBalances(userId, [...affected], all.filter(e => !removed.has(e.id)));
 }
 
 // ═══════════════════════════════════════════
