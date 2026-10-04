@@ -22,6 +22,24 @@ import CreditDebitNotePDF from './pdf/CreditDebitNotePDF';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import { lookupGSTIN, GSTINDetails } from '../lib/whitebooksApi';
 import { haptic } from '../lib/haptic';
+import { getFYLabel, getFYDateRange } from '../lib/financialYear';
+import { buildStatement, type StatementPeriod } from '../lib/statement';
+
+type StatementPreset = 'all' | 'thisFY' | 'lastFY' | 'custom';
+
+/** FY label before the current one, e.g. "2025-26" during FY 2026-27. */
+const previousFYLabel = () => {
+  const start = parseInt(getFYLabel().split('-')[0], 10) - 1;
+  return `${start}-${String(start + 1).slice(-2)}`;
+};
+
+/** Inclusive date bounds for a statement preset; custom uses the typed dates. */
+function statementPeriodFor(preset: StatementPreset, from: string, to: string): StatementPeriod {
+  if (preset === 'all') return {};
+  if (preset === 'custom') return { from: from || undefined, to: to || undefined };
+  const { start, end } = getFYDateRange(preset === 'thisFY' ? getFYLabel() : previousFYLabel());
+  return { from: start, to: end };
+}
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -92,6 +110,11 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
 
   // ── Record-payment form ──
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+  // Download Statement — period picker
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [statementPreset, setStatementPreset] = useState<StatementPreset>('all');
+  const [statementFrom, setStatementFrom] = useState('');
+  const [statementTo, setStatementTo] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDesc, setPaymentDesc] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
@@ -441,6 +464,40 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     finally { setDeletingPayment(false); }
   };
 
+  // ── Download Statement ──
+  const statementPeriod = statementPeriodFor(statementPreset, statementFrom, statementTo);
+  const statementRangeInvalid = !!(statementPeriod.from && statementPeriod.to && statementPeriod.from > statementPeriod.to);
+  const statementPreview = useMemo(
+    () => buildStatement(ledgerEntries, statementPeriod),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ledgerEntries, statementPeriod.from, statementPeriod.to],
+  );
+
+  const handleDownloadStatement = () => {
+    if (!selectedCustomer || !businessProfile || statementRangeInvalid) return;
+    const n = new Date();
+    const dateStr = `${String(n.getDate()).padStart(2,'0')}-${String(n.getMonth()+1).padStart(2,'0')}-${n.getFullYear()}`;
+    const span = statementPeriod.from || statementPeriod.to
+      ? `${statementPeriod.from || 'start'}_to_${statementPeriod.to || n.toISOString().slice(0, 10)}`
+      : n.toISOString().slice(0, 10);
+    setDownloadTarget({
+      document: (
+        <LedgerPDF
+          customer={selectedCustomer}
+          entries={ledgerEntries}
+          period={statementPeriod}
+          businessName={businessProfile.name}
+          businessInfo={{ gstin: businessProfile.gstin || '', address: [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode].filter(Boolean).join(', '), phone: businessProfile.phone || '', email: businessProfile.email || '' }}
+          logoUrl={businessProfile.theme?.logoUrl}
+          signatureUrl={businessProfile.signatureUrl}
+          statementDate={dateStr}
+        />
+      ),
+      fileName: `Statement-${selectedCustomer.name.replace(/\s+/g, '-')}-${span}.pdf`,
+    });
+    setShowStatementModal(false);
+  };
+
   // ── Running balance + sort ──
   const runningEntries = useMemo(() => {
     // Compute running balance chronologically (entries from Firestore are already date-ASC)
@@ -507,7 +564,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
             </button>
             {ledgerEntries.length > 0 && businessProfile && (
               <button
-                onClick={() => { haptic('light'); const n = new Date(); const dateStr = `${String(n.getDate()).padStart(2,'0')}-${String(n.getMonth()+1).padStart(2,'0')}-${n.getFullYear()}`; setDownloadTarget({ document: <LedgerPDF customer={selectedCustomer} entries={ledgerEntries} businessName={businessProfile.name} businessInfo={{ gstin: businessProfile.gstin || '', address: [businessProfile.address, businessProfile.city, businessProfile.state, businessProfile.pincode].filter(Boolean).join(', '), phone: businessProfile.phone || '', email: businessProfile.email || '' }} logoUrl={businessProfile.theme?.logoUrl} signatureUrl={businessProfile.signatureUrl} statementDate={dateStr} />, fileName: `Statement-${selectedCustomer.name.replace(/\s+/g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf` }); }}
+                onClick={() => { haptic('light'); setShowStatementModal(true); }}
                 className="flex items-center gap-1.5 bg-profee-blue text-white px-4 py-2.5 rounded-2xl text-sm font-bold active:scale-95 transition-all shadow-xl shadow-indigo-100 font-poppins"
               >
                 <Download size={15} /> <span className="hidden sm:inline">Download </span>Statement
@@ -1092,6 +1149,97 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                   className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100 disabled:opacity-50">
                   {editSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                   {editSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Download Statement — choose period */}
+        {showStatementModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="bg-white rounded-[2.5rem] p-6 sm:p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                    <Download size={18} className="text-profee-blue" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-900">Download Statement</h3>
+                </div>
+                <button onClick={() => setShowStatementModal(false)} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                  <X size={20} className="text-slate-400" />
+                </button>
+              </div>
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Period</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      ['all', 'Entire period'],
+                      ['thisFY', `This FY (${getFYLabel()})`],
+                      ['lastFY', `Last FY (${previousFYLabel()})`],
+                      ['custom', 'Custom dates'],
+                    ] as [StatementPreset, string][]).map(([key, label]) => (
+                      <button
+                        key={key}
+                        onClick={() => setStatementPreset(key)}
+                        className={`px-3 py-3 rounded-2xl text-xs font-bold transition-all border ${
+                          statementPreset === key
+                            ? 'bg-profee-blue text-white border-profee-blue shadow-lg shadow-indigo-100'
+                            : 'bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {statementPreset === 'custom' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">From</label>
+                      <input type="date"
+                        className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 font-bold text-slate-700 text-sm focus:ring-2 ring-indigo-50"
+                        value={statementFrom} max={statementTo || undefined} onChange={e => setStatementFrom(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">To</label>
+                      <input type="date"
+                        className="w-full bg-slate-50 border-none rounded-2xl px-4 py-3 font-bold text-slate-700 text-sm focus:ring-2 ring-indigo-50"
+                        value={statementTo} min={statementFrom || undefined} onChange={e => setStatementTo(e.target.value)} />
+                    </div>
+                    <p className="col-span-2 text-[11px] text-slate-400 ml-1">Leave a date empty to keep that end open.</p>
+                  </div>
+                )}
+                {statementRangeInvalid ? (
+                  <p className="text-sm font-bold text-rose-500">The From date must be on or before the To date.</p>
+                ) : (
+                  <div className="bg-slate-50 rounded-2xl p-4 space-y-1.5 text-sm">
+                    {statementPeriod.from && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-medium">Opening balance</span>
+                        <span className="font-bold text-slate-700">₹{Math.abs(statementPreview.opening).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementPreview.opening >= 0 ? 'Dr' : 'Cr'}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 font-medium">Transactions</span>
+                      <span className="font-bold text-slate-700">{statementPreview.rows.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400 font-medium">Closing balance</span>
+                      <span className="font-bold text-slate-900">₹{Math.abs(statementPreview.closing).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {statementPreview.closing >= 0 ? 'Dr' : 'Cr'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button onClick={() => setShowStatementModal(false)}
+                  className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100">
+                  Cancel
+                </button>
+                <button onClick={handleDownloadStatement} disabled={statementRangeInvalid}
+                  className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100 disabled:opacity-50">
+                  <Download size={16} /> Download PDF
                 </button>
               </div>
             </div>
