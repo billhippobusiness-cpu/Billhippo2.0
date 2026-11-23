@@ -153,6 +153,9 @@ export interface BusinessProfile {
   selectedBankId?: string;
   defaultNotes?: string;
   termsAndConditions?: string;
+  // Print a "Total Quantity" row under the items table on invoice PDFs.
+  // Off unless the user turns it on in Settings.
+  showQuantityTotal?: boolean;
   gstEnabled: boolean;
   businessType?: 'service' | 'trading';
   theme: BusinessTheme;
@@ -261,6 +264,12 @@ export interface Invoice {
   exportCountry?: string;
 }
 
+/** Part of a receipt the user set off against one specific invoice. */
+export interface ReceiptAllocation {
+  invoiceId: string;
+  amount: number;
+}
+
 export interface LedgerEntry {
   id: string;
   date: string;
@@ -271,6 +280,12 @@ export interface LedgerEntry {
   creditNoteId?: string;
   debitNoteId?: string;
   customerId: string;
+  // Receipts only. Present → the user chose which invoice(s) this receipt
+  // settles; an empty array means "lump sum". Any amount not allocated here is
+  // set off against the oldest open invoices first (FIFO) — see
+  // lib/receivables.ts. Absent on older receipts, which fall back to
+  // `invoiceId` or FIFO.
+  allocations?: ReceiptAllocation[];
 }
 
 export interface CreditDebitNoteItem {

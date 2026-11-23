@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Edit3, Trash2, X, Save, UserCircle, Phone, Mail,
   MapPin, Loader2, Users, ChevronLeft, FileText, IndianRupee, Receipt, Download,
-  TrendingDown, TrendingUp, Eye, ChevronUp, ChevronDown,
+  TrendingDown, TrendingUp, Eye, ChevronUp, ChevronDown, AlertTriangle,
 } from 'lucide-react';
 import { Customer, LedgerEntry, Invoice, BusinessProfile, CreditNote, DebitNote } from '../types';
 import {
@@ -12,8 +12,14 @@ import {
   getLedgerEntries, getInvoices, getDeletedInvoices, getBusinessProfile,
   reconcileLedgerWithInvoices, reconcileLedgerWithNotes, repairCustomerBalances,
   getCreditNotes, getDebitNotes, addLedgerEntry,
-  deleteLedgerEntry, updateLedgerEntry,
+  deleteLedgerEntry, updateReceiptEntry, cleanAllocations,
+  syncInvoiceStatuses, creditNoteInvoiceMap,
 } from '../lib/firestore';
+import { settleLedger, isLongOverdue, OVERDUE_ALERT_DAYS, type ReceivableStatus } from '../lib/receivables';
+import ReceiptSettlementPicker, {
+  EMPTY_CHOICE, choiceFromEntry, choiceToAllocations, openInvoicesFor, pickedTotal,
+  settlementChoiceError, type SettlementChoice,
+} from './ReceiptSettlementPicker';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import LedgerPDF from './pdf/LedgerPDF';
@@ -55,7 +61,7 @@ interface CustomerManagerProps {
   onNavigateToInvoice?: (invoiceId: string) => void;
 }
 
-type SortField = 'date' | 'type' | 'description' | 'debit' | 'credit' | 'balance';
+type SortField = 'date' | 'type' | 'description' | 'debit' | 'credit' | 'balance' | 'days';
 
 const EMPTY_FORM = {
   name: '', gstin: '', phone: '', email: '',
@@ -119,12 +125,17 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
   const [paymentDesc, setPaymentDesc] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
+  // How the receipt is settled: against picked invoice(s) or a lump sum (FIFO)
+  const [paymentChoice, setPaymentChoice] = useState<SettlementChoice>(EMPTY_CHOICE);
+  // Until the user types an amount, it follows the total of the picked invoices
+  const [paymentAmountTouched, setPaymentAmountTouched] = useState(false);
 
   // ── Edit/Delete payment entry ──
   const [editPaymentModal, setEditPaymentModal] = useState<{ open: boolean; entry: ReceiptEntry | null }>({ open: false, entry: null });
   const [editAmount, setEditAmount] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editDate, setEditDate] = useState('');
+  const [editChoice, setEditChoice] = useState<SettlementChoice>(EMPTY_CHOICE);
   const [editSaving, setEditSaving] = useState(false);
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
   const [deletingPayment, setDeletingPayment] = useState(false);
@@ -303,6 +314,16 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
       }
       const map: Record<string, Invoice> = {};
       allInvoices.forEach(inv => { map[inv.id] = inv; });
+      // Bring each invoice's Paid / Partial / Unpaid in line with what the
+      // ledger says is still open on it — lump-sum receipts settle invoices
+      // FIFO, which older versions never reflected on the invoice itself.
+      try {
+        const settled = settleLedger(customerEntries, { creditNoteInvoice: creditNoteInvoiceMap(allCreditNotes) });
+        const changed = await syncInvoiceStatuses(
+          userId, allInvoices.filter(inv => inv.customerId === customer.id), settled,
+        );
+        changed.forEach((status, id) => { if (map[id]) map[id] = { ...map[id], status }; });
+      } catch (err) { console.error('Invoice status sync failed', err); }
       setInvoicesMap(map);
       const cnMap: Record<string, CreditNote> = {};
       allCreditNotes.forEach(cn => { cnMap[cn.id] = cn; });
@@ -331,6 +352,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     setPaymentAmount('');
     setPaymentDesc('');
     setPaymentDate('');
+    setPaymentChoice(EMPTY_CHOICE);
+    setPaymentAmountTouched(false);
     setEditPaymentModal({ open: false, entry: null });
     setDeletePaymentId(null);
     setSortField('date');
@@ -383,41 +406,99 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     }
   };
 
+  // ── Show a fresh ledger and carry the new settlement onto invoice statuses ──
+  const applyLedgerChange = async (entries: LedgerEntry[]) => {
+    setLedgerEntries(entries);
+    if (!selectedCustomer) return;
+    try {
+      const settled = settleLedger(entries, { creditNoteInvoice });
+      const changed = await syncInvoiceStatuses(
+        userId,
+        (Object.values(invoicesMap) as Invoice[]).filter(inv => inv.customerId === selectedCustomer.id),
+        settled,
+      );
+      if (changed.size > 0) {
+        setInvoicesMap(prev => {
+          const next = { ...prev };
+          changed.forEach((status, id) => { if (next[id]) next[id] = { ...next[id], status }; });
+          return next;
+        });
+      }
+    } catch (err) { console.error('Invoice status sync failed', err); }
+  };
+
+  const resetPaymentForm = () => {
+    setShowPaymentForm(false);
+    setPaymentAmount('');
+    setPaymentDesc('');
+    setPaymentDate('');
+    setPaymentChoice(EMPTY_CHOICE);
+    setPaymentAmountTouched(false);
+  };
+
+  // Picking invoices fills the amount until the user types one themselves.
+  const handlePaymentChoice = (choice: SettlementChoice) => {
+    setPaymentChoice(choice);
+    if (!paymentAmountTouched && choice.mode === 'invoice') {
+      const total = pickedTotal(choice);
+      setPaymentAmount(total > 0 ? String(total) : '');
+    }
+  };
+
   // ── Record payment: Credit ledger entry + receipt auto-open ──
   const handleAddPayment = async () => {
-    if (!paymentAmount || !selectedCustomer) return;
+    if (!paymentAmount || !selectedCustomer || paymentChoiceError) return;
     setPaymentSaving(true);
     try {
       const amount      = parseFloat(paymentAmount);
       const date        = paymentDate || new Date().toISOString().split('T')[0];
       const description = paymentDesc || 'Payment received';
       const newRunningBalance = closingBalance - amount;
+      // Empty list = lump sum; the settlement sets it off FIFO.
+      const allocations = cleanAllocations(choiceToAllocations(paymentChoice));
 
       const entryId = await addLedgerEntry(userId, {
-        date, type: 'Credit', amount, description, customerId: selectedCustomer.id,
+        date, type: 'Credit', amount, description, customerId: selectedCustomer.id, allocations,
       });
       await updateCustomer(userId, selectedCustomer.id, { balance: (selectedCustomer.balance || 0) - amount });
 
       const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
-      setLedgerEntries(updatedEntries);
+      await applyLedgerChange(updatedEntries);
       refreshBalanceMap();
 
       const receiptEntry: ReceiptEntry = {
         id: entryId, date, type: 'Credit', amount, description,
-        customerId: selectedCustomer.id, runningBalance: newRunningBalance,
+        customerId: selectedCustomer.id, allocations, runningBalance: newRunningBalance,
       };
-      setShowPaymentForm(false);
-      setPaymentAmount('');
-      setPaymentDesc('');
-      setPaymentDate('');
+      resetPaymentForm();
       setReceiptModal({ open: true, entry: receiptEntry });
     } catch (err) { console.error(err); }
     finally { setPaymentSaving(false); }
   };
 
+  // ── Open the edit form for a receipt, with the settlement it was saved with ──
+  const openEditPayment = (entry: ReceiptEntry) => {
+    const stored = ledgerEntries.find(e => e.id === entry.id) ?? entry;
+    const choice = choiceFromEntry(stored);
+    // Drop picks for invoices that are no longer open (deleted, or settled by
+    // a credit note since) — they could not be shown or changed in the form.
+    const open = new Set(
+      openInvoicesFor(ledgerEntries.filter(e => e.id !== entry.id), invoicesMap, creditNoteInvoice)
+        .map(o => o.invoiceId),
+    );
+    const picks = Object.fromEntries(Object.entries(choice.picks).filter(([id]) => open.has(id)));
+    setEditChoice(choice.mode === 'invoice' && Object.keys(picks).length === 0
+      ? { mode: 'lumpsum', picks: {} }
+      : { ...choice, picks });
+    setEditPaymentModal({ open: true, entry: { ...entry, ...stored, runningBalance: entry.runningBalance } });
+    setEditAmount(String(entry.amount));
+    setEditDesc(entry.description);
+    setEditDate(entry.date);
+  };
+
   // ── Edit existing payment entry ──
   const handleEditPayment = async () => {
-    if (!editPaymentModal.entry || !editAmount || !selectedCustomer) return;
+    if (!editPaymentModal.entry || !editAmount || !selectedCustomer || editChoiceError) return;
     setEditSaving(true);
     try {
       const oldAmount = editPaymentModal.entry.amount;
@@ -425,8 +506,8 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
       const date      = editDate || editPaymentModal.entry.date;
       const description = editDesc.trim() || 'Payment received';
 
-      await updateLedgerEntry(userId, editPaymentModal.entry.id!, {
-        amount: newAmount, description, date,
+      await updateReceiptEntry(userId, editPaymentModal.entry, {
+        amount: newAmount, description, date, allocations: choiceToAllocations(editChoice),
       });
       // Adjust customer balance: reverse old credit, apply new credit
       const balanceDelta = oldAmount - newAmount;
@@ -435,7 +516,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
       });
 
       const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
-      setLedgerEntries(updatedEntries);
+      await applyLedgerChange(updatedEntries);
       refreshBalanceMap();
       setEditPaymentModal({ open: false, entry: null });
       setEditAmount(''); setEditDesc(''); setEditDate('');
@@ -456,7 +537,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
         balance: (selectedCustomer.balance || 0) + entry.amount,
       });
       const updatedEntries = await getLedgerEntries(userId, selectedCustomer.id);
-      setLedgerEntries(updatedEntries);
+      await applyLedgerChange(updatedEntries);
       refreshBalanceMap();
       setDeletePaymentId(null);
       setReceiptModal({ open: false, entry: null });
@@ -498,6 +579,48 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
     setShowStatementModal(false);
   };
 
+  // ── Bill-by-bill settlement: what is still open on each invoice, and for how long ──
+  const creditNoteInvoice = useMemo(
+    () => creditNoteInvoiceMap(Object.values(creditNotesMap) as CreditNote[]),
+    [creditNotesMap],
+  );
+  const settlement = useMemo(
+    () => settleLedger(ledgerEntries, { creditNoteInvoice }),
+    [ledgerEntries, creditNoteInvoice],
+  );
+  const longOverdue = useMemo(
+    () => [...settlement.receivables.values()].filter(isLongOverdue),
+    [settlement],
+  );
+  const longOverdueAmount = longOverdue.reduce((s, r) => s + r.outstanding, 0);
+  /** Days pending for sorting; settled and non-debit rows sort below every open one. */
+  const pendingDays = (entryId: string) => {
+    const r = settlement.receivables.get(entryId);
+    return r && r.outstanding > 0 ? r.days : -1;
+  };
+
+  // Open invoices offered when recording / editing a receipt
+  const openInvoices = useMemo(
+    () => openInvoicesFor(ledgerEntries, invoicesMap, creditNoteInvoice),
+    [ledgerEntries, invoicesMap, creditNoteInvoice],
+  );
+  const paymentChoiceError = settlementChoiceError(paymentChoice, parseFloat(paymentAmount) || 0, openInvoices);
+  const editingReceiptId = editPaymentModal.open ? editPaymentModal.entry?.id : undefined;
+  const editEntries = useMemo(
+    () => ledgerEntries.filter(e => e.id !== editingReceiptId),
+    [ledgerEntries, editingReceiptId],
+  );
+  const editOpenInvoices = useMemo(
+    () => openInvoicesFor(editEntries, invoicesMap, creditNoteInvoice),
+    [editEntries, invoicesMap, creditNoteInvoice],
+  );
+  const editChoiceError = settlementChoiceError(editChoice, parseFloat(editAmount) || 0, editOpenInvoices);
+
+  /** Invoice number (or entry description) for a receivable, for set-off lists. */
+  const receivableLabel = (entryId: string, invoiceId?: string) =>
+    (invoiceId && invoicesMap[invoiceId]?.invoiceNumber)
+    || (ledgerEntries.find(e => e.id === entryId)?.description || '').replace(/^Sale - /, '');
+
   // ── Running balance + sort ──
   const runningEntries = useMemo(() => {
     // Compute running balance chronologically (entries from Firestore are already date-ASC)
@@ -515,9 +638,11 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
       else if (sortField === 'debit')  cmp = (a.type === 'Debit' ? a.amount : 0) - (b.type === 'Debit' ? b.amount : 0);
       else if (sortField === 'credit') cmp = (a.type === 'Credit' ? a.amount : 0) - (b.type === 'Credit' ? b.amount : 0);
       else if (sortField === 'balance') cmp = a.runningBalance - b.runningBalance;
+      else if (sortField === 'days')    cmp = pendingDays(a.id) - pendingDays(b.id);
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [ledgerEntries, sortField, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledgerEntries, sortField, sortDir, settlement]);
 
   const totalDebit = ledgerEntries.filter(e => e.type === 'Debit').reduce((s, e) => s + e.amount, 0);
   const totalCredit = ledgerEntries.filter(e => e.type === 'Credit').reduce((s, e) => s + e.amount, 0);
@@ -557,7 +682,12 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
           </button>
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => { haptic('medium'); setShowPaymentForm(prev => !prev); setPaymentAmount(''); setPaymentDesc(''); }}
+              onClick={() => {
+                haptic('medium');
+                if (showPaymentForm) { resetPaymentForm(); return; }
+                resetPaymentForm();
+                setShowPaymentForm(true);
+              }}
               className="flex items-center gap-1.5 bg-emerald-500 text-white px-4 py-2.5 rounded-2xl text-sm font-bold active:scale-95 transition-all shadow-xl shadow-emerald-100 font-poppins"
             >
               <Plus size={15} /> <span className="hidden sm:inline">Record </span>Payment
@@ -719,7 +849,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
               <h3 className="text-lg font-bold font-poppins text-emerald-600 flex items-center gap-2">
                 <IndianRupee size={18} /> Record Payment
               </h3>
-              <button onClick={() => { setShowPaymentForm(false); setPaymentAmount(''); setPaymentDesc(''); setPaymentDate(''); }} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+              <button onClick={resetPaymentForm} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
                 <X size={20} className="text-slate-400" />
               </button>
             </div>
@@ -727,7 +857,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Amount (₹) *</label>
                 <input type="number" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
-                  value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="0" autoFocus />
+                  value={paymentAmount} onChange={e => { setPaymentAmount(e.target.value); setPaymentAmountTouched(true); }} placeholder="0" autoFocus />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Date</label>
@@ -741,8 +871,19 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                   value={paymentDesc} onChange={e => setPaymentDesc(e.target.value)} placeholder="e.g. NEFT, UPI, Cash..." />
               </div>
             </div>
+            <ReceiptSettlementPicker
+              entries={ledgerEntries}
+              invoicesMap={invoicesMap}
+              creditNoteInvoice={creditNoteInvoice}
+              amount={parseFloat(paymentAmount) || 0}
+              date={paymentDate || new Date().toISOString().split('T')[0]}
+              choice={paymentChoice}
+              onChange={handlePaymentChoice}
+              open={openInvoices}
+              error={paymentChoiceError}
+            />
             <div className="flex justify-end">
-              <button onClick={handleAddPayment} disabled={paymentSaving || !paymentAmount}
+              <button onClick={handleAddPayment} disabled={paymentSaving || !(parseFloat(paymentAmount) > 0) || !!paymentChoiceError}
                 className="bg-emerald-500 text-white px-10 py-4 rounded-2xl font-bold flex items-center gap-3 hover:scale-105 transition-all font-poppins disabled:opacity-50 shadow-xl shadow-emerald-100">
                 {paymentSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 {paymentSaving ? 'Saving...' : 'Save Payment & Get Receipt'}
@@ -776,6 +917,29 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
         <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-10 premium-shadow border border-slate-50 min-h-[400px]">
           <h3 className="text-xl font-bold font-poppins text-slate-900 mb-6 sm:mb-8">Account Ledger</h3>
 
+          {!loadingLedger && (longOverdue.length > 0 || settlement.unappliedCredit > 0) && (
+            <div className="mb-6 space-y-2 font-poppins">
+              {longOverdue.length > 0 && (
+                <div className="flex items-start gap-3 p-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600">
+                  <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+                  <p className="text-sm font-bold">
+                    ₹{longOverdueAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending for more than {OVERDUE_ALERT_DAYS} days
+                    <span className="font-medium"> · {longOverdue.length} {longOverdue.length === 1 ? 'bill' : 'bills'}, oldest {Math.max(...longOverdue.map(r => r.days))} days</span>
+                  </p>
+                </div>
+              )}
+              {settlement.unappliedCredit > 0 && (
+                <div className="flex items-start gap-3 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-profee-blue">
+                  <IndianRupee size={18} className="shrink-0 mt-0.5" />
+                  <p className="text-sm font-bold">
+                    ₹{settlement.unappliedCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })} received in advance
+                    <span className="font-medium"> · will be set off against the next invoice</span>
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {loadingLedger ? (
             <div className="flex items-center justify-center h-40">
               <Loader2 className="w-7 h-7 animate-spin text-profee-blue" />
@@ -787,7 +951,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
             </div>
           ) : (
             <div className="overflow-x-auto -mx-5 px-5 sm:mx-0 sm:px-0">
-              <table className="w-full min-w-[640px] text-left font-poppins">
+              <table className="w-full min-w-[760px] text-left font-poppins">
                 <thead>
                   <tr className="bg-slate-50 text-slate-400 text-xs font-bold uppercase tracking-widest">
                     {(
@@ -797,15 +961,16 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                         { field: 'description', label: 'Description', cls: '',               align: 'left'  },
                         { field: 'debit',       label: 'Debit (₹)',   cls: '',               align: 'right' },
                         { field: 'credit',      label: 'Credit (₹)',  cls: '',               align: 'right' },
-                        { field: 'balance',     label: 'Balance (₹)', cls: 'rounded-tr-2xl', align: 'right' },
+                        { field: 'balance',     label: 'Balance (₹)', cls: '',               align: 'right' },
+                        { field: 'days',        label: 'Days Pending', cls: 'rounded-tr-2xl', align: 'right' },
                       ] as { field: SortField; label: string; cls: string; align: 'left' | 'right' }[]
                     ).map(col => (
                       <th
                         key={col.field}
-                        className={`px-6 py-4 cursor-pointer select-none hover:text-slate-600 transition-colors ${col.cls} ${col.align === 'right' ? 'text-right' : ''}`}
+                        className={`px-6 py-4 whitespace-nowrap cursor-pointer select-none hover:text-slate-600 transition-colors ${col.cls} ${col.align === 'right' ? 'text-right' : ''}`}
                         onClick={() => {
                           if (sortField === col.field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-                          else { setSortField(col.field); setSortDir(col.field === 'date' ? 'desc' : 'asc'); }
+                          else { setSortField(col.field); setSortDir(col.field === 'date' || col.field === 'days' ? 'desc' : 'asc'); }
                         }}
                       >
                         <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'justify-end w-full' : ''}`}>
@@ -826,6 +991,11 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                     const isDebitNote = !!entry.debitNoteId;
                     const isPayment = entry.type === 'Credit' && !entry.creditNoteId;
                     const isClickable = isInvoice || isCreditNote || isDebitNote || isPayment;
+                    // Debits are what the customer owes; credits are what settled them.
+                    const receivable: ReceivableStatus | undefined = settlement.receivables.get(entry.id);
+                    const overdue = !!receivable && isLongOverdue(receivable);
+                    const credit = entry.type === 'Credit' ? settlement.credits.get(entry.id) : undefined;
+                    const setOff = credit?.applied.map(a => receivableLabel(a.receivableEntryId, a.invoiceId)).join(', ');
 
                     return (
                       <tr
@@ -870,7 +1040,15 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-5 text-slate-600 max-w-[220px] truncate">{entry.description}</td>
+                        <td className={`px-6 py-5 max-w-[240px] ${overdue ? 'text-rose-600 font-bold' : 'text-slate-600'}`}>
+                          <p className="truncate">{entry.description}</p>
+                          {credit && (setOff || credit.unapplied > 0) && (
+                            <p className="truncate text-[11px] font-medium text-slate-400 mt-0.5" title={setOff}>
+                              {setOff ? `Set off: ${setOff}` : ''}
+                              {credit.unapplied > 0 && `${setOff ? ' · ' : ''}Advance ₹${credit.unapplied.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
+                            </p>
+                          )}
+                        </td>
                         <td className="px-6 py-5 text-right font-bold text-rose-500">
                           {entry.type === 'Debit' ? `₹${entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                         </td>
@@ -880,6 +1058,28 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                         <td className="px-6 py-5 text-right font-bold text-slate-900">
                           ₹{Math.abs(entry.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           <span className="text-[10px] text-slate-400 ml-1">{entry.runningBalance >= 0 ? 'Dr' : 'Cr'}</span>
+                        </td>
+                        <td className="px-6 py-5 text-right whitespace-nowrap">
+                          {!receivable ? (
+                            <span className="text-slate-300">—</span>
+                          ) : receivable.outstanding > 0 ? (
+                            <div className={overdue ? 'text-rose-600' : 'text-slate-700'}>
+                              <p className="font-bold">
+                                {overdue && <AlertTriangle size={12} className="inline mr-1 -mt-0.5" />}
+                                {receivable.days} {receivable.days === 1 ? 'day' : 'days'}
+                              </p>
+                              <p className={`text-[10px] font-semibold ${overdue ? '' : 'text-slate-400'}`}>
+                                ₹{receivable.outstanding.toLocaleString('en-IN', { minimumFractionDigits: 2 })} due
+                              </p>
+                            </div>
+                          ) : (
+                            <span
+                              className="inline-flex px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[11px] font-bold rounded-full"
+                              title={receivable.settledOn ? `Settled on ${receivable.settledOn} (${receivable.days} ${receivable.days === 1 ? 'day' : 'days'})` : undefined}
+                            >
+                              Settled
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1001,11 +1201,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                   <button
                     title="Edit"
                     onClick={() => {
-                      const e = receiptModal.entry!;
-                      setEditPaymentModal({ open: true, entry: e });
-                      setEditAmount(String(e.amount));
-                      setEditDesc(e.description);
-                      setEditDate(e.date);
+                      openEditPayment(receiptModal.entry!);
                       setReceiptModal({ open: false, entry: null });
                     }}
                     className="p-2 rounded-xl bg-indigo-50 text-profee-blue hover:bg-indigo-100 transition-all"
@@ -1040,6 +1236,30 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                     <span className="text-sm font-bold text-slate-700">{receiptModal.entry.description}</span>
                   </div>
                 </div>
+                {(() => {
+                  const credit = settlement.credits.get(receiptModal.entry.id);
+                  if (!credit || (credit.applied.length === 0 && credit.unapplied <= 0)) return null;
+                  return (
+                    <div className="bg-slate-50 rounded-2xl p-6 space-y-3">
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Set off against</span>
+                      {credit.applied.map(a => (
+                        <div key={`${a.receivableEntryId}-${a.fifo}`} className="flex justify-between items-center gap-3">
+                          <span className="text-sm font-bold text-slate-700 truncate">
+                            {receivableLabel(a.receivableEntryId, a.invoiceId)}
+                            {a.fifo && <span className="ml-2 text-[10px] font-semibold text-slate-400">FIFO</span>}
+                          </span>
+                          <span className="text-sm font-bold text-emerald-600 shrink-0">₹{a.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      ))}
+                      {credit.unapplied > 0 && (
+                        <div className="flex justify-between items-center gap-3">
+                          <span className="text-sm font-bold text-slate-700">Advance (not yet set off)</span>
+                          <span className="text-sm font-bold text-profee-blue shrink-0">₹{credit.unapplied.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="bg-emerald-50 rounded-2xl p-6 flex justify-between items-center border border-emerald-100">
                   <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Amount Received</span>
                   <span className="text-2xl font-bold text-emerald-600">₹{receiptModal.entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
@@ -1108,7 +1328,7 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
         {/* Edit Payment Modal */}
         {editPaymentModal.open && editPaymentModal.entry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-white rounded-[2.5rem] p-6 sm:p-10 w-full max-w-xl mx-4 max-h-[90vh] overflow-y-auto shadow-2xl font-poppins animate-in fade-in zoom-in-95 duration-200">
               <div className="flex justify-between items-center mb-8">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
@@ -1139,13 +1359,24 @@ const CustomerManager: React.FC<CustomerManagerProps> = ({ userId, onNavigateToI
                     className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 font-bold text-slate-700 focus:ring-2 ring-indigo-50"
                     value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="e.g. NEFT, UPI, Cash..." />
                 </div>
+                <ReceiptSettlementPicker
+                  entries={editEntries}
+                  invoicesMap={invoicesMap}
+                  creditNoteInvoice={creditNoteInvoice}
+                  amount={parseFloat(editAmount) || 0}
+                  date={editDate || editPaymentModal.entry.date}
+                  choice={editChoice}
+                  onChange={setEditChoice}
+                  open={editOpenInvoices}
+                  error={editChoiceError}
+                />
               </div>
               <div className="flex gap-3 mt-8">
                 <button onClick={() => setEditPaymentModal({ open: false, entry: null })}
                   className="flex-1 py-4 rounded-2xl font-bold text-slate-500 hover:bg-slate-50 transition-all border border-slate-100">
                   Cancel
                 </button>
-                <button onClick={handleEditPayment} disabled={editSaving || !editAmount}
+                <button onClick={handleEditPayment} disabled={editSaving || !(parseFloat(editAmount) > 0) || !!editChoiceError}
                   className="flex-1 py-4 rounded-2xl font-bold bg-profee-blue text-white hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl shadow-indigo-100 disabled:opacity-50">
                   {editSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                   {editSaving ? 'Saving...' : 'Save Changes'}

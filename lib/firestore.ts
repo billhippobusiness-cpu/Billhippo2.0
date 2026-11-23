@@ -29,6 +29,7 @@ import {
   arrayRemove,
   arrayUnion,
   serverTimestamp,
+  deleteField,
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -48,7 +49,9 @@ import type {
   ProfessionalInvite,
   PendingAssignment,
   DeliveryChallan,
+  ReceiptAllocation,
 } from '../types';
+import { settleLedger, settlementStatus, type Settlement } from './receivables';
 
 // ── Helper: get user-scoped collection reference ──
 function userCollection(userId: string, collectionName: string) {
@@ -380,6 +383,103 @@ export async function syncInvoiceLedgerEntries(
   }
 
   return repairCustomerBalances(userId, [...affected], synced);
+}
+
+// ═══════════════════════════════════════════
+//  RECEIPT SETTLEMENT
+// ═══════════════════════════════════════════
+//
+//  A receipt is either set off against invoices the user picks (stored as
+//  `allocations`) or taken as a lump sum that settles the oldest open
+//  invoices first. lib/receivables.ts does the arithmetic; these helpers
+//  store a receipt's choice and keep each invoice's Paid / Partial / Unpaid
+//  status in step with what the ledger says is still open on it.
+
+/** Only the parts of an allocation worth keeping: positive, two-decimal amounts. */
+export function cleanAllocations(allocations: ReceiptAllocation[]): ReceiptAllocation[] {
+  return allocations
+    .map(a => ({ invoiceId: a.invoiceId, amount: Math.round(a.amount * 100) / 100 }))
+    .filter(a => a.invoiceId && a.amount > 0);
+}
+
+/**
+ * Edit a receipt's amount, date, description and settlement. A receipt raised
+ * from the invoice list carries an `invoiceId`; once the user re-points it at
+ * other invoices (or a lump sum) that link is dropped, so deleting the old
+ * invoice no longer takes this receipt with it.
+ */
+export async function updateReceiptEntry(
+  userId: string,
+  entry: LedgerEntry,
+  data: { amount: number; date: string; description: string; allocations: ReceiptAllocation[] },
+) {
+  const allocations = cleanAllocations(data.allocations);
+  const keepsInvoiceLink = !!entry.invoiceId && allocations.some(a => a.invoiceId === entry.invoiceId);
+  await updateDoc(userDoc(userId, 'ledger', entry.id), {
+    amount: data.amount,
+    date: data.date,
+    description: data.description,
+    allocations,
+    ...(entry.invoiceId && !keepsInvoiceLink ? { invoiceId: deleteField() } : {}),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Write the status the settlement implies onto every invoice that disagrees.
+ * Only invoices with a sale entry in `settlement` are considered. Returns the
+ * statuses that changed, keyed by invoice id.
+ */
+export async function syncInvoiceStatuses(
+  userId: string,
+  invoices: Invoice[],
+  settlement: Settlement,
+): Promise<Map<string, Invoice['status']>> {
+  const changed = new Map<string, Invoice['status']>();
+  await Promise.all(invoices.map(async inv => {
+    if (inv.deleted) return;
+    const r = settlement.byInvoiceId.get(inv.id);
+    if (!r) return;
+    const status = settlementStatus(r);
+    if (status === inv.status) return;
+    await updateInvoice(userId, inv.id, { status });
+    changed.set(inv.id, status);
+  }));
+  return changed;
+}
+
+/**
+ * Re-settle one customer's ledger from Firestore and bring their invoices'
+ * statuses in line. Use after anything that moves money for the customer —
+ * a receipt collected, an invoice amount edited — when the caller does not
+ * already hold the customer's full ledger.
+ */
+export async function refreshCustomerInvoiceStatuses(
+  userId: string,
+  customerId: string,
+): Promise<Map<string, Invoice['status']>> {
+  const [entries, allInvoices, creditNotes] = await Promise.all([
+    getLedgerEntries(userId, customerId),
+    getAllInvoices(userId),
+    getCreditNotes(userId),
+  ]);
+  // A soft-deleted invoice's sale entry lingers until the customer's ledger is
+  // next opened; it must not soak up receipts meanwhile.
+  const deleted = new Set(allInvoices.filter(inv => inv.deleted).map(inv => inv.id));
+  const live = entries.filter(e => !(e.type === 'Debit' && e.invoiceId && deleted.has(e.invoiceId)));
+  const settlement = settleLedger(live, { creditNoteInvoice: creditNoteInvoiceMap(creditNotes) });
+  return syncInvoiceStatuses(
+    userId,
+    allInvoices.filter(inv => inv.customerId === customerId),
+    settlement,
+  );
+}
+
+/** creditNoteId → the invoice it was raised against, for notes that name one. */
+export function creditNoteInvoiceMap(creditNotes: CreditNote[]): Map<string, string> {
+  return new Map(
+    creditNotes.filter(n => n.originalInvoiceId).map(n => [n.id, n.originalInvoiceId!]),
+  );
 }
 
 // ═══════════════════════════════════════════

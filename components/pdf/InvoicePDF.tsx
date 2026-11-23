@@ -41,6 +41,7 @@ import {
 } from '@react-pdf/renderer';
 import { Invoice, BusinessProfile, Customer, GSTType } from '../../types';
 import { docScheme, COMPOSITION_DECLARATION } from '../../lib/gstScheme';
+import { totalQuantity, formatQuantity } from '../../lib/quantity';
 
 // ─── Register Poppins (all weights) from local TTF files ──────────────────────
 // woff2 causes "RangeError: Offset is outside the bounds of the DataView" in
@@ -172,6 +173,11 @@ const S = StyleSheet.create({
   tableRowAlt:     { backgroundColor: ALT },
   tableCell:       { fontSize: 8, color: MID },
   tableCellBold:   { fontSize: 8, fontFamily: 'Poppins', fontWeight: 600, color: DARK },
+
+  // Optional "Total Quantity" row under the items table (Settings toggle)
+  qtyTotRow:   { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 8, backgroundColor: ALT, borderTopWidth: 1, borderTopStyle: 'solid', borderBottomWidth: 0.5, borderBottomColor: BORDER, borderBottomStyle: 'solid' },
+  qtyTotLabel: { fontSize: 8, fontFamily: 'Poppins', fontWeight: 700, color: DARK, textAlign: 'right', paddingRight: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
+  qtyTotValue: { fontSize: 8, fontFamily: 'Poppins', fontWeight: 700, color: DARK },
 
   // ── Page number ──
   pageNum: { position: 'absolute', bottom: 16, left: 0, right: 0, textAlign: 'center', fontSize: 7, color: LIGHT },
@@ -433,6 +439,18 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
     const halfTax   = r2(taxAmt / 2);
     return { ...item, lineTotal, taxAmt, halfTax, grandLine: r2(lineTotal + taxAmt) };
   });
+
+  // Optional "Total Quantity" row (Settings → Invoice Display).
+  const showQtyTotal = !!business.showQuantityTotal;
+  const qtyTotalText = formatQuantity(totalQuantity(invoice.items));
+  // Label spans the #, Description and HSN columns (4% + 20% + 10%) so the
+  // figure lands directly under the Qty column.
+  const qtyTotalRow = (accent: string) => showQtyTotal ? (
+    <View style={[S.qtyTotRow, { borderTopColor: accent }]} wrap={false}>
+      <Text style={[S.qtyTotLabel, { width: '34%' }]}>Total Quantity</Text>
+      <Text style={[S.qtyTotValue, S.m1cQty]}>{qtyTotalText}</Text>
+    </View>
+  ) : null;
 
   // QR URL (external, not Firebase — no CORS issue)
   const qrUrl = business.upiId
@@ -989,6 +1007,13 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
                     <Text style={[S.pfTblCellB, c.tot]}>{nfmt(item.grandLine)}</Text>
                   </View>
                 ))}
+                {showQtyTotal && (
+                  <View style={[S.pfTblRow, { backgroundColor: ALT, borderTopWidth: 1, borderTopColor: NAVY, borderTopStyle: 'solid' }]} wrap={false}>
+                    {/* spans #, Description and HSN (5% + 20% + 10%) */}
+                    <Text style={[S.pfTblCellB, { width: '35%', textAlign: 'right', paddingRight: 4, textTransform: 'uppercase' }]}>Total Quantity</Text>
+                    <Text style={[S.pfTblCellB, c.qty]}>{qtyTotalText}</Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -1327,6 +1352,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
           {/* ── Items table ── */}
           {gTableHeader}
           {tableRows}
+          {qtyTotalRow(NAVY)}
 
           {/* ── Bank + QR (left) | Summary + TOTAL (right) ── */}
           <View style={{ flexDirection: 'row', gap: 14, marginTop: 14 }} wrap={false}>
@@ -1485,6 +1511,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
           {supplyStrip}
           {tableHeader}
           {tableRows}
+          {qtyTotalRow(PRIMARY)}
           {twoColFooter}
           {contactSignature}
           {pageNumber}
@@ -1564,6 +1591,7 @@ const InvoicePDF: React.FC<InvoicePDFProps> = ({ invoice, business, customer }) 
         {supplyStrip}
         {tableHeader}
         {tableRows}
+        {qtyTotalRow(PRIMARY)}
         {twoColFooter}
         {contactSignature}
         {pageNumber}

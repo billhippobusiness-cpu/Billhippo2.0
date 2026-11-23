@@ -3,11 +3,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, Printer, Globe, Image as ImageIcon, Save, Eye, Edit3, CheckCircle, Loader2, FileText, ArrowLeft, Download, Pencil, Search, UserPlus, Package, Briefcase, X, RotateCcw, ArchiveX, IndianRupee, Receipt, MessageCircle, User, Building2, MapPin, Landmark, BarChart3, ShieldCheck, StickyNote, Phone, Mail, Lock, Smartphone, CreditCard } from 'lucide-react';
 import { GSTType, InvoiceItem, Invoice, Customer, BusinessProfile, InventoryItem, ServiceItem, SupplyType, type Quotation } from '../types';
 import HSNSearchModal, { HSNInput } from './HSNSearchModal';
-import { getCustomers, getBusinessProfile, addInvoice, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, syncInvoiceLedgerEntries, saleEntryDescription, paymentEntryDescription, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getAllInvoices, updateQuotation, applyStockAdjustments } from '../lib/firestore';
+import { getCustomers, getBusinessProfile, addInvoice, updateInvoice, addLedgerEntry, deleteLedgerEntry, getLedgerEntryByInvoiceId, syncInvoiceLedgerEntries, saleEntryDescription, paymentEntryDescription, updateCustomer, addCustomer, getInventoryItems, addInventoryItem, getServiceItems, softDeleteInvoice, restoreInvoice, getAllInvoices, updateQuotation, applyStockAdjustments, refreshCustomerInvoiceStatuses } from '../lib/firestore';
 import { lookupGSTIN, type GSTINDetails } from '../lib/whitebooksApi';
 import { getSchemeOnDate, docScheme, COMPOSITION_DECLARATION } from '../lib/gstScheme';
 import { nextInvoiceNumber, findInvoiceNumberClash, describeInvoiceNumberClash, normalizeInvoiceNumber } from '../lib/invoiceNumbering';
 import { haptic } from '../lib/haptic';
+import { totalQuantity, formatQuantity } from '../lib/quantity';
 import PDFPreviewModal, { PDFDirectDownload } from './pdf/PDFPreviewModal';
 import InvoicePDF from './pdf/InvoicePDF';
 import { pdf } from '@react-pdf/renderer';
@@ -254,6 +255,9 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
   const grandTotal = r2(subTotal + taxAmount);
   const roundedTotal = Math.round(grandTotal);
   const roundOff = r2(roundedTotal - grandTotal);
+  // Optional "Total Quantity" row under the items table (Settings toggle).
+  const showQtyTotal = !!profile.showQuantityTotal;
+  const qtyTotalText = formatQuantity(totalQuantity(items));
 
   // Auto-detect supply type based on customer GSTIN + state + invoice value
   const autoSupplyType = useMemo((): SupplyType => {
@@ -600,7 +604,18 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
         if (balances.size > 0) {
           setCustomers(prev => prev.map(c => balances.has(c.id) ? { ...c, balance: balances.get(c.id)! } : c));
         }
-        setEditingInvoice(updatedInvoice);
+        // A new total can turn a Paid invoice Partial (or the reverse) — re-settle.
+        let settledStatus: Invoice['status'] | undefined;
+        if (updatedInvoice.customerId) {
+          try {
+            const changed = await refreshCustomerInvoiceStatuses(userId, updatedInvoice.customerId);
+            if (changed.size > 0) {
+              setAllInvoices(prev => prev.map(inv => changed.has(inv.id) ? { ...inv, status: changed.get(inv.id)! } : inv));
+              settledStatus = changed.get(updatedInvoice.id);
+            }
+          } catch (err) { console.error('Invoice status sync failed', err); }
+        }
+        setEditingInvoice(settledStatus ? { ...updatedInvoice, status: settledStatus } : updatedInvoice);
       } else {
         const invoiceId = await addInvoice(userId, invoicePayload);
         await applyStockAdjustments(userId, items, 'outward');
@@ -646,20 +661,34 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
       const date          = new Date().toISOString().split('T')[0];
       const description   = collectDesc || paymentEntryDescription(inv.invoiceNumber);
       const custObj       = customers.find(c => c.id === inv.customerId);
-      const newStatus: 'Paid' | 'Partial' = amount >= inv.totalAmount ? 'Paid' : 'Partial';
       const currentBalance    = custObj?.balance ?? inv.totalAmount;
       const newRunningBalance = currentBalance - amount;
 
+      // Set off against this invoice; anything beyond what is open on it goes
+      // to the customer's oldest open invoices (FIFO).
       const entryId = await addLedgerEntry(userId, {
         date, type: 'Credit', amount, description,
         customerId: inv.customerId, invoiceId: inv.id,
+        allocations: [{ invoiceId: inv.id, amount }],
       });
-      await updateInvoice(userId, inv.id, { status: newStatus });
       if (custObj) {
         await updateCustomer(userId, custObj.id, { balance: newRunningBalance });
         setCustomers(prev => prev.map(c => c.id === custObj.id ? { ...c, balance: newRunningBalance } : c));
       }
-      setAllInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, status: newStatus } : i));
+      // Status comes from the whole ledger, so earlier part-payments count too.
+      let changed = new Map<string, Invoice['status']>();
+      try {
+        changed = inv.customerId
+          ? await refreshCustomerInvoiceStatuses(userId, inv.customerId)
+          : changed;
+      } catch (err) { console.error('Invoice status sync failed', err); }
+      if (!changed.has(inv.id) && !inv.customerId) {
+        // No customer ledger to settle against — fall back to the old rule.
+        const fallback: Invoice['status'] = amount >= inv.totalAmount ? 'Paid' : 'Partial';
+        await updateInvoice(userId, inv.id, { status: fallback });
+        changed.set(inv.id, fallback);
+      }
+      setAllInvoices(prev => prev.map(i => changed.has(i.id) ? { ...i, status: changed.get(i.id)! } : i));
 
       const customer: Customer = custObj || { id: inv.customerId, name: inv.customerName, phone: '', email: '', address: '', city: '', state: '', pincode: '', balance: newRunningBalance };
       const receiptEntry: ReceiptEntry = {
@@ -833,6 +862,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
               </tr>
             ))}
           </tbody>
+          {showQtyTotal && (
+            <tfoot>
+              <tr className="text-xs font-black text-slate-900 bg-slate-50 border-t-2" style={{ borderColor: profile.theme.primaryColor }}>
+                <td className="px-10 py-4 text-right uppercase tracking-widest" colSpan={2}>Total Quantity</td>
+                <td className="px-4 py-4 text-center">{qtyTotalText}</td>
+                <td colSpan={2}></td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-20 items-start">
@@ -1012,6 +1050,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 );
               })}
             </tbody>
+            {showQtyTotal && (
+              <tfoot>
+                <tr className="font-black text-slate-900 bg-slate-50 border-t-2" style={{ borderColor: profile.theme.primaryColor }}>
+                  <td className="px-3 py-3 text-right uppercase tracking-wide" colSpan={3}>Total Quantity</td>
+                  <td className="px-2 py-3 text-center">{qtyTotalText}</td>
+                  <td colSpan={isComposition ? 2 : 5}></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 
@@ -1250,6 +1297,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                 );
               })}
             </tbody>
+            {showQtyTotal && (
+              <tfoot>
+                <tr className="font-black text-slate-900 bg-slate-50 border-t-2" style={{ borderColor: geoNavy }}>
+                  <td className="px-3 py-3 text-right uppercase tracking-wide" colSpan={3}>Total Quantity</td>
+                  <td className="px-2 py-3 text-center">{qtyTotalText}</td>
+                  <td colSpan={isComposition ? 2 : 5}></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 
@@ -1446,6 +1502,15 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({ userId, initialQuot
                     );
                   })}
                 </tbody>
+                {showQtyTotal && (
+                  <tfoot>
+                    <tr className="font-black text-slate-900 bg-slate-50 border-t-2" style={{ borderColor: pfNavy }}>
+                      <td className="px-1.5 py-2 text-right uppercase" colSpan={3}>Total Quantity</td>
+                      <td className="px-1 py-2 text-center">{qtyTotalText}</td>
+                      <td colSpan={isComposition ? 3 : 6}></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>
