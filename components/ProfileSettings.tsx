@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart, Plus, Pencil, Trash2, Check, Search, Eye, EyeOff, ArrowLeftRight, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Save, Building2, MapPin, ShieldCheck, CreditCard, Info, Zap, CheckCircle, Loader2, Upload, ImageIcon, PenLine, X, Briefcase, ShoppingCart, Plus, Pencil, Trash2, Check, Search, Eye, EyeOff, ArrowLeftRight, AlertTriangle, RotateCcw, Hash } from 'lucide-react';
 import { BusinessProfile, BankAccount, CompositionCategory, GSTScheme, SchemePeriod } from '../types';
 import { getBusinessProfile, saveBusinessProfile } from '../lib/firestore';
 import { lookupGSTIN } from '../lib/whitebooksApi';
@@ -854,6 +854,30 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ userId, onBusinessTyp
               onChange={e => setProfile({...profile, termsAndConditions: e.target.value})}
               placeholder="e.g. Goods once sold will not be taken back."
             />
+          </div>
+
+          {/* ── Invoice display options ── */}
+          <div className="bg-white rounded-[2.5rem] p-10 premium-shadow border border-slate-50 space-y-4 font-poppins">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-4">Invoice Display</label>
+            <div className="bg-slate-50 p-6 rounded-2xl flex items-center justify-between gap-4">
+              <div className="flex items-start gap-3 min-w-0">
+                <Hash size={18} className="text-profee-blue mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-800">Show total quantity</p>
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">Adds a Total Quantity row under the items table on invoice PDFs.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!profile.showQuantityTotal}
+                aria-label="Show total quantity on invoices"
+                onClick={() => setProfile({ ...profile, showQuantityTotal: !profile.showQuantityTotal })}
+                className={`w-12 h-6 rounded-full relative transition-colors shrink-0 ${profile.showQuantityTotal ? 'bg-profee-blue' : 'bg-slate-300'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${profile.showQuantityTotal ? 'translate-x-7' : 'translate-x-1'}`}></div>
+              </button>
+            </div>
           </div>
 
           {/* ── Professional Access ── */}
